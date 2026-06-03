@@ -234,14 +234,17 @@ export default function SearchPage() {
     <div className="min-h-screen bg-background text-foreground">
       <AppNav live={142118} />
 
-      {/* Mobile filter bar — opens the drawer */}
-      <div className="lg:hidden sticky top-[57px] z-20 bg-background/90 backdrop-blur border-b border-border px-4 py-2 flex items-center justify-between gap-2">
-        <button onClick={() => setFiltersOpen(true)} className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border border-border bg-card min-w-0">
-          <SlidersHorizontal className="w-4 h-4 shrink-0" />
-          <span className="truncate">{[make, model, trim].filter(Boolean).join(" ") || "Filters"}</span>
-        </button>
-        {results !== null && <span className="text-xs text-muted-foreground shrink-0">{total || sorted.length} results</span>}
-      </div>
+      {/* Mobile filter bar — only after a search has run; lets you reopen the
+          criteria. Before the first search the criteria form IS the page. */}
+      {results !== null && (
+        <div className="lg:hidden sticky top-[57px] z-20 bg-background/90 backdrop-blur border-b border-border px-4 py-2 flex items-center justify-between gap-2">
+          <button onClick={() => setFiltersOpen(true)} className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border border-border bg-card min-w-0">
+            <SlidersHorizontal className="w-4 h-4 shrink-0" />
+            <span className="truncate">{[make, model, trim].filter(Boolean).join(" ") || "Edit search"}</span>
+          </button>
+          <span className="text-xs text-muted-foreground shrink-0">{total || sorted.length} results</span>
+        </div>
+      )}
 
       <div className="flex">
         {/* Desktop sidebar */}
@@ -280,13 +283,23 @@ export default function SearchPage() {
 
           {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 text-destructive p-4 text-sm mb-4">{error}</div>}
 
-          {/* Empty / initial states */}
+          {/* Initial state. On mobile the criteria form IS the page (no sidebar
+              there); on desktop the sidebar holds it, so we show a hint. */}
           {results === null && !searching && (
-            <div className="text-center py-24 text-muted-foreground">
-              <Search className="w-10 h-10 mx-auto mb-4 opacity-40" />
-              <p className="text-lg font-medium text-foreground mb-1">Search live inventory</p>
-              <p className="text-sm">Open <span className="lg:hidden">Filters</span><span className="hidden lg:inline">the filters</span>, pick a make and model, choose a trim, and run a live search.</p>
-            </div>
+            <>
+              <div className="lg:hidden">
+                <div className="mb-4">
+                  <h1 className="font-heading text-xl font-bold">Build your search</h1>
+                  <p className="text-sm text-muted-foreground">Pick a make and model, choose a trim, then run a live search.</p>
+                </div>
+                {filterContent}
+              </div>
+              <div className="hidden lg:block text-center py-24 text-muted-foreground">
+                <Search className="w-10 h-10 mx-auto mb-4 opacity-40" />
+                <p className="text-lg font-medium text-foreground mb-1">Search live inventory</p>
+                <p className="text-sm">Pick a make and model in the filters on the left, choose a trim, and run a live search.</p>
+              </div>
+            </>
           )}
           {searching && (
             <div className="text-center py-24 text-muted-foreground">
