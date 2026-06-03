@@ -18,13 +18,14 @@
 
 import { NextResponse } from "next/server";
 import {
-  MC_HOST, mcKey, num, titleCase, canonicalTrimKey,
+  MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type Trim = { name: string; count: number; available: boolean; msrp?: number };
+type Variant = { label: string; count: number };
+type Trim = { name: string; count: number; available: boolean; msrp?: number; variants?: Variant[] };
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
 
     for (const arr of styleResults) {
       for (const s of arr as any[]) {
-        const name = titleCase(s.trim || s.name || s.style);
+        const name = prettyTrim(titleCase(s.trim || s.name || s.style));
         if (!name) continue;
         const key = canonicalTrimKey(name);
         if (!key) continue;
@@ -109,9 +110,56 @@ export async function POST(req: Request) {
         } else {
           // Trim exists in live inventory but not in the catalog window —
           // include it so nothing for sale is hidden. Use a clean display.
-          byKey.set(key, { name: titleCase(rawName), count: cnt, available: true });
+          byKey.set(key, { name: prettyTrim(titleCase(rawName)), count: cnt, available: true });
         }
       }
+    }
+
+    // ── 2b. Range/config sub-variants from the `version` facet ─────────────
+    // MarketCheck's trim is top-level only (Denali). The granular config
+    // (Extended Range, Max Range, …) lives in `version`. Facet on it, parse
+    // out the meaningful sub-variant, and attach to the matching trim.
+    const versionsByTrimKey = new Map<string, Map<string, number>>();
+    try {
+      const vUrl = new URL(`${MC_HOST}/search/car/active`);
+      vUrl.searchParams.set("api_key", apiKey);
+      vUrl.searchParams.set("car_type", body.car_type || "new");
+      vUrl.searchParams.set("make", make);
+      if (model) vUrl.searchParams.set("model", model);
+      vUrl.searchParams.set("rows", "0");
+      vUrl.searchParams.set("facets", "version|0|200|1");
+      const vRes = await fetch(vUrl.toString());
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        const items: any[] = vData.facets?.version || [];
+        for (const it of items) {
+          const version = String(it.item || "");
+          if (!version) continue;
+          // Find which trim this version belongs to (longest trim-name prefix).
+          let bestTrim: Trim | undefined;
+          for (const t of byKey.values()) {
+            if (version.toLowerCase().includes(t.name.toLowerCase())) {
+              if (!bestTrim || t.name.length > bestTrim.name.length) bestTrim = t;
+            }
+          }
+          if (!bestTrim) continue;
+          const label = parseVariant(version, bestTrim.name);
+          if (!label) continue;
+          const tk = canonicalTrimKey(bestTrim.name);
+          if (!versionsByTrimKey.has(tk)) versionsByTrimKey.set(tk, new Map());
+          const m = versionsByTrimKey.get(tk)!;
+          m.set(label, (m.get(label) || 0) + num(it.count));
+        }
+      }
+    } catch { /* version facet is best-effort */ }
+
+    // Attach variants (only when a trim has 2+ distinct ones — else pointless).
+    for (const [tk, m] of versionsByTrimKey) {
+      const trim = byKey.get(tk);
+      if (!trim) continue;
+      const variants = [...m.entries()].map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+      if (variants.length >= 2) trim.variants = variants;
     }
 
     // ── 3. Sort: available first (by count desc), then the rest A-Z ────────

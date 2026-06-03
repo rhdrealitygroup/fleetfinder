@@ -30,6 +30,7 @@ function cacheKeyFor(body: any) {
     year_min: body.year_min || null, year_max: body.year_max || null,
     price_min: body.price_min || null, price_max: body.price_max || null,
     miles_max: body.miles_max || null,
+    variant: (body.variant || "").toLowerCase(),
     powertrain_type: body.powertrain_type || "", body_type: body.body_type || "",
     drivetrain: body.drivetrain || "", exterior_color: body.exterior_color || "",
     features: Array.isArray(body.features) ? [...body.features].sort() : [],
@@ -168,7 +169,18 @@ export async function POST(req: Request) {
     }
   }
 
-  const payload = { results, total: total || results.length, provider };
+  // Post-filter by selected range/config variant (e.g. "Extended Range"),
+  // which lives in the version field — MarketCheck's trim param can't target it.
+  const variant = String(body.variant || "").trim().toLowerCase();
+  if (variant) {
+    const words = variant.split(/\s+/).filter(Boolean);
+    results = results.filter((r) => {
+      const v = (r.version || "").toLowerCase();
+      return words.every((w) => v.includes(w));
+    });
+  }
+
+  const payload = { results, total: variant ? results.length : (total || results.length), provider };
   cacheSet(ckey, payload, HOUR);
 
   return NextResponse.json({

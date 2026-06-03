@@ -14,7 +14,7 @@ import { useLocalCollection } from "@/lib/useLocalCollection";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 type Vehicle = {
-  vin: string; year: number; make: string; model: string; trim: string;
+  vin: string; year: number; make: string; model: string; trim: string; version: string;
   price: number; msrp: number; est_monthly: number; exterior_color: string;
   base_color: string; mileage: number; dealer_name: string; city: string;
   state: string; latitude: number; longitude: number; listing_url: string;
@@ -23,7 +23,8 @@ type Vehicle = {
   status: string; days_listed: number; features: string[];
 };
 
-type Trim = { name: string; count: number; available: boolean; msrp?: number };
+type Variant = { label: string; count: number };
+type Trim = { name: string; count: number; available: boolean; msrp?: number; variants?: Variant[] };
 
 const FEATURE_PICKS = FEATURE_GROUPS.flatMap((g) => g.items);
 
@@ -31,6 +32,7 @@ export default function SearchPage() {
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [trim, setTrim] = useState("");
+  const [variant, setVariant] = useState("");
   const [trims, setTrims] = useState<Trim[]>([]);
   const [trimsLoading, setTrimsLoading] = useState(false);
   const [yearIdx, setYearIdx] = useState(0);
@@ -108,7 +110,7 @@ export default function SearchPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          car_type: carType, make, model, trim,
+          car_type: carType, make, model, trim, variant,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           features: [...features],
@@ -126,7 +128,10 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, yearIdx, priceIdx, features, carType]);
+  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType]);
+
+  // The variant (range/config) chips for the currently-selected trim.
+  const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
 
   const sorted = useMemo(() => {
     if (!results) return [];
@@ -209,15 +214,29 @@ export default function SearchPage() {
                 Trim {trimsLoading && <Loader2 className="w-3 h-3 animate-spin" />}
               </div>
               <div className="flex flex-wrap gap-2">
-                <TrimPill label="All trims" active={trim === ""} onClick={() => setTrim("")} />
+                <TrimPill label="All trims" active={trim === ""} onClick={() => { setTrim(""); setVariant(""); }} />
                 {trims.map((t) => (
                   <TrimPill key={t.name} label={t.name} count={t.count} dim={!t.available}
-                    active={trim === t.name} onClick={() => setTrim(t.name)} />
+                    active={trim === t.name} onClick={() => { setTrim(t.name); setVariant(""); }} />
                 ))}
                 {!trimsLoading && trims.length === 0 && (
                   <span className="text-xs text-muted-foreground py-1.5">No trims found — search will still run.</span>
                 )}
               </div>
+
+              {/* Range / config sub-variants for the selected trim */}
+              {activeVariants.length > 0 && (
+                <div className="mt-3 pl-3 border-l-2 border-primary/30">
+                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">{trim} configuration</div>
+                  <div className="flex flex-wrap gap-2">
+                    <TrimPill label="Any" active={variant === ""} onClick={() => setVariant("")} />
+                    {activeVariants.map((v) => (
+                      <TrimPill key={v.label} label={v.label} count={v.count}
+                        active={variant === v.label} onClick={() => setVariant(v.label)} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -328,7 +347,7 @@ function VehicleCard({ v, saved, compareOn, onOpen, onSave, onCompare }: { v: Ve
         {v.is_cpo && <span className="absolute top-2 left-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-[10px] font-medium text-white"><Award className="w-3 h-3" /> CPO</span>}
       </div>
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0"><div className="font-semibold text-[15px] truncate">{v.year} {v.make} {v.model}</div>{v.trim && <div className="text-sm text-primary font-medium">{v.trim}</div>}</div>
+        <div className="min-w-0"><div className="font-semibold text-[15px] truncate">{v.year} {v.make} {v.model}</div>{v.trim && <div className="text-sm text-primary font-medium truncate">{v.trim}</div>}{v.version && v.version.toLowerCase() !== v.trim.toLowerCase() && <div className="text-[11px] text-muted-foreground truncate">{v.version}</div>}</div>
         <div className="text-right shrink-0"><div className="font-semibold tnum">{moneyShort(v.price)}</div>{v.est_monthly > 0 && <div className="text-[11px] text-muted-foreground tnum">~{moneyShort(v.est_monthly)}/mo</div>}</div>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">

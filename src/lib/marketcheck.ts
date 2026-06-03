@@ -80,12 +80,66 @@ export function canonicalTrimKey(raw: unknown): string {
     .trim();
 }
 
+// MarketCheck's `version` field carries the full granular config, e.g.
+// "Denali Extended Range Crew Cab e4WD". The trim ("Denali") is only the top
+// level — the meaningful sub-variant ("Extended Range") is what agents pick
+// between. This strips the trim name + body/cab/drivetrain boilerplate to
+// leave the distinguishing part (range, package level, etc.).
+const VERSION_NOISE = [
+  "crew cab", "double cab", "regular cab", "extended cab", "super cab", "supercrew", "supercab", "quad cab", "king cab", "access cab", "mega cab", "club cab",
+  "cab", "pickup", "sedan", "suv", "coupe", "convertible", "wagon", "hatchback", "van", "minivan", "truck",
+  "e4wd", "4wd", "awd", "rwd", "fwd", "2wd", "4x4", "4x2", "e-4wd",
+  "short bed", "long bed", "standard bed", "std bed",
+  "short box", "long box", "standard box", "std box",
+];
+
+// Common automotive trim acronyms that should stay uppercase (titleCase would
+// mangle "AT4" → "At4", "XLT" → "Xlt"). Plus any short token containing a digit.
+const TRIM_ACRONYMS = new Set([
+  "XL", "XLT", "STX", "SLE", "SLT", "GT", "RST", "TRD", "SR", "SR5", "SE", "SEL",
+  "LE", "LX", "EX", "SX", "RS", "LT", "LTZ", "GLI", "GTI", "SS", "SV", "SL", "SHO",
+  "AT4", "ZR2", "Z71", "TRX", "GLE", "GLB", "GLC", "GLA", "CLA", "AMG", "S", "RT",
+]);
+export function prettyTrim(s: string): string {
+  return String(s || "")
+    .split(/\s+/)
+    .map((w) => {
+      const u = w.toUpperCase();
+      if (/\d/.test(w) && w.length <= 4) return u;
+      if (TRIM_ACRONYMS.has(u)) return u;
+      return w;
+    })
+    .join(" ")
+    .trim();
+}
+
+// Fix known MarketCheck source typos in config/range labels.
+function fixTypos(s: string): string {
+  return s.replace(/\bstamdard\b/gi, "Standard").replace(/\bextened\b/gi, "Extended");
+}
+export function parseVariant(version: string, trim: string): string {
+  let s = String(version || "").trim();
+  if (!s) return "";
+  // Drop the leading trim name (case-insensitive).
+  const t = String(trim || "").trim();
+  if (t && s.toLowerCase().startsWith(t.toLowerCase())) s = s.slice(t.length).trim();
+  let low = s.toLowerCase();
+  for (const noise of VERSION_NOISE) {
+    low = low.replace(new RegExp(`\\b${noise.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), " ");
+  }
+  // Rebuild from the original words that survived (preserve original casing).
+  const keep = new Set(low.split(/\s+/).filter(Boolean));
+  const out = s.split(/\s+/).filter((w) => keep.has(w.toLowerCase()));
+  return fixTypos(out.join(" ").replace(/\s+/g, " ").trim());
+}
+
 export type UnifiedVehicle = {
   vin: string;
   year: number;
   make: string;
   model: string;
   trim: string;
+  version: string;
   price: number;
   msrp: number;
   est_monthly: number;
@@ -136,7 +190,8 @@ export function mcListing(l: any): UnifiedVehicle {
     year: num(build.year),
     make: titleCase(build.make),
     model: titleCase(build.model),
-    trim: titleCase(build.trim),
+    trim: prettyTrim(titleCase(build.trim)),
+    version: String(build.version || ""),
     price, msrp, est_monthly: estMonthlyCard(price, msrp),
     body_type: titleCase(build.body_type),
     fuel_type: titleCase(build.fuel_type),
@@ -181,6 +236,7 @@ export function adListing(l: any): UnifiedVehicle {
     make: titleCase(v.make),
     model: titleCase(v.model),
     trim: titleCase(v.trim),
+    version: String(v.version || v.trim || ""),
     price, msrp, est_monthly: estMonthlyCard(price, msrp),
     body_type: titleCase(v.bodyStyle),
     fuel_type: titleCase(v.fuel),
