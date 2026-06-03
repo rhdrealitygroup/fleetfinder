@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { Loader2, Mail } from "lucide-react";
 
 export default function SignupPage() {
@@ -37,6 +38,11 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <h1 className="font-heading text-2xl font-bold mb-1">Start your free trial</h1>
         <p className="text-sm text-muted-foreground mb-6">14 days free · no card required · $100/mo after.</p>
+
+        <GoogleSignInButton next="/onboarding" />
+        <div className="flex items-center gap-3 my-5 text-xs text-muted-foreground">
+          <div className="h-px flex-1 bg-border" /> or sign up with email <div className="h-px flex-1 bg-border" />
+        </div>
 
         {done ? (
           <div className="rounded-lg border border-primary/40 bg-primary/10 p-4 text-sm flex items-start gap-3">
