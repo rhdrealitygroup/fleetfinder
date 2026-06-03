@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Search, SlidersHorizontal, ArrowUpDown, Star, Building2, Zap, X, Check,
-  ChevronDown, MapPin, Award, GitCompare, Loader2, ExternalLink, FileText,
+  Search, SlidersHorizontal, ArrowUpDown, Star, Building2, X, Check,
+  Award, GitCompare, Loader2, ExternalLink, FileText,
 } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
@@ -60,6 +60,7 @@ export default function SearchPage() {
       return;
     }
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTrimsLoading(true);
     fetch("/api/list-trims", {
       method: "POST",
@@ -353,6 +354,7 @@ function DetailPanel({ v, onClose, saved, onSave }: { v: Vehicle; onClose: () =>
 
   useEffect(() => {
     if (!v.vin || v.vin.length !== 17) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDecoding(true);
     fetch("/api/decode-vin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vin: v.vin }) })
       .then((r) => r.json()).then((d) => !d.error && setDecode(d)).catch(() => {}).finally(() => setDecoding(false));

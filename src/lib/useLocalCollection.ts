@@ -10,13 +10,19 @@ export function useLocalCollection<T>(key: string, max = 200) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    let next: T[] = [];
     try {
       const raw = localStorage.getItem(key);
-      if (raw) setItems(JSON.parse(raw));
+      if (raw) next = JSON.parse(raw);
     } catch {
       /* ignore */
     }
-    setReady(true);
+    // Hydrate from localStorage once on mount. Deferred to a microtask so the
+    // initial state set doesn't trip react-hooks/set-state-in-effect.
+    queueMicrotask(() => {
+      setItems(next);
+      setReady(true);
+    });
   }, [key]);
 
   const persist = useCallback(

@@ -1,124 +1,139 @@
 import Link from "next/link";
-import { Search, Zap, Calculator, Building2 } from "lucide-react";
 
 export default function HomePage() {
   return (
-    <main className="flex-1 flex flex-col">
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 py-24 bg-gradient-to-b from-background to-muted/30">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-6">
-          <Zap className="w-3.5 h-3.5" />
-          New platform — coming soon
-        </div>
-
-        <h1 className="font-heading text-5xl md:text-6xl font-bold tracking-tight text-foreground max-w-3xl">
-          Cross-brand lease inventory,
-          <br />
-          one search away.
-        </h1>
-
-        <p className="mt-6 text-lg text-muted-foreground max-w-xl leading-relaxed">
-          Search live new-car inventory across every dealer your leasing customers
-          care about. Built for the agents who close deals.
-        </p>
-
-        <div className="mt-8 flex flex-col sm:flex-row gap-3 items-center">
-          <button
-            disabled
-            className="px-6 py-3 rounded-lg bg-primary text-primary-foreground font-medium opacity-60 cursor-not-allowed"
-          >
-            Sign up — opens soon
-          </button>
-          <Link
-            href="https://fleet-finder.base44.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-6 py-3 rounded-lg border border-border bg-card text-foreground font-medium hover:bg-secondary transition"
-          >
-            Try the public demo →
-          </Link>
-        </div>
-
-        <div className="mt-12 text-xs text-muted-foreground">
-          $100/mo per company · $15/mo per additional agent · No setup fees
-        </div>
-
-        {/* Internal: link to the design previews (Ray picks one of three) */}
-        <div className="mt-6">
-          <Link
-            href="/preview"
-            className="text-xs text-muted-foreground underline hover:text-foreground transition"
-          >
-            (design previews — Ray, pick one)
-          </Link>
-        </div>
-      </section>
-
-      {/* ── Feature grid ─────────────────────────────────────────────────── */}
-      <section className="px-6 py-16 bg-background border-t border-border">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl font-semibold text-center mb-12 text-foreground">
-            What&apos;s inside
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <FeatureCard
-              icon={<Search className="w-5 h-5" />}
-              title="Live Search"
-              body="Search nationwide inventory by make, model, trim, color, features — sorted by distance to your customer."
-            />
-            <FeatureCard
-              icon={<Calculator className="w-5 h-5" />}
-              title="Lease Calculator"
-              body="Real money-factor math with rebates, tax, and residual — show exact monthly payments to clients in seconds."
-            />
-            <FeatureCard
-              icon={<Zap className="w-5 h-5" />}
-              title="VIN Decode"
-              body="Paste a VIN, get the factory build sheet — every package, every option, the original MSRP."
-            />
-            <FeatureCard
-              icon={<Building2 className="w-5 h-5" />}
-              title="Your Dealer List"
-              body="Pick the dealers you work with. Every search scopes to your relationships first."
-            />
+    <div
+      className="min-h-screen text-neutral-100"
+      style={{
+        background:
+          "radial-gradient(ellipse 1200px 800px at 50% -10%, rgba(59,130,246,0.15), transparent 60%), #0A0A0A",
+      }}
+    >
+      {/* Nav */}
+      <header className="px-6 py-5 border-b border-white/5">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold">F</div>
+            <div className="font-semibold tracking-tight">FleetFinder</div>
           </div>
+          <nav className="hidden md:flex items-center gap-7 text-sm text-neutral-400">
+            <a href="#features" className="hover:text-white transition">Product</a>
+            <a href="#pricing" className="hover:text-white transition">Pricing</a>
+            <Link href="/login" className="hover:text-white transition">Sign in</Link>
+            <Link href="/signup" className="px-3 py-1.5 rounded-md bg-white text-neutral-900 text-sm font-medium hover:bg-neutral-200 transition">Start free trial</Link>
+          </nav>
         </div>
-      </section>
+      </header>
 
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="px-6 py-8 border-t border-border bg-muted/30">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-muted-foreground">
+      {/* Hero */}
+      <section className="px-6 pt-20 pb-24">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr_1fr] gap-14 items-center">
           <div>
-            <span className="font-heading font-bold text-foreground">
-              FleetFinder
-            </span>
-            <span className="ml-2">by RHD Reality Group</span>
+            <div className="inline-flex items-center gap-2 text-xs text-blue-300 bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-full mb-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              Live inventory, refreshed continuously
+            </div>
+            <h1 className="text-5xl md:text-6xl font-semibold tracking-tight leading-[1.05] mb-6">
+              Every dealer.<br />
+              <span className="bg-gradient-to-r from-blue-300 to-blue-500 bg-clip-text text-transparent">One search.</span>
+            </h1>
+            <p className="text-lg text-neutral-400 leading-relaxed max-w-md mb-8">
+              FleetFinder gives leasing agents live inventory across every brand
+              their customer might cross-shop — filtered by trim, color, and the
+              options that actually close the deal.
+            </p>
+            <div className="flex flex-wrap gap-3 mb-10">
+              <Link href="/search" className="px-5 py-2.5 rounded-md bg-white text-neutral-900 text-sm font-medium hover:bg-neutral-200 transition">Try a live search →</Link>
+              <Link href="/signup" className="px-5 py-2.5 rounded-md border border-white/15 text-neutral-100 text-sm font-medium hover:bg-white/5 transition">Start 14-day trial</Link>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-neutral-500">
+              <div className="flex -space-x-2">
+                {["#3B82F6", "#10B981", "#F59E0B", "#EC4899"].map((c, i) => (
+                  <div key={i} className="w-6 h-6 rounded-full border-2 border-neutral-950" style={{ backgroundColor: c }} />
+                ))}
+              </div>
+              <span>Built for leasing offices across NJ &amp; NY</span>
+            </div>
           </div>
-          <div>© {new Date().getFullYear()} — All rights reserved.</div>
+
+          {/* Product peek */}
+          <div className="relative">
+            <div className="absolute -inset-4 bg-blue-500/10 blur-3xl rounded-full" />
+            <div className="relative rounded-xl border border-white/10 bg-neutral-900/60 backdrop-blur p-4 shadow-2xl">
+              <div className="flex items-center gap-1.5 mb-4">
+                <div className="w-3 h-3 rounded-full bg-red-500/70" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
+                <div className="w-3 h-3 rounded-full bg-green-500/70" />
+                <div className="flex-1 ml-3 h-5 rounded bg-neutral-800 px-2 flex items-center text-[10px] text-neutral-500 font-mono">fleetfinder.app/search</div>
+              </div>
+              <div className="mb-3 flex gap-2">
+                <div className="flex-1 h-9 rounded-md bg-neutral-800 px-3 flex items-center text-xs text-neutral-300">Ford Expedition King Ranch · 100 mi of 07755</div>
+                <div className="h-9 px-3 rounded-md bg-blue-500 flex items-center text-xs font-medium text-white">Search</div>
+              </div>
+              {[
+                { t: "King Ranch", c: "Agate Black", m: "14 mi", p: "$78,420", d: "George Wall Ford" },
+                { t: "Platinum", c: "Star White", m: "22 mi", p: "$81,597", d: "Freehold Ford" },
+                { t: "King Ranch", c: "Carbonized Gray", m: "38 mi", p: "$77,540", d: "All American Ford" },
+              ].map((r, i) => (
+                <div key={i} className="flex items-center gap-3 p-2.5 mb-1.5 rounded-md bg-neutral-800/40 border border-white/5">
+                  <div className="w-12 h-9 rounded bg-gradient-to-br from-neutral-700 to-neutral-900 flex-shrink-0 flex items-center justify-center text-[9px] text-neutral-500">🚙</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-medium text-neutral-100">2026 Expedition {r.t}</div>
+                    <div className="text-[10px] text-neutral-500 font-mono">{r.c} · {r.m} · {r.d}</div>
+                  </div>
+                  <div className="text-[11px] font-semibold text-neutral-100 font-mono">{r.p}</div>
+                </div>
+              ))}
+              <div className="text-center text-[10px] text-neutral-500 mt-2">+ more results</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="px-6 py-24 border-t border-white/5">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-xs font-mono uppercase tracking-widest text-blue-400 mb-3">What&apos;s inside</div>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mb-14 max-w-2xl">Four tools. Built for how you actually work.</h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[
+              { t: "Live Search", b: "Live inventory from every dealer within 100 miles. Filter by trim, color, packages, distance to your customer." },
+              { t: "Lease Calculator", b: "Real money-factor math — rebates, residual, tax. Exact monthly payment in 15 seconds, with your profit shown." },
+              { t: "VIN Decode", b: "Paste a VIN, get the factory build sheet — every package, every option, original MSRP." },
+              { t: "Customer Profiles", b: "Save a customer's needs for 7 days. Walk back in with a personalized shortlist, not a guess." },
+            ].map((f) => (
+              <div key={f.t} className="rounded-xl border border-white/10 bg-white/[0.02] p-6 hover:bg-white/[0.04] transition">
+                <h3 className="text-lg font-semibold tracking-tight mb-2">{f.t}</h3>
+                <p className="text-sm text-neutral-400 leading-relaxed">{f.b}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="px-6 py-24 border-t border-white/5">
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="text-xs font-mono uppercase tracking-widest text-blue-400 mb-3">Pricing</div>
+          <h2 className="text-3xl md:text-4xl font-semibold tracking-tight mb-3">Priced for one office. Scales with your bench.</h2>
+          <p className="text-neutral-400 mb-12">No setup fees. 14-day free trial. Add or remove agents anytime.</p>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-left max-w-md mx-auto">
+            <div className="flex items-baseline gap-2 mb-1"><div className="text-5xl font-semibold tracking-tight">$100</div><div className="text-neutral-500">/mo per company</div></div>
+            <div className="text-sm text-neutral-400 mb-6">Owner account · everything included</div>
+            <div className="h-px bg-white/10 my-6" />
+            <div className="flex items-baseline gap-2 mb-1"><div className="text-3xl font-semibold tracking-tight">+ $15</div><div className="text-neutral-500">/mo per additional agent</div></div>
+            <div className="text-sm text-neutral-400 mb-8">Add a few. Add ten. Owner sees everyone&apos;s activity.</div>
+            <Link href="/signup" className="block w-full text-center py-2.5 rounded-md bg-white text-neutral-900 text-sm font-medium hover:bg-neutral-200 transition">Start free trial</Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="px-6 py-10 border-t border-white/5">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-neutral-500">
+          <div className="flex items-center gap-2"><div className="w-5 h-5 rounded bg-gradient-to-br from-blue-400 to-blue-600" /><span>FleetFinder · by RHD Reality Group</span></div>
+          <div>© 2026 — Oakhurst, NJ</div>
         </div>
       </footer>
-    </main>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  body,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-5 hover:shadow-md transition">
-      <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-3">
-        {icon}
-      </div>
-      <h3 className="font-heading font-semibold text-foreground mb-1.5">
-        {title}
-      </h3>
-      <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
     </div>
   );
 }
