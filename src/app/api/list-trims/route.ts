@@ -1,0 +1,135 @@
+// POST /api/list-trims — accurate, complete trim list for a make/model.
+//
+// REBUILT from the Base44 version, which was unreliable because it used the
+// listing facet as the source of truth (package-suffix noise, exact-match
+// failures, nationwide availability that didn't match the radius-capped
+// search, and a 30-day cache that could be poisoned by one empty response).
+//
+// New approach:
+//   1. SOURCE OF TRUTH = MarketCheck Vehicle Style catalog across a year
+//      window (currentYear+1 .. currentYear-3). Manufacturer-blessed, complete
+//      regardless of inventory, year-pinned. Title-cased + deduped.
+//   2. ENRICHMENT = listing facet (same make/model) provides availability +
+//      live count, matched to catalog trims by a canonical key so package
+//      suffixes don't fragment the list.
+//   3. Trims present only in the facet (not catalog) are still included, so
+//      nothing currently for sale is ever hidden.
+//   4. Errors are surfaced; empty/failed results are cached only briefly.
+
+import { NextResponse } from "next/server";
+import {
+  MC_HOST, mcKey, num, titleCase, canonicalTrimKey,
+} from "@/lib/marketcheck";
+import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+type Trim = { name: string; count: number; available: boolean; msrp?: number };
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const make = String(body.make || "").trim();
+  const model = String(body.model || "").trim();
+  if (!make) return NextResponse.json({ trims: [], error: "make required" }, { status: 400 });
+
+  const cacheKey = `trims::${make}::${model}`.toLowerCase();
+  if (!body.fresh) {
+    const hit = cacheGet<Trim[]>(cacheKey);
+    if (hit) return NextResponse.json({ trims: hit, cached: true, provider: "cache" });
+  }
+
+  const apiKey = mcKey();
+  if (!apiKey) {
+    return NextResponse.json(
+      { trims: [], provider: "none", error: "MARKETCHECK_API_KEY not set" },
+      { status: 500 },
+    );
+  }
+
+  try {
+    // ── 1. Catalog trims from Vehicle Style across a year window ───────────
+    const currentYear = new Date().getFullYear();
+    const years = model ? [currentYear + 1, currentYear, currentYear - 1, currentYear - 2, currentYear - 3] : [];
+    const byKey = new Map<string, Trim>();
+
+    const styleResults = await Promise.all(
+      years.map(async (yr) => {
+        try {
+          const u = new URL(`${MC_HOST}/vehicle/style/${yr}/${encodeURIComponent(make)}/${encodeURIComponent(model)}`);
+          u.searchParams.set("api_key", apiKey);
+          const r = await fetch(u.toString());
+          if (!r.ok) return [];
+          const d = await r.json();
+          return Array.isArray(d) ? d : Array.isArray(d.styles) ? d.styles : Array.isArray(d.results) ? d.results : [];
+        } catch {
+          return [];
+        }
+      }),
+    );
+
+    for (const arr of styleResults) {
+      for (const s of arr as any[]) {
+        const name = titleCase(s.trim || s.name || s.style);
+        if (!name) continue;
+        const key = canonicalTrimKey(name);
+        if (!key) continue;
+        const msrp = num(s.base_msrp || s.msrp);
+        const existing = byKey.get(key);
+        if (existing) {
+          // Keep the cleanest (shortest non-empty) display name; richest MSRP.
+          if (name.length < existing.name.length) existing.name = name;
+          if (!existing.msrp && msrp) existing.msrp = msrp;
+        } else {
+          byKey.set(key, { name, count: 0, available: false, msrp: msrp || undefined });
+        }
+      }
+    }
+
+    // ── 2. Availability + live counts from the listing facet ───────────────
+    const facetUrl = new URL(`${MC_HOST}/search/car/active`);
+    facetUrl.searchParams.set("api_key", apiKey);
+    facetUrl.searchParams.set("car_type", body.car_type || "new");
+    facetUrl.searchParams.set("make", make);
+    if (model) facetUrl.searchParams.set("model", model);
+    facetUrl.searchParams.set("rows", "0");
+    facetUrl.searchParams.set("facets", "trim|0|100|1");
+    const facetRes = await fetch(facetUrl.toString());
+    if (facetRes.ok) {
+      const fData = await facetRes.json();
+      const facetItems: any[] = fData.facets?.trim || [];
+      for (const t of facetItems) {
+        const rawName = String(t.item || "");
+        if (!rawName) continue;
+        const key = canonicalTrimKey(rawName);
+        const cnt = num(t.count);
+        const existing = byKey.get(key);
+        if (existing) {
+          existing.available = true;
+          existing.count += cnt;
+        } else {
+          // Trim exists in live inventory but not in the catalog window —
+          // include it so nothing for sale is hidden. Use a clean display.
+          byKey.set(key, { name: titleCase(rawName), count: cnt, available: true });
+        }
+      }
+    }
+
+    // ── 3. Sort: available first (by count desc), then the rest A-Z ────────
+    const all = [...byKey.values()];
+    const available = all.filter((t) => t.available).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const unavailable = all.filter((t) => !t.available).sort((a, b) => a.name.localeCompare(b.name));
+    const trims = [...available, ...unavailable];
+
+    // ── 4. Cache: real results 1 day, empty results only 1 min ────────────
+    cacheSet(cacheKey, trims, trims.length ? DAY : MIN);
+
+    return NextResponse.json({
+      trims,
+      cached: false,
+      provider: "marketcheck",
+      counts: { catalog: byKey.size, available: available.length },
+    });
+  } catch (e) {
+    return NextResponse.json({ trims: [], error: (e as Error).message }, { status: 502 });
+  }
+}
