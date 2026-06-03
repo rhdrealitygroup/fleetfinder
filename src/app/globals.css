@@ -1,30 +1,32 @@
 @import "tailwindcss";
 
-/* FleetFinder design system — same color palette as the Base44 site, ported
-   to Tailwind v4's @theme syntax. We use HSL channels (no comma format) so
-   /opacity modifiers work with Tailwind utilities (bg-primary/10, etc.). */
+/* FleetFinder design system — MODERN (dark, product-first). The direction Ray
+   chose. HSL channel format so /opacity modifiers work (bg-primary/10, etc.). */
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 9% 46%;
-  --border: 220 13% 91%;
-  --primary: 217 91% 60%;          /* FleetFinder blue (#2563EB-ish) */
+  --background: 0 0% 4%;            /* near-black app canvas */
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 64%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+  --primary: 217 91% 60%;          /* FleetFinder blue */
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 222 47% 11%;
-  --positive: 142 76% 36%;
-  --destructive: 0 84% 60%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 98%;
+  --positive: 152 60% 45%;
+  --warning: 38 92% 55%;
+  --destructive: 0 72% 51%;
   --ring: 217 91% 60%;
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 }
 
 @theme inline {
   --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
   --font-heading: var(--font-poppins), var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -32,16 +34,18 @@
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-positive: hsl(var(--positive));
+  --color-warning: hsl(var(--warning));
   --color-destructive: hsl(var(--destructive));
   --color-ring: hsl(var(--ring));
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 6px);
 }
 
 body {
@@ -52,10 +56,18 @@ body {
 
 .font-heading {
   font-family: var(--font-heading);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
-/* Tabular numerals — keeps tnum (prices, distances) lined up vertically */
+/* Tabular numerals — keeps prices/distances vertically aligned. */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* Subtle card-hover lift used on result cards. */
+.lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.lift:hover {
+  transform: translateY(-1px);
 }
