@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
-import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, makeHue } from "@/lib/inventory";
+import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue } from "@/lib/inventory";
 import { moneyShort } from "@/lib/format";
 import { useLocalCollection } from "@/lib/useLocalCollection";
 
@@ -43,6 +43,8 @@ export default function SearchPage() {
   const [radius, setRadius] = useState(100);
   const [maxMonthly, setMaxMonthly] = useState("");
   const [optionQuery, setOptionQuery] = useState("");
+  const [bodyType, setBodyType] = useState("");
+  const [drivetrain, setDrivetrain] = useState("");
 
   const [results, setResults] = useState<Vehicle[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -121,6 +123,7 @@ export default function SearchPage() {
           zip: zip.trim() || undefined, radius: effRadius,
           max_monthly: Number(maxMonthly) || undefined,
           option_query: optionQuery.trim() || undefined,
+          body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           features: [...features],
@@ -138,7 +141,7 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, optionQuery]);
+  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, optionQuery, bodyType, drivetrain]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -247,6 +250,11 @@ export default function SearchPage() {
 
       <Field label="Year"><select value={yearIdx} onChange={(e) => setYearIdx(Number(e.target.value))} className={selectCls}>{YEAR_RANGES.map((y, i) => <option key={y.label} value={i}>{y.label}</option>)}</select></Field>
       <Field label="Price"><select value={priceIdx} onChange={(e) => setPriceIdx(Number(e.target.value))} className={selectCls}>{PRICE_RANGES.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}</select></Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Body"><select value={bodyType} onChange={(e) => setBodyType(e.target.value)} className={selectCls}><option value="">Any</option>{BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}</select></Field>
+        <Field label="Drivetrain"><select value={drivetrain} onChange={(e) => setDrivetrain(e.target.value)} className={selectCls}><option value="">Any</option>{DRIVETRAINS.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
+      </div>
 
       <Field label="Max monthly payment">
         <div className="flex items-center rounded-lg border border-border bg-card focus-within:ring-2 focus-within:ring-ring/50">

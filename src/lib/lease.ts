@@ -98,6 +98,59 @@ export function estMonthly(price: number, msrp: number, residualPct = 58, moneyF
   return Math.round(r.baseMonthly);
 }
 
+export type FinanceInput = {
+  sellingPrice?: number;
+  apr?: number; // annual %
+  term?: number; // months
+  cashDown?: number;
+  tradeIn?: number;
+  rebates?: number;
+  fees?: number; // doc/reg/acq rolled in
+  taxRate?: number; // %
+};
+
+export type FinanceResult = {
+  taxedAmount: number;
+  amountFinanced: number;
+  monthly: number;
+  totalOfPayments: number;
+  totalInterest: number;
+  totalCost: number;
+};
+
+/** Standard amortized finance (loan) payment. */
+export function computeFinance(input: FinanceInput): FinanceResult {
+  const price = n(input.sellingPrice);
+  const term = n(input.term) || 72;
+  const apr = n(input.apr) / 100;
+  const r = apr / 12;
+  const down = n(input.cashDown);
+  const trade = n(input.tradeIn);
+  const rebates = n(input.rebates);
+  const fees = n(input.fees);
+  const taxRate = n(input.taxRate) / 100;
+
+  // Tax on price less trade-in (NJ-style), plus fees, minus cap reductions.
+  const taxable = Math.max(0, price - trade);
+  const tax = taxable * taxRate;
+  const amountFinanced = Math.max(0, price + fees + tax - down - trade - rebates);
+
+  const monthly = r > 0
+    ? (amountFinanced * r) / (1 - Math.pow(1 + r, -term))
+    : amountFinanced / term;
+  const totalOfPayments = monthly * term;
+  const totalInterest = totalOfPayments - amountFinanced;
+
+  return {
+    taxedAmount: tax,
+    amountFinanced,
+    monthly,
+    totalOfPayments,
+    totalInterest,
+    totalCost: down + trade + totalOfPayments,
+  };
+}
+
 export const TAX_METHODS = [
   { value: "monthly", label: "On monthly payment (NJ & most states)" },
   { value: "payments", label: "On total of payments — upfront (NY typically)" },

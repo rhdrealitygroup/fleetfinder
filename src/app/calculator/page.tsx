@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { AppNav } from "@/components/AppNav";
-import { computeLease, TAX_METHODS, type LeaseInput } from "@/lib/lease";
+import { computeLease, computeFinance, TAX_METHODS, type LeaseInput, type FinanceInput } from "@/lib/lease";
 import { money } from "@/lib/format";
 
 // Lease Calculator — real money-factor math. Dealer-sheet inputs on the left,
@@ -14,20 +14,34 @@ const DEFAULTS: LeaseInput = {
   upfrontFees: 700, cashDown: 0, rebates: 0, taxRate: 6.625, taxMethod: "monthly",
 };
 
+const FIN_DEFAULTS: FinanceInput = { sellingPrice: 57000, apr: 6.9, term: 72, cashDown: 0, tradeIn: 0, rebates: 0, fees: 700, taxRate: 6.625 };
+
 export default function CalculatorPage() {
+  const [mode, setMode] = useState<"lease" | "finance">("lease");
   const [v, setV] = useState<LeaseInput>(DEFAULTS);
   const set = (k: keyof LeaseInput, val: number | string) => setV((p) => ({ ...p, [k]: val }));
   const r = useMemo(() => computeLease(v), [v]);
+  const [f, setF] = useState<FinanceInput>(FIN_DEFAULTS);
+  const setFin = (k: keyof FinanceInput, val: number) => setF((p) => ({ ...p, [k]: val }));
+  const fr = useMemo(() => computeFinance(f), [f]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppNav />
       <main className="max-w-5xl mx-auto p-5">
-        <div className="mb-6">
-          <h1 className="font-heading text-2xl font-bold">Lease Calculator</h1>
-          <p className="text-sm text-muted-foreground">Enter the dealer numbers — see the customer&apos;s exact monthly and your profit.</p>
+        <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="font-heading text-2xl font-bold">{mode === "lease" ? "Lease" : "Finance"} Calculator</h1>
+            <p className="text-sm text-muted-foreground">{mode === "lease" ? "Dealer numbers → customer monthly + your profit." : "Loan terms → monthly payment, interest, total cost."}</p>
+          </div>
+          <div className="flex rounded-lg border border-border overflow-hidden text-sm">
+            {(["lease", "finance"] as const).map((m) => (
+              <button key={m} onClick={() => setMode(m)} className={`px-4 py-1.5 capitalize transition ${mode === m ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}>{m}</button>
+            ))}
+          </div>
         </div>
 
+        {mode === "lease" && (
         <div className="grid lg:grid-cols-[1.3fr_1fr] gap-6">
           {/* Inputs */}
           <div className="space-y-6">
@@ -92,6 +106,41 @@ export default function CalculatorPage() {
             </div>
           </div>
         </div>
+        )}
+
+        {mode === "finance" && (
+          <div className="grid lg:grid-cols-[1.3fr_1fr] gap-6">
+            <div className="space-y-6">
+              <Section title="Loan">
+                <Num label="Selling price" value={f.sellingPrice} onChange={(n) => setFin("sellingPrice", n)} prefix="$" />
+                <Num label="APR" value={f.apr} step={0.01} onChange={(n) => setFin("apr", n)} suffix="%" />
+                <Num label="Term (months)" value={f.term} onChange={(n) => setFin("term", n)} />
+                <Num label="Fees (doc / reg)" value={f.fees} onChange={(n) => setFin("fees", n)} prefix="$" />
+              </Section>
+              <Section title="Down, trade & tax">
+                <Num label="Cash down" value={f.cashDown} onChange={(n) => setFin("cashDown", n)} prefix="$" />
+                <Num label="Trade-in value" value={f.tradeIn} onChange={(n) => setFin("tradeIn", n)} prefix="$" />
+                <Num label="Rebates" value={f.rebates} onChange={(n) => setFin("rebates", n)} prefix="$" />
+                <Num label="Tax rate" value={f.taxRate} step={0.001} onChange={(n) => setFin("taxRate", n)} suffix="%" />
+              </Section>
+            </div>
+            <div className="lg:sticky lg:top-[73px] h-fit space-y-4">
+              <div className="rounded-xl border border-primary/40 bg-primary/5 p-6">
+                <div className="text-xs font-mono uppercase tracking-widest text-primary mb-1">Monthly payment</div>
+                <div className="text-5xl font-bold tnum">{money(fr.monthly)}<span className="text-lg text-muted-foreground font-normal">/mo</span></div>
+                <div className="text-sm text-muted-foreground mt-2 tnum">{f.term} months · {money(fr.amountFinanced)} financed</div>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-5 text-sm space-y-1.5">
+                <div className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-2">Breakdown</div>
+                <Row label="Sales tax" value={money(fr.taxedAmount)} />
+                <Row label="Amount financed" value={money(fr.amountFinanced)} />
+                <Row label="Total of payments" value={money(fr.totalOfPayments)} />
+                <Row label="Total interest" value={money(fr.totalInterest)} />
+                <Row label="Total cost (incl. down + trade)" value={money(fr.totalCost)} />
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
