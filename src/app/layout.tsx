@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import { Inter, Poppins } from "next/font/google";
+import { Inter, Poppins, Newsreader, Bebas_Neue, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-// Same font choices as the Base44 site for visual continuity. Inter for body,
-// Poppins for headings.
+// Body + heading fonts (default landing + product UI).
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -12,6 +11,26 @@ const poppins = Poppins({
   variable: "--font-poppins",
   subsets: ["latin"],
   weight: ["500", "600", "700", "800"],
+});
+
+// Additional fonts used by the /preview design options.
+// Newsreader — editorial / trade-journal direction (serif).
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+});
+// Bebas Neue — automotive / industrial direction (heavy condensed display).
+const bebas = Bebas_Neue({
+  variable: "--font-bebas",
+  subsets: ["latin"],
+  weight: ["400"],
+});
+// JetBrains Mono — monospace details (VINs, prices) across all directions.
+const mono = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://fleetfinder.vercel.app";
@@ -41,7 +60,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${poppins.variable} h-full antialiased`}
+      className={`${inter.variable} ${poppins.variable} ${newsreader.variable} ${bebas.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}

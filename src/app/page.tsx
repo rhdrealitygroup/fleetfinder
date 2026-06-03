@@ -40,7 +40,17 @@ export default function HomePage() {
         </div>
 
         <div className="mt-12 text-xs text-muted-foreground">
-          $75/mo per company · $15/mo per additional agent · No setup fees
+          $100/mo per company · $15/mo per additional agent · No setup fees
+        </div>
+
+        {/* Internal: link to the design previews (Ray picks one of three) */}
+        <div className="mt-6">
+          <Link
+            href="/preview"
+            className="text-xs text-muted-foreground underline hover:text-foreground transition"
+          >
+            (design previews — Ray, pick one)
+          </Link>
         </div>
       </section>
 
