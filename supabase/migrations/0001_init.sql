@@ -10,16 +10,7 @@
 -- ─── Extensions ────────────────────────────────────────────────────────────
 create extension if not exists "pgcrypto";
 
--- ─── Helper: orgs the current user belongs to ──────────────────────────────
-create or replace function public.my_org_ids()
-returns setof uuid
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select org_id from public.memberships where user_id = auth.uid()
-$$;
+-- (Helper function my_org_ids() is defined after the tables it references.)
 
 -- ─── profiles (1:1 with auth.users) ────────────────────────────────────────
 create table if not exists public.profiles (
@@ -59,6 +50,18 @@ create table if not exists public.memberships (
 );
 create index if not exists memberships_user_idx on public.memberships(user_id);
 create index if not exists memberships_org_idx  on public.memberships(org_id);
+
+-- ─── Helper: orgs the current user belongs to (defined now that memberships
+--     exists; used by the RLS policies below) ───────────────────────────────
+create or replace function public.my_org_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select org_id from public.memberships where user_id = auth.uid()
+$$;
 
 -- ─── customers (7-day customer profile vault — desking feature) ─────────────
 create table if not exists public.customers (
