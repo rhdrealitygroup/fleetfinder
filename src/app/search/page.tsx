@@ -102,7 +102,9 @@ export default function SearchPage() {
       return n;
     });
 
-  const runSearch = useCallback(async () => {
+  const runSearch = useCallback(async (opts?: { radiusOverride?: number }) => {
+    const effRadius = opts?.radiusOverride ?? radius;
+    if (opts?.radiusOverride) setRadius(opts.radiusOverride);
     setSearching(true);
     setError("");
     setOpen(null);
@@ -114,7 +116,7 @@ export default function SearchPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant,
-          zip: zip.trim() || undefined, radius,
+          zip: zip.trim() || undefined, radius: effRadius,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           features: [...features],
@@ -333,7 +335,13 @@ export default function SearchPage() {
           {results !== null && !searching && sorted.length === 0 && !error && (
             <div className="text-center py-24 text-muted-foreground">
               <p className="text-lg font-medium text-foreground mb-1">No matches</p>
-              <p className="text-sm">Try a different trim, widen the year/price, or drop a feature filter.</p>
+              <p className="text-sm mb-5">Try a different trim, widen the year/price, or drop a feature filter.</p>
+              {radius < 100 && (
+                <button onClick={() => runSearch({ radiusOverride: 100 })}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">
+                  <MapPin className="w-4 h-4" /> Search wider — within 100 mi{zip ? ` of ${zip}` : ""}
+                </button>
+              )}
             </div>
           )}
 
