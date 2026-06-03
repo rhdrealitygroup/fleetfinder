@@ -1,4 +1,5 @@
 import { DesignSwitcher } from "../DesignSwitcher";
+import { MockMobileFilters } from "../MockMobileFilters";
 import { PREVIEW_VEHICLES, money } from "@/lib/previewVehicles";
 import { makeHue } from "@/lib/inventory";
 
@@ -18,9 +19,10 @@ export default function Rolodex() {
         <div className="text-sm text-neutral-500">GMC Sierra EV · Denali · Max Range — <span className="text-neutral-900 font-medium">22 results</span></div>
         <div className="ml-auto text-sm px-3 py-1.5 rounded-lg border border-neutral-300">Filters</div>
       </header>
+      <MockMobileFilters tone="light" />
       <div className="flex flex-1 min-h-0">
         {/* list */}
-        <div className="w-[340px] border-r border-neutral-200 overflow-y-auto bg-white">
+        <div className="w-full md:w-[340px] border-r border-neutral-200 overflow-y-auto bg-white">
           {PREVIEW_VEHICLES.map((v, i) => (
             <div key={v.id} className={`px-4 py-3 border-b border-neutral-100 cursor-pointer ${i === 1 ? "bg-blue-50 border-l-2 border-l-blue-600" : "hover:bg-neutral-50"}`}>
               <div className="flex items-center justify-between"><div className="font-semibold text-sm">{v.year} {v.make} {v.model}</div><div className="font-bold text-sm tabular-nums">{money(v.price)}</div></div>

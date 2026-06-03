@@ -1,4 +1,5 @@
 import { DesignSwitcher } from "../DesignSwitcher";
+import { MockMobileFilters } from "../MockMobileFilters";
 import { PREVIEW_VEHICLES, PREVIEW_TRIMS, money } from "@/lib/previewVehicles";
 
 export const metadata = { title: "Design — Terminal" };
@@ -14,9 +15,10 @@ export default function Terminal() {
         <span>SEARCH</span><span className="text-neutral-700">CALC</span><span className="text-neutral-700">SAVED</span>
         <span className="ml-auto">142,118 LIVE · 07755 · R100MI</span>
       </div>
-      <div className="grid grid-cols-[180px_1fr]">
-        {/* filter rail */}
-        <div className="border-r border-white/10 p-3 text-[12px] space-y-3 min-h-[80vh]">
+      <MockMobileFilters tone="terminal" />
+      <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr]">
+        {/* filter rail (desktop) */}
+        <div className="hidden lg:block border-r border-white/10 p-3 text-[12px] space-y-3 min-h-[80vh]">
           <Row k="MAKE" v="GMC" />
           <Row k="MODEL" v="Sierra EV" />
           <div>

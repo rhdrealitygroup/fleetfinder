@@ -1,4 +1,5 @@
 import { DesignSwitcher } from "../DesignSwitcher";
+import { MockMobileFilters } from "../MockMobileFilters";
 import { PREVIEW_VEHICLES, money } from "@/lib/previewVehicles";
 import { makeHue } from "@/lib/inventory";
 
@@ -16,6 +17,7 @@ export default function Showroom() {
         <div className="text-sm font-medium text-neutral-500">GMC Sierra EV — Denali — Max Range</div>
         <div className="text-sm px-4 py-2 rounded-full bg-neutral-900 text-white font-medium">Filters</div>
       </header>
+      <MockMobileFilters tone="light" />
       <div className="max-w-6xl mx-auto px-6 py-10 space-y-6">
         <div className="flex items-baseline justify-between">
           <h1 className="text-3xl font-black tracking-tight">22 matches<span className="text-neutral-400 font-medium text-lg ml-3">within 100 mi</span></h1>

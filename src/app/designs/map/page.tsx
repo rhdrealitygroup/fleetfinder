@@ -1,4 +1,5 @@
 import { DesignSwitcher } from "../DesignSwitcher";
+import { MockMobileFilters } from "../MockMobileFilters";
 import { PREVIEW_VEHICLES, money } from "@/lib/previewVehicles";
 
 export const metadata = { title: "Design — Map split" };
@@ -19,6 +20,7 @@ export default function MapSplit() {
           <span className="px-3 py-1.5 rounded-lg bg-blue-600 text-white">22 results</span>
         </div>
       </header>
+      <MockMobileFilters tone="light" />
       <div className="flex flex-1 min-h-0">
         {/* list */}
         <div className="w-full lg:w-[44%] overflow-y-auto border-r border-neutral-200">

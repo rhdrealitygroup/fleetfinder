@@ -1,4 +1,5 @@
 import { DesignSwitcher } from "../DesignSwitcher";
+import { MockMobileFilters } from "../MockMobileFilters";
 import { PREVIEW_VEHICLES, money } from "@/lib/previewVehicles";
 import { makeHue } from "@/lib/inventory";
 
@@ -12,6 +13,7 @@ export default function Gallery() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F6F4EF", color: "#1c1917" }}>
       <DesignSwitcher active="gallery" />
+      <MockMobileFilters tone="light" />
       <header className="px-8 py-6 flex items-center justify-between max-w-7xl mx-auto">
         <div className="text-2xl font-bold tracking-tight" style={serif}>FleetFinder</div>
         <nav className="hidden sm:flex gap-6 text-sm text-stone-500">
