@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search, SlidersHorizontal, ArrowUpDown, Star, Building2, X, Check,
-  Award, GitCompare, Loader2, ExternalLink, FileText,
+  Award, GitCompare, Loader2, ExternalLink, FileText, MapPin,
 } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
@@ -39,6 +39,8 @@ export default function SearchPage() {
   const [priceIdx, setPriceIdx] = useState(0);
   const [features, setFeatures] = useState<Set<string>>(new Set());
   const [carType, setCarType] = useState<"new" | "used">("new");
+  const [zip, setZip] = useState("");
+  const [radius, setRadius] = useState(100);
 
   const [results, setResults] = useState<Vehicle[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -112,6 +114,7 @@ export default function SearchPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant,
+          zip: zip.trim() || undefined, radius,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           features: [...features],
@@ -129,7 +132,7 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType]);
+  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType, zip, radius]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -157,6 +160,26 @@ export default function SearchPage() {
             {t}
           </button>
         ))}
+      </div>
+
+      {/* Customer location — search around the customer's ZIP */}
+      <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-primary font-medium">
+          <MapPin className="w-3.5 h-3.5" /> Customer location
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text" inputMode="numeric" maxLength={5} placeholder="ZIP code"
+            value={zip}
+            onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+            className="flex-1 min-w-0 rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+          />
+          <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}
+            className="rounded-lg border border-border bg-card px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50">
+            {[25, 50, 75, 100].map((r) => <option key={r} value={r}>{r} mi</option>)}
+          </select>
+        </div>
+        <p className="text-[11px] text-muted-foreground">{zip ? `Searching within ${radius} mi of ${zip}.` : "Leave blank to search near Oakhurst, NJ."}</p>
       </div>
 
       <Field label="Make">
@@ -262,8 +285,8 @@ export default function SearchPage() {
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div className="text-sm text-muted-foreground">
                 <span className="text-foreground font-semibold">{total || sorted.length}</span> matches
-                {provider && <span className="ml-2 text-xs">· via {provider}</span>}
-                {truncated && <span className="ml-2 text-xs text-warning">· showing first {sorted.length}, refine to narrow</span>}
+                {zip ? <span className="ml-1">within {radius} mi of {zip}</span> : <span className="ml-1">near Oakhurst, NJ</span>}
+                {truncated && <span className="ml-2 text-xs text-warning">· showing first {sorted.length}</span>}
               </div>
               <div className="flex items-center gap-2">
                 {compare.size > 0 && (

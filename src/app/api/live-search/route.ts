@@ -13,11 +13,13 @@ import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function summarize(body: any) {
-  return [
+  const base = [
     body.year_min && `${body.year_min}+`, body.make, body.model, body.trim, body.body_type,
     body.drivetrain, body.powertrain_type, body.exterior_color,
     body.price_max && `≤$${body.price_max}`, body.miles_max && `<${body.miles_max}mi`,
   ].filter(Boolean).join(" ") || "all new cars";
+  const loc = body.zip ? ` · within ${Math.min(100, Number(body.radius) || 100)}mi of ${body.zip}` : "";
+  return base + loc;
 }
 
 function cacheKeyFor(body: any) {
@@ -34,6 +36,8 @@ function cacheKeyFor(body: any) {
     powertrain_type: body.powertrain_type || "", body_type: body.body_type || "",
     drivetrain: body.drivetrain || "", exterior_color: body.exterior_color || "",
     features: Array.isArray(body.features) ? [...body.features].sort() : [],
+    zip: (body.zip || "").toString().trim(),
+    radius: Math.min(100, Number(body.radius) || 100),
     lat: Math.round(Number(body.latitude || DEFAULT_LAT) * 10) / 10,
     lng: Math.round(Number(body.longitude || DEFAULT_LNG) * 10) / 10,
   };
@@ -52,6 +56,11 @@ export async function POST(req: Request) {
   // → MC "Ram 1500 Pickup") actually return results instead of zero.
   const mcModel = body.model && marketKey ? await resolveModel(body.make, body.model) : body.model;
 
+  // Customer location: search around their ZIP. Radius is capped at 100mi
+  // (MarketCheck Free-tier limit). Falls back to the Oakhurst NJ default.
+  const zip = String(body.zip || "").trim();
+  const radius = Math.min(100, Number(body.radius) || RADIUS_MILES);
+
   // ── Cache check (1h) ────────────────────────────────────────────────────
   const ckey = cacheKeyFor(body);
   if (!body.fresh) {
@@ -68,11 +77,14 @@ export async function POST(req: Request) {
       const url = new URL(`${MC_HOST}/search/car/active`);
       url.searchParams.set("api_key", marketKey);
       url.searchParams.set("car_type", body.car_type || "new");
-      const lat = body.latitude || DEFAULT_LAT;
-      const lng = body.longitude || DEFAULT_LNG;
-      url.searchParams.set("latitude", String(lat));
-      url.searchParams.set("longitude", String(lng));
-      url.searchParams.set("radius", String(RADIUS_MILES));
+      if (zip) {
+        // Center on the customer's ZIP (MarketCheck geocodes it).
+        url.searchParams.set("zip", zip);
+      } else {
+        url.searchParams.set("latitude", String(body.latitude || DEFAULT_LAT));
+        url.searchParams.set("longitude", String(body.longitude || DEFAULT_LNG));
+      }
+      url.searchParams.set("radius", String(radius));
       url.searchParams.set("sort_by", "distance");
       url.searchParams.set("sort_order", "asc");
       if (body.vin) url.searchParams.set("vin", String(body.vin).toUpperCase().trim());
@@ -146,8 +158,14 @@ export async function POST(req: Request) {
   let total = 0;
   let provider = "";
   let note = "";
+  // When the agent enters a customer ZIP, go straight to MarketCheck — it
+  // geocodes ZIP natively; Auto.dev only takes lat/lng.
+  const preferMarketCheck = !!zip && !!marketKey;
   try {
-    if (autoKey) {
+    if (preferMarketCheck) {
+      const r = await searchMarketCheck();
+      results = r.results; total = r.total; provider = "marketcheck";
+    } else if (autoKey) {
       const r = await searchAutoDev();
       results = r.results; total = r.total; provider = "auto.dev";
       if (r.rateLimited && marketKey) {
