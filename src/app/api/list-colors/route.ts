@@ -2,7 +2,7 @@
 // MarketCheck facet, deduped across dealer spelling variants. Ported from Base44.
 
 import { NextResponse } from "next/server";
-import { MC_HOST, mcKey, num } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -26,8 +26,9 @@ export async function POST(req: Request) {
     const url = new URL(`${MC_HOST}/search/car/active`);
     url.searchParams.set("api_key", apiKey);
     url.searchParams.set("car_type", body.car_type || "new");
+    const mcModel = model ? await resolveModel(make, model) : model;
     url.searchParams.set("make", make);
-    if (model) url.searchParams.set("model", model);
+    if (mcModel) url.searchParams.set("model", mcModel);
     url.searchParams.set("rows", "0");
     url.searchParams.set("facets", "exterior_color|0|100|1");
     const res = await fetch(url.toString());

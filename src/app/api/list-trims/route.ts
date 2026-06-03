@@ -19,10 +19,15 @@
 import { NextResponse } from "next/server";
 import {
   MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
+  isNoiseVariant, resolveModel,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+// Live data — never let Next cache upstream MarketCheck responses.
+export const fetchCache = "force-no-store";
+export const dynamic = "force-dynamic";
 
 type Variant = { label: string; count: number };
 type Trim = { name: string; count: number; available: boolean; msrp?: number; variants?: Variant[] };
@@ -47,6 +52,9 @@ export async function POST(req: Request) {
     );
   }
 
+  // Resolve to MarketCheck's actual model string (RAM "1500" → "Ram 1500 Pickup").
+  const mcModel = model ? await resolveModel(make, model) : model;
+
   try {
     // ── 1. Catalog trims from Vehicle Style across a year window ───────────
     const currentYear = new Date().getFullYear();
@@ -56,7 +64,7 @@ export async function POST(req: Request) {
     const styleResults = await Promise.all(
       years.map(async (yr) => {
         try {
-          const u = new URL(`${MC_HOST}/vehicle/style/${yr}/${encodeURIComponent(make)}/${encodeURIComponent(model)}`);
+          const u = new URL(`${MC_HOST}/vehicle/style/${yr}/${encodeURIComponent(make)}/${encodeURIComponent(mcModel)}`);
           u.searchParams.set("api_key", apiKey);
           const r = await fetch(u.toString());
           if (!r.ok) return [];
@@ -91,10 +99,10 @@ export async function POST(req: Request) {
     facetUrl.searchParams.set("api_key", apiKey);
     facetUrl.searchParams.set("car_type", body.car_type || "new");
     facetUrl.searchParams.set("make", make);
-    if (model) facetUrl.searchParams.set("model", model);
+    if (mcModel) facetUrl.searchParams.set("model", mcModel);
     facetUrl.searchParams.set("rows", "0");
     facetUrl.searchParams.set("facets", "trim|0|100|1");
-    const facetRes = await fetch(facetUrl.toString());
+    const facetRes = await fetch(facetUrl.toString(), { cache: "no-store" });
     if (facetRes.ok) {
       const fData = await facetRes.json();
       const facetItems: any[] = fData.facets?.trim || [];
@@ -125,7 +133,7 @@ export async function POST(req: Request) {
       vUrl.searchParams.set("api_key", apiKey);
       vUrl.searchParams.set("car_type", body.car_type || "new");
       vUrl.searchParams.set("make", make);
-      if (model) vUrl.searchParams.set("model", model);
+      if (mcModel) vUrl.searchParams.set("model", mcModel);
       vUrl.searchParams.set("rows", "0");
       vUrl.searchParams.set("facets", "version|0|200|1");
       const vRes = await fetch(vUrl.toString());
@@ -144,7 +152,7 @@ export async function POST(req: Request) {
           }
           if (!bestTrim) continue;
           const label = parseVariant(version, bestTrim.name);
-          if (!label) continue;
+          if (!label || isNoiseVariant(label)) continue;
           const tk = canonicalTrimKey(bestTrim.name);
           if (!versionsByTrimKey.has(tk)) versionsByTrimKey.set(tk, new Map());
           const m = versionsByTrimKey.get(tk)!;

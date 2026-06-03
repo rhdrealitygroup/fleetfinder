@@ -2,6 +2,8 @@
 // Ported and consolidated from the Base44 backend functions, with the trim
 // logic rebuilt (see list-trims route) to fix the long-standing bugs.
 
+import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
+
 export const MC_HOST = "https://api.marketcheck.com/v2";
 export const AUTO_DEV_HOST = "https://api.auto.dev";
 
@@ -17,8 +19,10 @@ export const PAGE_SIZE = 50;
 
 export const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// Capitalize each alphabetic run — handles "Mercedes-Benz", "Big Horn/Lone
+// Star", "F-Pace" correctly (the old \w\S* version lowercased after / and -).
 export const titleCase = (s: unknown) =>
-  !s ? "" : String(s).replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  !s ? "" : String(s).replace(/[a-zA-Z]+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
 // Ensure a URL is clickable. Providers sometimes return bare domains or
 // protocol-relative paths.
@@ -96,21 +100,95 @@ const VERSION_NOISE = [
 // Common automotive trim acronyms that should stay uppercase (titleCase would
 // mangle "AT4" → "At4", "XLT" → "Xlt"). Plus any short token containing a digit.
 const TRIM_ACRONYMS = new Set([
-  "XL", "XLT", "STX", "SLE", "SLT", "GT", "RST", "TRD", "SR", "SR5", "SE", "SEL",
-  "LE", "LX", "EX", "SX", "RS", "LT", "LTZ", "GLI", "GTI", "SS", "SV", "SL", "SHO",
-  "AT4", "ZR2", "Z71", "TRX", "GLE", "GLB", "GLC", "GLA", "CLA", "AMG", "S", "RT",
+  "XL", "XLT", "XLE", "XSE", "STX", "SLE", "SLT", "GT", "RST", "TRD", "SR", "SR5",
+  "SE", "SEL", "LE", "LX", "EX", "EXL", "EX-L", "SX", "RS", "LT", "LTZ", "GLI",
+  "GTI", "SS", "SV", "SL", "SHO", "AT4", "ZR2", "Z71", "TRX", "GLE", "GLB", "GLC",
+  "GLA", "CLA", "AMG", "S", "RT", "WT", "EV", "SRT", "RHO", "TRX", "GT", "Z",
 ]);
+// Mercedes / EQ family prefixes that glue to a number ("Gle350" → "GLE 350").
+const MB_PREFIX = /^(gle|glc|gls|gla|glb|eqs|eqe|eqb|cla|cls|amg|sl)$/i;
+
+function prettyToken(w: string): string {
+  const u = w.toUpperCase();
+  if (TRIM_ACRONYMS.has(u)) return u;                 // EX-L, XLE, AT4…
+  if (w.includes("-")) return w.split("-").map(prettyToken).join("-");
+  // Mercedes-style letters+digits(+letter): Gle350 → GLE 350, Gle450e → GLE 450e
+  let m = /^([A-Za-z]{2,4})(\d{2,4})([A-Za-z]?)$/.exec(w);
+  if (m && MB_PREFIX.test(m[1])) return m[1].toUpperCase() + " " + m[2] + (m[3] ? m[3].toLowerCase() : "");
+  // BMW/Audi number+letter: 330I → 330i, 530E → 530e
+  m = /^(\d{2,4})([a-zA-Z])$/.exec(w);
+  if (m) return m[1] + m[2].toLowerCase();
+  if (/\d/.test(w) && w.length <= 4) return u;          // Z71, SR5, 4WT
+  return w;
+}
+
 export function prettyTrim(s: string): string {
-  return String(s || "")
-    .split(/\s+/)
-    .map((w) => {
-      const u = w.toUpperCase();
-      if (/\d/.test(w) && w.length <= 4) return u;
-      if (TRIM_ACRONYMS.has(u)) return u;
-      return w;
-    })
-    .join(" ")
-    .trim();
+  return String(s || "").split(/\s+/).map(prettyToken).join(" ").trim();
+}
+
+// Drop "variants" that are really bed/wheelbase/config noise, not real choices.
+export function isNoiseVariant(label: string): boolean {
+  const l = label.toLowerCase();
+  if (l.includes("|")) return true;                        // facet artifact
+  if (/['‘’"“”]/.test(label)) return true;                 // 5'7", 6'4", 8' (bed)
+  if (/\b(box|bed|lwb|swb|cwb|wb)\b/.test(l)) return true; // bed / wheelbase
+  if (/flareside|styleside|fleetside|chassis|cutaway/.test(l)) return true;
+  if (/\d\s*-?\s*(in|ft|")\b/.test(l)) return true;        // 145 in, 145-in
+  if (/\d\s*1\/2/.test(l)) return true;                    // 5-1/2
+  if (/^[\d\s.\-]+$/.test(l)) return true;                 // pure numbers
+  return false;
+}
+
+// Resolve our catalog model name to MarketCheck's actual model string. MC lists
+// some models differently (RAM "1500" → "Ram 1500 Pickup"), so an exact query
+// returns nothing. We look up the make's model facet, prefer an exact match,
+// else the highest-count model that contains our name. Cached 1 day.
+// Known catalog→MarketCheck model-name mismatches. Checked first so these are
+// deterministic and never depend on the (occasionally flaky) live facet lookup.
+const MODEL_ALIASES: Record<string, string> = {
+  "ram::1500": "Ram 1500 Pickup",
+  "ram::2500": "Ram 2500 Pickup",
+  "ram::3500": "Ram 3500 Pickup",
+  "ram::1500 classic": "Ram 1500 Classic",
+  "ram::promaster": "ProMaster Cargo Van",
+};
+
+export async function resolveModel(make: string, model: string): Promise<string> {
+  const apiKey = mcKey();
+  if (!apiKey || !make || !model) return model;
+  const aliasKey = `${make}::${model}`.toLowerCase();
+  if (MODEL_ALIASES[aliasKey]) return MODEL_ALIASES[aliasKey];
+  const ck = `resolvemodel::${make}::${model}`.toLowerCase();
+  const hit = cacheGet<string>(ck);
+  if (hit) return hit;
+  try {
+    const u = new URL(`${MC_HOST}/search/car/active`);
+    u.searchParams.set("api_key", apiKey);
+    u.searchParams.set("make", make);
+    u.searchParams.set("rows", "0");
+    u.searchParams.set("facets", "model|0|80|1");
+    const r = await fetch(u.toString(), { cache: "no-store" });
+    if (!r.ok) return model;
+    const d = await r.json();
+    const items = (d.facets?.model || []) as { item: string; count: number }[];
+    const ml = model.toLowerCase();
+    let best = items.find((i) => i.item.toLowerCase() === ml);
+    if (!best) {
+      const cands = items
+        .filter((i) => i.item.toLowerCase().includes(ml))
+        .sort((a, b) => b.count - a.count);
+      best = cands[0];
+    }
+    // Only cache a real hit — never poison the cache with the fallback (which
+    // can happen if MarketCheck soft-rate-limits and returns an empty facet).
+    if (best) {
+      cacheSet(ck, best.item, DAY);
+      return best.item;
+    }
+    return model;
+  } catch {
+    return model;
+  }
 }
 
 // Fix known MarketCheck source typos in config/range labels.

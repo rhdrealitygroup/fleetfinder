@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
   MAX_RESULTS, PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
-  type UnifiedVehicle,
+  resolveModel, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 
@@ -48,6 +48,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No search API key configured" }, { status: 500 });
   }
 
+  // Resolve to MarketCheck's model string so brands like RAM (catalog "1500"
+  // → MC "Ram 1500 Pickup") actually return results instead of zero.
+  const mcModel = body.model && marketKey ? await resolveModel(body.make, body.model) : body.model;
+
   // ── Cache check (1h) ────────────────────────────────────────────────────
   const ckey = cacheKeyFor(body);
   if (!body.fresh) {
@@ -73,7 +77,7 @@ export async function POST(req: Request) {
       url.searchParams.set("sort_order", "asc");
       if (body.vin) url.searchParams.set("vin", String(body.vin).toUpperCase().trim());
       if (body.make) url.searchParams.set("make", body.make);
-      if (body.model) url.searchParams.set("model", body.model);
+      if (mcModel) url.searchParams.set("model", mcModel);
       if (body.trim) url.searchParams.set("trim", body.trim);
       if (body.year_min || body.year_max) url.searchParams.set("year_range", `${body.year_min || 2020}-${body.year_max || 2027}`);
       if (body.price_min || body.price_max) url.searchParams.set("price_range", `${body.price_min || 0}-${body.price_max || 999999}`);
