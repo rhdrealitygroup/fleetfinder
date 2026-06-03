@@ -475,7 +475,7 @@ function DetailPanel({ v, onClose, saved, onSave }: { v: Vehicle; onClose: () =>
             <Spec label="Price" value={moneyShort(v.price)} />
             <Spec label="Est. monthly" value={v.est_monthly > 0 ? `${moneyShort(v.est_monthly)}/mo` : "—"} />
             <Spec label="Exterior" value={v.exterior_color || "—"} />
-            <Spec label="Mileage" value={v.mileage > 0 ? `${v.mileage.toLocaleString()} mi` : "New"} />
+            {decode?.interior_color ? <Spec label="Interior" value={decode.interior_color} /> : <Spec label="Mileage" value={v.mileage > 0 ? `${v.mileage.toLocaleString()} mi` : "New"} />}
           </div>
           {v.features.length > 0 && (
             <div><div className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-2">Highlights</div>

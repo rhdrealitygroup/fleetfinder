@@ -10,7 +10,11 @@ import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
 
 function normalizeNeoVin(vin: string, raw: any) {
   const build = raw.build || raw || {};
-  const installed: any[] = Array.isArray(raw.installed_equipment) ? raw.installed_equipment
+  // NeoVIN's real per-VIN factory options live in installed_options_details
+  // (named, with MSRP). installed_equipment is a category dict, not the options
+  // list — so prefer the details array.
+  const installed: any[] = Array.isArray(raw.installed_options_details) ? raw.installed_options_details
+    : Array.isArray(raw.installed_equipment) ? raw.installed_equipment
     : Array.isArray(build.installed_equipment) ? build.installed_equipment
     : Array.isArray(raw.options) ? raw.options : [];
 
@@ -18,27 +22,32 @@ function normalizeNeoVin(vin: string, raw: any) {
   const options: any[] = [];
   for (const item of installed) {
     const name = item.name || item.description || item.option_name || "";
+    if (!name) continue;
     const code = item.code || item.option_code || item.oem_code || "";
     const category = String(item.category || item.option_type || "").toLowerCase();
-    const isPackage = /package|pkg|group/i.test(name) || /package|pkg|group/i.test(category);
+    const isPackage = /package|pkg|group|edition/i.test(name) || /package|pkg|group/i.test(category);
     const entry = {
       code,
       name: titleCase(name).replace(/\bPkg\b/g, "Package"),
-      description: item.description || "",
-      msrp: num(item.msrp || item.price),
+      msrp: num(item.msrp || item.price || item.sale_price),
     };
     if (isPackage) packages.push(entry);
-    else if (name) options.push(entry);
+    else options.push(entry);
   }
+
+  const interior = raw.interior_color || {};
+  const interior_color = interior.name || interior.base || titleCase(build.interior_color) || "";
 
   return {
     vin,
     year: num(build.year), make: titleCase(build.make), model: titleCase(build.model),
-    trim: titleCase(build.trim || build.style), msrp: num(build.base_msrp || build.msrp),
+    trim: titleCase(build.trim || build.style), msrp: num(raw.msrp || raw.combined_msrp || build.base_msrp || build.msrp),
     transmission: titleCase(build.transmission), drivetrain: build.drivetrain || "",
     engine: titleCase(build.engine), fuel_type: titleCase(build.fuel_type),
     body_type: titleCase(build.body_type), doors: num(build.doors),
-    seating: num(build.std_seating || build.seating),
+    seating: num(build.seating_capacity || build.std_seating || build.seating),
+    interior_color,
+    electric_range: num(raw.electric_range),
     city_mpg: num(build.city_mpg || raw.city_mpg), highway_mpg: num(build.highway_mpg || raw.highway_mpg),
     packages, options, raw_count: installed.length,
   };
