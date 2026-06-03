@@ -9,6 +9,8 @@ const LINKS = [
   { href: "/calculator", label: "Calculator" },
   { href: "/saved", label: "Saved" },
   { href: "/dealers", label: "Dealers" },
+  { href: "/team", label: "Team" },
+  { href: "/billing", label: "Billing" },
 ];
 
 export function AppNav({ live }: { live?: number }) {

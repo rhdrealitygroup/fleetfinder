@@ -1,0 +1,54 @@
+// POST /api/stripe/checkout — start a subscription checkout for the caller's
+// organization. Body: { seats?: number } (additional agents beyond the owner).
+// Creates/links a Stripe customer on the org and returns a Checkout URL.
+
+import { NextResponse } from "next/server";
+import { getStripe, stripeConfigured, basePriceId, seatPriceId, PRICING } from "@/lib/stripe";
+import { getSessionContext } from "@/lib/auth";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+
+export async function POST(req: Request) {
+  if (!stripeConfigured() || !basePriceId()) {
+    return NextResponse.json({ error: "Billing not configured yet" }, { status: 503 });
+  }
+  const { user, membership } = await getSessionContext();
+  if (!user || !membership) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (membership.role !== "owner") return NextResponse.json({ error: "Only the owner can manage billing" }, { status: 403 });
+
+  const body = await req.json().catch(() => ({}));
+  const seats = Math.max(0, Number(body.seats) || 0);
+
+  const supabase = await createClient();
+  const { data: org } = await supabase.from("organizations").select("*").eq("id", membership.org_id).single();
+  if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
+
+  const stripe = getStripe();
+  const origin = new URL(req.url).origin;
+
+  // Ensure a Stripe customer exists for this org.
+  let customerId = org.stripe_customer_id as string | null;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email || undefined,
+      name: org.name,
+      metadata: { org_id: org.id },
+    });
+    customerId = customer.id;
+    await createServiceRoleClient().from("organizations").update({ stripe_customer_id: customerId }).eq("id", org.id);
+  }
+
+  const line_items = [{ price: basePriceId(), quantity: 1 }];
+  if (seats > 0 && seatPriceId()) line_items.push({ price: seatPriceId(), quantity: seats });
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer: customerId,
+    line_items,
+    subscription_data: { trial_period_days: PRICING.trialDays, metadata: { org_id: org.id } },
+    success_url: `${origin}/billing?checkout=success`,
+    cancel_url: `${origin}/billing?checkout=cancelled`,
+    allow_promotion_codes: true,
+  });
+
+  return NextResponse.json({ url: session.url });
+}

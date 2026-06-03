@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { getSessionContext } from "@/lib/auth";
+import { ensureOrgForUser } from "@/lib/account";
 import { CheckCircle2 } from "lucide-react";
 
-// Landed here after email confirmation. Org creation + agent setup gets wired
-// in the accounts phase; for now confirm the account and route into the app.
+// Landed here after email confirmation. Creates the user's organization +
+// owner membership if they don't have one yet, then routes into the app.
 export default async function OnboardingPage() {
   const { user } = await getSessionContext();
+  if (user) await ensureOrgForUser();
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppNav />
