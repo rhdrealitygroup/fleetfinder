@@ -48,6 +48,7 @@ export default function SearchPage() {
   const [provider, setProvider] = useState("");
   const [sort, setSort] = useState("distance");
   const [open, setOpen] = useState<Vehicle | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const { items: saved, setItems: setSaved, ready } = useLocalCollection<Vehicle>("ff_saved");
   const savedVins = useMemo(() => new Set(saved.map((s) => s.vin)), [saved]);
@@ -146,100 +147,113 @@ export default function SearchPage() {
     }
   }, [results, sort]);
 
+  // Filter panel — rendered in the desktop sidebar AND the mobile drawer.
+  const filterContent = (
+    <div className="space-y-5">
+      <div className="flex rounded-lg border border-border overflow-hidden text-sm">
+        {(["new", "used"] as const).map((t) => (
+          <button key={t} onClick={() => setCarType(t)}
+            className={`flex-1 py-1.5 capitalize transition ${carType === t ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <Field label="Make">
+        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); }} className={selectCls}>
+          <option value="">Any make</option>
+          {CATALOG_MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Model">
+        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); }} disabled={!make} className={selectCls}>
+          <option value="">{make ? "Any model" : "Pick a make first"}</option>
+          {models.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </Field>
+
+      {/* Trim picker — lives with the filters, populated once make+model set */}
+      {make && model && (
+        <div>
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">
+            Trim {trimsLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <TrimPill label="All trims" active={trim === ""} onClick={() => { setTrim(""); setVariant(""); }} />
+            {trims.map((t) => (
+              <TrimPill key={t.name} label={t.name} count={t.count} dim={!t.available}
+                active={trim === t.name} onClick={() => { setTrim(t.name); setVariant(""); }} />
+            ))}
+            {!trimsLoading && trims.length === 0 && (
+              <span className="text-xs text-muted-foreground py-1.5">No trims found — search still runs.</span>
+            )}
+          </div>
+          {activeVariants.length > 0 && (
+            <div className="mt-3 pl-3 border-l-2 border-primary/30">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">{trim} configuration</div>
+              <div className="flex flex-wrap gap-2">
+                <TrimPill label="Any" active={variant === ""} onClick={() => setVariant("")} />
+                {activeVariants.map((v) => (
+                  <TrimPill key={v.label} label={v.label} count={v.count}
+                    active={variant === v.label} onClick={() => setVariant(v.label)} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <Field label="Year"><select value={yearIdx} onChange={(e) => setYearIdx(Number(e.target.value))} className={selectCls}>{YEAR_RANGES.map((y, i) => <option key={y.label} value={i}>{y.label}</option>)}</select></Field>
+      <Field label="Price"><select value={priceIdx} onChange={(e) => setPriceIdx(Number(e.target.value))} className={selectCls}>{PRICE_RANGES.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}</select></Field>
+
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Must-have features</div>
+        <div className="flex flex-wrap gap-1.5">
+          {FEATURE_PICKS.slice(0, 14).map((f) => {
+            const on = features.has(f.value);
+            return (
+              <button key={f.value} onClick={() => toggleFeature(f.value)}
+                className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
+                {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <button onClick={() => { runSearch(); setFiltersOpen(false); }} disabled={searching}
+        className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center justify-center gap-2 disabled:opacity-60">
+        {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+        {searching ? "Searching…" : "Run live search"}
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppNav live={142118} />
 
+      {/* Mobile filter bar — opens the drawer */}
+      <div className="lg:hidden sticky top-[57px] z-20 bg-background/90 backdrop-blur border-b border-border px-4 py-2 flex items-center justify-between gap-2">
+        <button onClick={() => setFiltersOpen(true)} className="flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border border-border bg-card min-w-0">
+          <SlidersHorizontal className="w-4 h-4 shrink-0" />
+          <span className="truncate">{[make, model, trim].filter(Boolean).join(" ") || "Filters"}</span>
+        </button>
+        {results !== null && <span className="text-xs text-muted-foreground shrink-0">{total || sorted.length} results</span>}
+      </div>
+
       <div className="flex">
-        {/* ── Filters ─────────────────────────────────────────────────── */}
-        <aside className="hidden lg:block w-64 shrink-0 border-r border-border p-5 space-y-5 h-[calc(100vh-57px)] sticky top-[57px] overflow-y-auto">
-          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground">
+        {/* Desktop sidebar */}
+        <aside className="hidden lg:block w-64 shrink-0 border-r border-border p-5 h-[calc(100vh-57px)] sticky top-[57px] overflow-y-auto">
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground mb-5">
             <SlidersHorizontal className="w-3.5 h-3.5" /> Filters
           </div>
-
-          <div className="flex rounded-lg border border-border overflow-hidden text-sm">
-            {(["new", "used"] as const).map((t) => (
-              <button key={t} onClick={() => setCarType(t)}
-                className={`flex-1 py-1.5 capitalize transition ${carType === t ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}>
-                {t}
-              </button>
-            ))}
-          </div>
-
-          <Field label="Make">
-            <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); }} className={selectCls}>
-              <option value="">Any make</option>
-              {CATALOG_MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </Field>
-
-          <Field label="Model">
-            <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); }} disabled={!make} className={selectCls}>
-              <option value="">{make ? "Any model" : "Pick a make first"}</option>
-              {models.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </Field>
-
-          <Field label="Year"><select value={yearIdx} onChange={(e) => setYearIdx(Number(e.target.value))} className={selectCls}>{YEAR_RANGES.map((y, i) => <option key={y.label} value={i}>{y.label}</option>)}</select></Field>
-          <Field label="Price"><select value={priceIdx} onChange={(e) => setPriceIdx(Number(e.target.value))} className={selectCls}>{PRICE_RANGES.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}</select></Field>
-
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Must-have features</div>
-            <div className="flex flex-wrap gap-1.5">
-              {FEATURE_PICKS.slice(0, 14).map((f) => {
-                const on = features.has(f.value);
-                return (
-                  <button key={f.value} onClick={() => toggleFeature(f.value)}
-                    className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
-                    {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <button onClick={runSearch} disabled={searching}
-            className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center justify-center gap-2 disabled:opacity-60">
-            {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            {searching ? "Searching…" : "Run live search"}
-          </button>
+          {filterContent}
         </aside>
 
         {/* ── Results ─────────────────────────────────────────────────── */}
-        <main className="flex-1 min-w-0 p-5">
-          {/* Trim picker */}
-          {make && model && (
-            <div className="mb-4">
-              <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground mb-2">
-                Trim {trimsLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <TrimPill label="All trims" active={trim === ""} onClick={() => { setTrim(""); setVariant(""); }} />
-                {trims.map((t) => (
-                  <TrimPill key={t.name} label={t.name} count={t.count} dim={!t.available}
-                    active={trim === t.name} onClick={() => { setTrim(t.name); setVariant(""); }} />
-                ))}
-                {!trimsLoading && trims.length === 0 && (
-                  <span className="text-xs text-muted-foreground py-1.5">No trims found — search will still run.</span>
-                )}
-              </div>
-
-              {/* Range / config sub-variants for the selected trim */}
-              {activeVariants.length > 0 && (
-                <div className="mt-3 pl-3 border-l-2 border-primary/30">
-                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">{trim} configuration</div>
-                  <div className="flex flex-wrap gap-2">
-                    <TrimPill label="Any" active={variant === ""} onClick={() => setVariant("")} />
-                    {activeVariants.map((v) => (
-                      <TrimPill key={v.label} label={v.label} count={v.count}
-                        active={variant === v.label} onClick={() => setVariant(v.label)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
+        <main className="flex-1 min-w-0 p-4 sm:p-5">
           {/* Result bar */}
           {results !== null && (
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -271,7 +285,7 @@ export default function SearchPage() {
             <div className="text-center py-24 text-muted-foreground">
               <Search className="w-10 h-10 mx-auto mb-4 opacity-40" />
               <p className="text-lg font-medium text-foreground mb-1">Search live inventory</p>
-              <p className="text-sm">Pick a make and model on the left, choose a trim, and run a live search.</p>
+              <p className="text-sm">Open <span className="lg:hidden">Filters</span><span className="hidden lg:inline">the filters</span>, pick a make and model, choose a trim, and run a live search.</p>
             </div>
           )}
           {searching && (
@@ -299,6 +313,20 @@ export default function SearchPage() {
           )}
         </main>
       </div>
+
+      {/* Mobile filter drawer */}
+      {filtersOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setFiltersOpen(false)} />
+          <div className="relative w-[85%] max-w-xs bg-background border-r border-border h-full overflow-y-auto p-5">
+            <div className="flex items-center justify-between mb-5">
+              <span className="font-semibold flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" /> Filters</span>
+              <button onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded-md hover:bg-white/10 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
+            </div>
+            {filterContent}
+          </div>
+        </div>
+      )}
 
       {open && <DetailPanel v={open} onClose={() => setOpen(null)} saved={savedVins.has(open.vin)} onSave={() => toggleSaved(open)} />}
       {!ready && null}
