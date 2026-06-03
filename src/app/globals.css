@@ -1,31 +1,32 @@
 @import "tailwindcss";
 
-/* FleetFinder design system — MODERN (dark, product-first). The direction Ray
-   chose. HSL channel format so /opacity modifiers work (bg-primary/10, etc.). */
+/* FleetFinder design system — GALLERY. Warm, editorial, light. The direction
+   Ray chose: cream canvas, serif headings, terracotta accent, big imagery.
+   HSL channel format so /opacity modifiers work (bg-primary/10, etc.). */
 
 :root {
-  --background: 0 0% 4%;            /* near-black app canvas */
-  --foreground: 0 0% 98%;
-  --card: 0 0% 7%;
-  --card-foreground: 0 0% 98%;
-  --muted: 0 0% 12%;
-  --muted-foreground: 0 0% 64%;
-  --border: 0 0% 16%;
-  --input: 0 0% 16%;
-  --primary: 217 91% 60%;          /* FleetFinder blue */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 12%;
-  --secondary-foreground: 0 0% 98%;
-  --positive: 152 60% 45%;
-  --warning: 38 92% 55%;
-  --destructive: 0 72% 51%;
-  --ring: 217 91% 60%;
-  --radius: 0.625rem;
+  --background: 43 27% 95%;        /* warm cream #F6F4EF */
+  --foreground: 24 10% 10%;        /* warm near-black */
+  --card: 0 0% 100%;
+  --card-foreground: 24 10% 10%;
+  --muted: 40 20% 92%;
+  --muted-foreground: 25 6% 44%;
+  --border: 30 9% 87%;
+  --input: 30 9% 87%;
+  --primary: 24 72% 45%;           /* terracotta accent */
+  --primary-foreground: 43 33% 97%;
+  --secondary: 40 22% 92%;
+  --secondary-foreground: 24 10% 10%;
+  --positive: 152 45% 38%;
+  --warning: 32 80% 44%;
+  --destructive: 0 70% 45%;
+  --ring: 24 72% 45%;
+  --radius: 0.875rem;
 }
 
 @theme inline {
   --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
-  --font-heading: var(--font-poppins), var(--font-inter), system-ui, sans-serif;
+  --font-heading: var(--font-newsreader), Georgia, "Times New Roman", serif;
   --font-mono: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -44,8 +45,8 @@
   --color-destructive: hsl(var(--destructive));
   --color-ring: hsl(var(--ring));
   --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 2px);
-  --radius-xl: calc(var(--radius) + 6px);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
 }
 
 body {
@@ -54,20 +55,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Serif display for headings — the heart of the Gallery look. */
 .font-heading {
   font-family: var(--font-heading);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
-/* Tabular numerals — keeps prices/distances vertically aligned. */
 .tnum {
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle card-hover lift used on result cards. */
 .lift {
   transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 .lift:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }

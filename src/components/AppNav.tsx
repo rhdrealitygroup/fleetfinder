@@ -19,10 +19,10 @@ export function AppNav({ live }: { live?: number }) {
     <header className="border-b border-border px-5 py-3 flex items-center justify-between sticky top-0 bg-background/90 backdrop-blur z-30">
       <div className="flex items-center gap-2">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold">
+          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
             F
           </div>
-          <span className="font-semibold tracking-tight">FleetFinder</span>
+          <span className="font-heading font-bold tracking-tight text-lg">FleetFinder</span>
         </Link>
         <nav className="hidden md:flex items-center gap-1 ml-6 text-sm">
           {LINKS.map((l) => {

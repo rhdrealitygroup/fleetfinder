@@ -381,10 +381,10 @@ function VehicleCard({ v, saved, compareOn, onOpen, onSave, onCompare }: { v: Ve
           <button onClick={(e) => { e.stopPropagation(); onSave(); }} className={`w-7 h-7 rounded-md flex items-center justify-center transition ${saved ? "text-amber-400" : "text-muted-foreground hover:text-foreground hover:bg-white/10"}`}><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /></button>
         </div>
       </div>
-      <div className="relative h-32 rounded-lg overflow-hidden flex items-center justify-center mb-3 border border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 40% 22%), hsl(${hue} 30% 12%))` }}>
+      <div className="relative h-44 rounded-2xl overflow-hidden flex items-center justify-center mb-3" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
         {v.image_url
           ? <img src={v.image_url} alt={`${v.year} ${v.make} ${v.model}`} className="w-full h-full object-cover" loading="lazy" />
-          : <span className="font-heading font-semibold tracking-[0.18em] text-lg uppercase text-white/70">{v.make}</span>}
+          : <span className="font-heading font-semibold tracking-[0.14em] text-2xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
         {v.is_cpo && <span className="absolute top-2 left-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-[10px] font-medium text-white"><Award className="w-3 h-3" /> CPO</span>}
       </div>
       <div className="flex items-start justify-between gap-2">
@@ -431,8 +431,8 @@ function DetailPanel({ v, onClose, saved, onSave }: { v: Vehicle; onClose: () =>
           <span className="font-semibold">Vehicle details</span>
           <button onClick={onClose} className="w-8 h-8 rounded-md hover:bg-white/10 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
         </div>
-        <div className="h-48 flex items-center justify-center border-b border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 40% 22%), hsl(${hue} 30% 12%))` }}>
-          {v.image_url ? <img src={v.image_url} alt="" className="w-full h-full object-cover" /> : <span className="font-heading font-semibold tracking-[0.2em] text-2xl uppercase text-white/70">{v.make}</span>}
+        <div className="h-48 flex items-center justify-center border-b border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
+          {v.image_url ? <img src={v.image_url} alt="" className="w-full h-full object-cover" /> : <span className="font-heading font-semibold tracking-[0.2em] text-3xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
         </div>
         <div className="p-5 space-y-5">
           <div>
