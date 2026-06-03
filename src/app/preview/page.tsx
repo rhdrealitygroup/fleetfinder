@@ -74,7 +74,27 @@ export default function PreviewIndex() {
           ))}
         </div>
 
-        <div className="mt-12 text-xs text-neutral-500">
+        <div className="mt-10 rounded-xl border border-neutral-900 bg-neutral-900 p-6 text-white">
+          <div className="text-xs font-mono uppercase tracking-widest text-neutral-400 mb-1">
+            Bonus
+          </div>
+          <h2 className="font-heading text-lg font-semibold mb-1">
+            See the product redesigned, not just the landing page
+          </h2>
+          <p className="text-sm text-neutral-400 mb-4">
+            The actual Live Search page — filters, trim picker, result cards,
+            VIN-decoded equipment, the detail panel. This is what an agent uses
+            every day.
+          </p>
+          <Link
+            href="/preview/search"
+            className="inline-block px-4 py-2 rounded-lg bg-white text-neutral-900 text-sm font-medium hover:bg-neutral-200 transition"
+          >
+            Open the search-page preview →
+          </Link>
+        </div>
+
+        <div className="mt-8 text-xs text-neutral-500">
           Reply to me in chat with &ldquo;1&rdquo;, &ldquo;2&rdquo;, or &ldquo;3&rdquo; — or describe what&apos;s right
           and what&apos;s off about the closest one.
         </div>
