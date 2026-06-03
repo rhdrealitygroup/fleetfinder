@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   // Protected app areas — redirect to /login when signed out.
-  const protectedPrefixes = ["/saved", "/dealers", "/account", "/billing", "/team", "/admin", "/onboarding"];
+  const protectedPrefixes = ["/account", "/billing", "/team", "/admin", "/onboarding"];
   const path = request.nextUrl.pathname;
   if (!user && protectedPrefixes.some((p) => path.startsWith(p))) {
     const redirect = request.nextUrl.clone();
