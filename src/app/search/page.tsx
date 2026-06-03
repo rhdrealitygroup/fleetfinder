@@ -41,6 +41,8 @@ export default function SearchPage() {
   const [carType, setCarType] = useState<"new" | "used">("new");
   const [zip, setZip] = useState("");
   const [radius, setRadius] = useState(100);
+  const [maxMonthly, setMaxMonthly] = useState("");
+  const [optionQuery, setOptionQuery] = useState("");
 
   const [results, setResults] = useState<Vehicle[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -117,6 +119,8 @@ export default function SearchPage() {
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant,
           zip: zip.trim() || undefined, radius: effRadius,
+          max_monthly: Number(maxMonthly) || undefined,
+          option_query: optionQuery.trim() || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           features: [...features],
@@ -134,7 +138,7 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType, zip, radius]);
+  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, optionQuery]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -151,6 +155,18 @@ export default function SearchPage() {
       default: return arr; // distance — API already sorts
     }
   }, [results, sort]);
+
+  function exportCsv() {
+    const head = ["Year", "Make", "Model", "Trim", "Version", "Price", "Est Monthly", "Color", "Mileage", "Dealer", "City", "State", "VIN", "Listing"];
+    const rows = [head, ...sorted.map((v) => [v.year, v.make, v.model, v.trim, v.version, v.price, v.est_monthly, v.exterior_color, v.mileage, v.dealer_name, v.city, v.state, v.vin, v.listing_url])];
+    const csv = rows.map((r) => r.map((x) => `"${String(x ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `fleetfinder-${[make, model].filter(Boolean).join("-") || "search"}.csv`.replace(/\s+/g, "-");
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   // Filter panel — rendered in the desktop sidebar AND the mobile drawer.
   const filterContent = (
@@ -232,6 +248,22 @@ export default function SearchPage() {
       <Field label="Year"><select value={yearIdx} onChange={(e) => setYearIdx(Number(e.target.value))} className={selectCls}>{YEAR_RANGES.map((y, i) => <option key={y.label} value={i}>{y.label}</option>)}</select></Field>
       <Field label="Price"><select value={priceIdx} onChange={(e) => setPriceIdx(Number(e.target.value))} className={selectCls}>{PRICE_RANGES.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}</select></Field>
 
+      <Field label="Max monthly payment">
+        <div className="flex items-center rounded-lg border border-border bg-card focus-within:ring-2 focus-within:ring-ring/50">
+          <span className="pl-3 text-muted-foreground text-sm">$</span>
+          <input type="number" inputMode="numeric" placeholder="e.g. 700" value={maxMonthly}
+            onChange={(e) => setMaxMonthly(e.target.value.replace(/\D/g, ""))}
+            className="w-full bg-transparent px-2 py-2 text-sm focus:outline-none tnum" />
+          <span className="pr-3 text-muted-foreground text-xs">/mo</span>
+        </div>
+      </Field>
+
+      <Field label="Has package / option">
+        <input type="text" placeholder="e.g. premium, tow, pano" value={optionQuery}
+          onChange={(e) => setOptionQuery(e.target.value)} className={selectCls.replace("disabled:opacity-50", "")} />
+        <p className="text-[11px] text-muted-foreground mt-1">Matches the factory build sheet (VIN-decoded). Slower — only on results found.</p>
+      </Field>
+
       <div>
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Must-have features</div>
         <div className="flex flex-wrap gap-1.5">
@@ -291,6 +323,12 @@ export default function SearchPage() {
                 {truncated && <span className="ml-2 text-xs text-warning">· showing first {sorted.length}</span>}
               </div>
               <div className="flex items-center gap-2">
+                {sorted.length > 0 && (
+                  <button onClick={exportCsv} title="Export to CSV"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-card border border-border text-sm text-muted-foreground hover:text-foreground transition">
+                    <FileText className="w-4 h-4" /> Export
+                  </button>
+                )}
                 {compare.size > 0 && (
                   <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/15 border border-primary/40 text-primary text-sm">
                     <GitCompare className="w-4 h-4" /> Compare ({compare.size})
@@ -425,6 +463,8 @@ function VehicleCard({ v, saved, compareOn, onOpen, onSave, onCompare }: { v: Ve
       <div className="mt-2 flex flex-wrap gap-1.5">
         {v.exterior_color && <Chip>{v.exterior_color}</Chip>}
         {v.mileage > 0 && <Chip>{v.mileage.toLocaleString()} mi</Chip>}
+        {v.msrp > v.price && <span className="px-2 py-0.5 rounded-md bg-positive/10 border border-positive/30 text-[11px] text-positive font-medium">{moneyShort(v.msrp - v.price)} off MSRP</span>}
+        {v.days_listed > 0 && <span className="px-2 py-0.5 rounded-md bg-secondary border border-border text-[11px] text-muted-foreground">{v.days_listed}d on lot</span>}
       </div>
       <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
         <span className="flex items-center gap-1 truncate"><Building2 className="w-3.5 h-3.5 shrink-0" /> {v.dealer_name || "—"}</span>

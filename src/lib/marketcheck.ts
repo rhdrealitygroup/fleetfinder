@@ -345,6 +345,37 @@ export function adListing(l: any): UnifiedVehicle {
   };
 }
 
+// Decode a VIN to the lowercase names of its installed options/packages/
+// features — for filtering search results by package ("Premium Package",
+// "Tow", etc.). Cached 30 days per VIN (build never changes).
+export async function decodeVinOptionNames(vin: string): Promise<string[]> {
+  const v = String(vin || "").toUpperCase().trim();
+  if (v.length !== 17) return [];
+  const ck = `vinopts::${v}`;
+  const hit = cacheGet<string[]>(ck);
+  if (hit) return hit;
+  const apiKey = mcKey();
+  if (!apiKey) return [];
+  try {
+    const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
+    u.searchParams.set("api_key", apiKey);
+    const r = await fetch(u.toString(), { cache: "no-store" });
+    if (!r.ok) return [];
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const d: any = await r.json();
+    const details = Array.isArray(d.installed_options_details) ? d.installed_options_details : [];
+    const hvf = Array.isArray(d.high_value_features) ? d.high_value_features : [];
+    const feats = Array.isArray(d.features) ? d.features : [];
+    const names = [...details.map((x: any) => x.name || ""), ...hvf, ...feats]
+      .filter(Boolean)
+      .map((s: string) => String(s).toLowerCase());
+    cacheSet(ck, names, DAY * 30);
+    return names;
+  } catch {
+    return [];
+  }
+}
+
 export function mcKey() {
   return process.env.MARKETCHECK_API_KEY || "";
 }

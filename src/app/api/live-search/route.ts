@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
   MAX_RESULTS, PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
-  resolveModel, type UnifiedVehicle,
+  resolveModel, decodeVinOptionNames, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 
@@ -36,6 +36,8 @@ function cacheKeyFor(body: any) {
     powertrain_type: body.powertrain_type || "", body_type: body.body_type || "",
     drivetrain: body.drivetrain || "", exterior_color: body.exterior_color || "",
     features: Array.isArray(body.features) ? [...body.features].sort() : [],
+    max_monthly: Number(body.max_monthly) || 0,
+    option_query: (body.option_query || "").toString().trim().toLowerCase(),
     zip: (body.zip || "").toString().trim(),
     radius: Math.min(100, Number(body.radius) || 100),
     lat: Math.round(Number(body.latitude || DEFAULT_LAT) * 10) / 10,
@@ -202,7 +204,35 @@ export async function POST(req: Request) {
     });
   }
 
-  const payload = { results, total: variant ? results.length : (total || results.length), provider };
+  // Payment-target filter — keep only vehicles whose estimated lease payment is
+  // at or under the agent's target (e.g. "show me anything under $700/mo").
+  const maxMonthly = Number(body.max_monthly) || 0;
+  if (maxMonthly > 0) {
+    results = results.filter((r) => r.est_monthly > 0 && r.est_monthly <= maxMonthly);
+  }
+
+  // Package / option filter — the listing has no package data, so we decode each
+  // result's VIN (NeoVIN, cached) and keep only those whose installed options
+  // match every term. Expensive on first run (one decode per VIN), cheap after.
+  const optionQuery = String(body.option_query || "").trim().toLowerCase();
+  if (optionQuery) {
+    const terms = optionQuery.split(/[,\s]+/).filter(Boolean);
+    const withVin = results.filter((r) => r.vin && r.vin.length === 17);
+    const kept: UnifiedVehicle[] = [];
+    // Decode in small chunks to avoid hammering MarketCheck.
+    for (let i = 0; i < withVin.length; i += 8) {
+      const chunk = withVin.slice(i, i + 8);
+      const names = await Promise.all(chunk.map((r) => decodeVinOptionNames(r.vin)));
+      chunk.forEach((r, j) => {
+        const hay = names[j].join(" | ");
+        if (terms.every((t) => hay.includes(t))) kept.push(r);
+      });
+    }
+    results = kept;
+  }
+
+  const narrowed = !!variant || maxMonthly > 0 || !!optionQuery;
+  const payload = { results, total: narrowed ? results.length : (total || results.length), provider };
   cacheSet(ckey, payload, HOUR);
 
   return NextResponse.json({
