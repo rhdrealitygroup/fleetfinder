@@ -63,6 +63,8 @@ export default function SearchPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const { items: saved, setItems: setSaved, ready } = useLocalCollection<Vehicle>("ff_saved");
+  const { items: myDealers } = useLocalCollection<{ id: string }>("ff_dealers", 2000);
+  const [scopeDealers, setScopeDealers] = useState(false);
   const savedVins = useMemo(() => new Set(saved.map((s) => s.vin)), [saved]);
   const [compare, setCompare] = useState<Set<string>>(new Set());
 
@@ -183,6 +185,7 @@ export default function SearchPage() {
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           option_names: features.size ? [...features] : undefined,
+          dealer_ids: scopeDealers && myDealers.length ? myDealers.map((d) => d.id).filter(Boolean) : undefined,
         }),
       });
       const d = await res.json();
@@ -197,7 +200,7 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, color, colors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain]);
+  }, [make, model, trim, variant, color, colors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain, scopeDealers, myDealers]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -257,6 +260,12 @@ export default function SearchPage() {
           </select>
         </div>
         <p className="text-[11px] text-muted-foreground">{zip ? `Searching within ${radius} mi of ${zip}.` : "Enter your customer's ZIP for inventory near them."}</p>
+        {myDealers.length > 0 && (
+          <button onClick={() => setScopeDealers((v) => !v)}
+            className={`w-full mt-1 px-2 py-1.5 rounded-lg text-[12px] border transition flex items-center justify-center gap-1.5 ${scopeDealers ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground hover:border-primary/40"}`}>
+            <Building2 className="w-3.5 h-3.5" />{scopeDealers ? `Showing only your ${myDealers.length} dealers` : `Limit to my ${myDealers.length} dealers`}
+          </button>
+        )}
       </div>
 
       <Field label="Make">

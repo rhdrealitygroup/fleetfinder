@@ -39,6 +39,7 @@ function cacheKeyFor(body: any) {
     max_monthly: Number(body.max_monthly) || 0,
     option_query: (body.option_query || "").toString().trim().toLowerCase(),
     option_names: Array.isArray(body.option_names) ? [...body.option_names].map((s) => String(s).toLowerCase()).sort() : [],
+    dealer_ids: Array.isArray(body.dealer_ids) ? [...body.dealer_ids].map(String).sort() : [],
     zip: (body.zip || "").toString().trim(),
     radius: Math.min(500, Number(body.radius) || 100),
     lat: Math.round(Number(body.latitude || DEFAULT_LAT) * 10) / 10,
@@ -109,6 +110,8 @@ export async function POST(req: Request) {
       // list (e.g. "Agate Black,Agate Black Metallic") from the color picker.
       if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);
       if (Array.isArray(body.features) && body.features.length) url.searchParams.set("high_value_features", body.features.join(","));
+      // Scope to the company's selected dealers (MarketCheck OR-list of IDs).
+      if (Array.isArray(body.dealer_ids) && body.dealer_ids.length) url.searchParams.set("dealer_id", body.dealer_ids.slice(0, 200).join(","));
       url.searchParams.set("rows", String(PAGE_SIZE));
       url.searchParams.set("start", String(page * PAGE_SIZE));
       const res = await fetch(url.toString());

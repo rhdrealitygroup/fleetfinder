@@ -8,12 +8,15 @@ import { useLocalCollection } from "@/lib/useLocalCollection";
 type Dealer = {
   id: string; name: string; street: string; city: string; state: string; zip: string;
   phone: string; type: string; group: string; website: string; listing_count: number;
+  makes?: string[];
 };
 
 export default function DealersPage() {
   const [q, setQ] = useState("");
   const [state, setState] = useState("");
   const [type, setType] = useState("");
+  const [make, setMake] = useState("");
+  const [makes, setMakes] = useState<string[]>([]);
   const [items, setItems] = useState<Dealer[]>([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<{ all: number; nj: number; ny: number }>({ all: 0, nj: 0, ny: 0 });
@@ -31,16 +34,18 @@ export default function DealersPage() {
       if (q.trim()) params.set("q", q.trim());
       if (state) params.set("state", state);
       if (type) params.set("type", type);
+      if (make) params.set("make", make);
       params.set("page", String(pageNum));
       const res = await fetch(`/api/dealers/catalog?${params}`);
       const d = await res.json();
       setTotal(d.total || 0);
       if (d.counts) setCounts(d.counts);
+      if (Array.isArray(d.makes) && d.makes.length) setMakes(d.makes);
       setItems((prev) => (replace ? d.items : [...prev, ...d.items]));
     } finally {
       setLoading(false);
     }
-  }, [q, state, type]);
+  }, [q, state, type, make]);
 
   // Reload on filter change (debounced for the text query).
   useEffect(() => {
@@ -81,6 +86,10 @@ export default function DealersPage() {
             <option value="NJ">New Jersey</option>
             <option value="NY">New York</option>
           </select>
+          <select value={make} onChange={(e) => setMake(e.target.value)} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
+            <option value="">All makes</option>
+            {makes.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
           <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
             <option value="">All types</option>
             <option value="franchise">Franchise</option>
@@ -115,6 +124,14 @@ export default function DealersPage() {
                   <div className="text-xs text-muted-foreground truncate">
                     {[d.city, d.state].filter(Boolean).join(", ")} {d.zip} · {(d.listing_count || 0).toLocaleString()} in stock
                   </div>
+                  {d.makes && d.makes.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {d.makes.slice(0, 8).map((m) => (
+                        <span key={m} className={`text-[10px] px-1.5 py-0.5 rounded ${make === m ? "bg-primary/20 text-primary" : "bg-muted/40 text-muted-foreground"}`}>{m}</span>
+                      ))}
+                      {d.makes.length > 8 && <span className="text-[10px] text-muted-foreground">+{d.makes.length - 8}</span>}
+                    </div>
+                  )}
                 </div>
                 {d.phone && <a href={`tel:${d.phone}`} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><Phone className="w-3.5 h-3.5" />{d.phone}</a>}
                 {d.website && <a href={d.website.startsWith("http") ? d.website : `https://${d.website}`} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary"><ExternalLink className="w-4 h-4" /></a>}
