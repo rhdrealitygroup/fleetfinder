@@ -75,8 +75,11 @@ export async function POST(req: Request) {
       (a, b) => b.count - a.count || b.msrp - a.msrp || a.label.localeCompare(b.label),
     ).slice(0, 40);
 
-    // 3) Fallback: no decodeable build data → generic high_value_features facet.
-    if (features.length === 0) {
+    // 3) Supplement: when the build sheet is thin or empty (EVs like Tesla,
+    //    low-option brands), top up the list with generic high_value_features
+    //    so EVERY make/model gets a usable set of options.
+    const hadBuildSheet = features.length > 0;
+    if (features.length < 8) {
       const fUrl = new URL(`${MC_HOST}/search/car/active`);
       fUrl.searchParams.set("api_key", apiKey);
       fUrl.searchParams.set("car_type", carType);
@@ -87,15 +90,16 @@ export async function POST(req: Request) {
       const fRes = await fetch(fUrl.toString());
       if (fRes.ok) {
         const fData = await fRes.json();
-        features = (fData.facets?.high_value_features || [])
-          .map((c: any) => ({ value: String(c.item || "").trim(), label: normalizeFeature(c.item), msrp: 0, count: num(c.count) }))
-          .filter((f: Opt) => f.value && f.label && !NOISE.test(f.value))
-          .slice(0, 30);
+        const seen = new Set(features.map((f) => f.value));
+        const facet: Opt[] = (fData.facets?.high_value_features || [])
+          .map((c: any) => ({ value: String(c.item || "").trim().toLowerCase(), label: normalizeFeature(c.item), msrp: 0, count: num(c.count) }))
+          .filter((f: Opt) => f.value && f.label && !NOISE.test(f.value) && !seen.has(f.value));
+        features = [...features, ...facet].slice(0, 30);
       }
     }
 
     cacheSet(cacheKey, features, features.length ? DAY * 7 : MIN);
-    return NextResponse.json({ features, cached: false, provider: decoded.some((d) => d.length) ? "build-sheet" : "facet" });
+    return NextResponse.json({ features, cached: false, provider: hadBuildSheet ? "build-sheet" : "facet" });
   } catch (e) {
     return NextResponse.json({ features: [], error: (e as Error).message }, { status: 502 });
   }
