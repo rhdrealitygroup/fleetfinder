@@ -49,7 +49,6 @@ export default function SearchPage() {
   const [zip, setZip] = useState("");
   const [radius, setRadius] = useState(100);
   const [maxMonthly, setMaxMonthly] = useState("");
-  const [optionQuery, setOptionQuery] = useState("");
   const [bodyType, setBodyType] = useState("");
   const [drivetrain, setDrivetrain] = useState("");
 
@@ -180,7 +179,6 @@ export default function SearchPage() {
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
           zip: zip.trim() || undefined, radius: effRadius,
           max_monthly: Number(maxMonthly) || undefined,
-          option_query: optionQuery.trim() || undefined,
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
@@ -199,7 +197,7 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, color, colors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, optionQuery, bodyType, drivetrain]);
+  }, [make, model, trim, variant, color, colors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -332,12 +330,6 @@ export default function SearchPage() {
             className="w-full bg-transparent px-2 py-2 text-sm focus:outline-none tnum" />
           <span className="pr-3 text-muted-foreground text-xs">/mo</span>
         </div>
-      </Field>
-
-      <Field label="Has package / option">
-        <input type="text" placeholder="e.g. premium, tow, pano" value={optionQuery}
-          onChange={(e) => setOptionQuery(e.target.value)} className={selectCls.replace("disabled:opacity-50", "")} />
-        <p className="text-[11px] text-muted-foreground mt-1">Matches the factory build sheet (VIN-decoded). Slower — only on results found.</p>
       </Field>
 
       <div>
