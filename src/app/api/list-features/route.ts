@@ -14,7 +14,7 @@ import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const SAMPLE_VINS = 16; // build sheets to decode per model load (cached 30d each)
+const SAMPLE_VINS = 8; // build sheets to decode per model load (cached 30d each) — kept low to respect API quota
 
 // Generic facet noise (body class, transmission, vague upgrades) — fallback only.
 const NOISE =
