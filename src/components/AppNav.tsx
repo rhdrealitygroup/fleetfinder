@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CompassMark } from "@/components/CompassMark";
 
 // Top navigation shared across the authenticated app pages (Modern look).
 const LINKS = [
@@ -19,9 +20,7 @@ export function AppNav() {
     <header className="border-b border-border px-5 py-3 flex items-center justify-between sticky top-0 bg-background/90 backdrop-blur z-30">
       <div className="flex items-center gap-2">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
-            L
-          </div>
+          <CompassMark className="w-8 h-8" />
           <span className="font-heading font-bold tracking-tight text-lg">LotCompass</span>
         </Link>
         <nav className="hidden md:flex items-center gap-1 ml-6 text-sm">
@@ -43,9 +42,9 @@ export function AppNav() {
       </div>
       <div className="flex items-center gap-3">
         <Link
-          href="/login"
+          href="/billing"
           className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-xs font-semibold text-primary hover:bg-primary/30 transition"
-          title="Account"
+          title="Account & billing"
         >
           RB
         </Link>

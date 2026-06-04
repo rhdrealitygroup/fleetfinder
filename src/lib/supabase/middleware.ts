@@ -1,8 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Refreshes the Supabase auth session cookie on every request and (optionally)
-// guards protected routes. Wired from src/middleware.ts.
+// Refreshes the Supabase auth session cookie on every request and guards the
+// app: the whole product requires sign-in. Wired from src/proxy.ts.
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -28,13 +28,27 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Protected app areas — redirect to /login when signed out.
-  const protectedPrefixes = ["/account", "/billing", "/team", "/admin", "/onboarding"];
   const path = request.nextUrl.pathname;
-  if (!user && protectedPrefixes.some((p) => path.startsWith(p))) {
+
+  // The whole app requires sign-in. Public = marketing home + auth routes +
+  // the Stripe webhook (server-to-server, no session). Everything else is gated.
+  const publicPrefixes = ["/login", "/signup", "/auth", "/api/stripe/webhook"];
+  const isPublic = path === "/" || publicPrefixes.some((p) => path.startsWith(p));
+
+  // Signed-out visitor hitting a protected page → send to /login, remembering
+  // where they were headed so the callback returns them there.
+  if (!user && !isPublic) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", path);
+    return NextResponse.redirect(redirect);
+  }
+
+  // Already signed in but on /login or /signup → bounce into the app.
+  if (user && (path === "/login" || path === "/signup")) {
+    const redirect = request.nextUrl.clone();
+    redirect.pathname = "/search";
+    redirect.search = "";
     return NextResponse.redirect(redirect);
   }
 

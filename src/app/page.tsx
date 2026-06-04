@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CompassMark } from "@/components/CompassMark";
 
 // Landing — Gallery design: warm cream, serif display, terracotta accent.
 const serif = { fontFamily: "var(--font-newsreader), Georgia, serif" };
@@ -9,7 +10,7 @@ export default function HomePage() {
       {/* Nav */}
       <header className="px-6 py-5 max-w-6xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-[#b85c1e] flex items-center justify-center text-white text-sm font-bold">L</div>
+          <CompassMark className="w-8 h-8" />
           <div className="text-xl font-bold tracking-tight" style={serif}>LotCompass</div>
         </div>
         <nav className="hidden md:flex items-center gap-7 text-sm text-stone-600">
