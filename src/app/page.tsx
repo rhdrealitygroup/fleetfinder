@@ -40,7 +40,7 @@ export default function HomePage() {
             <div className="flex -space-x-2">
               {["#b85c1e", "#3f6212", "#b45309", "#7c2d12"].map((c, i) => <div key={i} className="w-6 h-6 rounded-full border-2 border-[#F6F4EF]" style={{ backgroundColor: c }} />)}
             </div>
-            <span>Built for leasing offices across NJ &amp; NY</span>
+            <span>Built for leasing offices nationwide</span>
           </div>
         </div>
 
@@ -108,7 +108,7 @@ export default function HomePage() {
       <footer className="px-6 py-10 border-t border-stone-200">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-stone-500">
           <div style={serif} className="font-bold text-stone-800">LotCompass <span className="font-sans font-normal text-stone-500">· by RHD Reality Group</span></div>
-          <div>© 2026 — Oakhurst, NJ</div>
+          <div>© 2026 LotCompass</div>
         </div>
       </footer>
     </div>

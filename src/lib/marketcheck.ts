@@ -7,9 +7,10 @@ import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
 export const MC_HOST = "https://api.marketcheck.com/v2";
 export const AUTO_DEV_HOST = "https://api.auto.dev";
 
-// Search defaults — centered on Oakhurst NJ (07755), brother's territory.
-// MarketCheck Free tier rejects nationwide searches, so we always pass a
-// lat/lng + radius. Bump RADIUS when we upgrade to a paid MarketCheck tier.
+// Search is nationwide: agents enter any customer ZIP for local inventory.
+// MarketCheck Free tier rejects unbounded nationwide queries, so we always pass
+// a lat/lng + radius — this is the fallback center used only when no ZIP is
+// given (not surfaced in the UI). Widen RADIUS on a paid MarketCheck tier.
 export const DEFAULT_LAT = 40.2606;
 export const DEFAULT_LNG = -74.009;
 export const DEFAULT_ZIP = "07755";

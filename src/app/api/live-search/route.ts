@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   const mcModel = body.model && marketKey ? await resolveModel(body.make, body.model) : body.model;
 
   // Customer location: search around their ZIP. Radius is capped at 100mi
-  // (MarketCheck Free-tier limit). Falls back to the Oakhurst NJ default.
+  // (MarketCheck Free-tier limit). Falls back to a default center when blank.
   const zip = String(body.zip || "").trim();
   const radius = Math.min(100, Number(body.radius) || RADIUS_MILES);
 

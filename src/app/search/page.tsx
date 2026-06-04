@@ -200,7 +200,7 @@ export default function SearchPage() {
             {[25, 50, 75, 100].map((r) => <option key={r} value={r}>{r} mi</option>)}
           </select>
         </div>
-        <p className="text-[11px] text-muted-foreground">{zip ? `Searching within ${radius} mi of ${zip}.` : "Leave blank to search near Oakhurst, NJ."}</p>
+        <p className="text-[11px] text-muted-foreground">{zip ? `Searching within ${radius} mi of ${zip}.` : "Enter your customer's ZIP for inventory near them."}</p>
       </div>
 
       <Field label="Make">
@@ -327,7 +327,7 @@ export default function SearchPage() {
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div className="text-sm text-muted-foreground">
                 <span className="text-foreground font-semibold">{total || sorted.length}</span> matches
-                {zip ? <span className="ml-1">within {radius} mi of {zip}</span> : <span className="ml-1">near Oakhurst, NJ</span>}
+                {zip ? <span className="ml-1">within {radius} mi of {zip}</span> : <span className="ml-1">nationwide</span>}
                 {truncated && <span className="ml-2 text-xs text-warning">· showing first {sorted.length}</span>}
               </div>
               <div className="flex items-center gap-2">
@@ -375,7 +375,7 @@ export default function SearchPage() {
           {searching && (
             <div className="text-center py-24 text-muted-foreground">
               <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin text-primary" />
-              <p>Searching live inventory near Oakhurst, NJ…</p>
+              <p>Searching live inventory nationwide…</p>
             </div>
           )}
           {results !== null && !searching && sorted.length === 0 && !error && (
