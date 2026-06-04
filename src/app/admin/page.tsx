@@ -17,7 +17,7 @@ export default async function AdminPage() {
         <main className="max-w-md mx-auto p-5 pt-24 text-center">
           <ShieldAlert className="w-10 h-10 mx-auto mb-4 text-destructive" />
           <h1 className="font-heading text-xl font-bold mb-1">Restricted</h1>
-          <p className="text-sm text-muted-foreground">This area is for FleetFinder platform admins only.</p>
+          <p className="text-sm text-muted-foreground">This area is for LotCompas platform admins only.</p>
         </main>
       </div>
     );

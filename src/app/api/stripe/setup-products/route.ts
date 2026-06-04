@@ -1,4 +1,4 @@
-// POST /api/stripe/setup-products — one-time: create the FleetFinder product +
+// POST /api/stripe/setup-products — one-time: create the LotCompas product +
 // the two recurring prices ($100/mo base, $15/mo per seat). Returns the price
 // IDs to paste into env (STRIPE_PRICE_BASE, STRIPE_PRICE_SEAT).
 //
@@ -18,11 +18,11 @@ export async function POST() {
   const stripe = getStripe();
 
   // Find or create the product.
-  const existing = await stripe.products.search({ query: `name:'FleetFinder Subscription'` }).catch(() => null);
+  const existing = await stripe.products.search({ query: `name:'LotCompas Subscription'` }).catch(() => null);
   const product = existing?.data?.[0]
     ? existing.data[0]
     : await stripe.products.create({
-        name: "FleetFinder Subscription",
+        name: "LotCompas Subscription",
         description: "Cross-brand lease inventory search for leasing agents.",
       });
 

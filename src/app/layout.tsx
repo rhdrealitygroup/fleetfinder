@@ -38,16 +38,16 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://fleetfinder.vercel.ap
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
   title: {
-    default: "FleetFinder — Cross-brand lease inventory search",
-    template: "%s · FleetFinder",
+    default: "LotCompas — Cross-brand lease inventory search",
+    template: "%s · LotCompas",
   },
   description:
     "Search live new-car inventory across every dealer your leasing customers are buying from. Built for leasing agents who close deals.",
   openGraph: {
-    title: "FleetFinder",
+    title: "LotCompas",
     description:
       "Search live new-car inventory across every dealer your leasing customers are buying from.",
-    siteName: "FleetFinder",
+    siteName: "LotCompas",
     type: "website",
   },
 };

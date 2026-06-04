@@ -13,16 +13,16 @@ const LINKS = [
   { href: "/billing", label: "Billing" },
 ];
 
-export function AppNav({ live }: { live?: number }) {
+export function AppNav() {
   const pathname = usePathname();
   return (
     <header className="border-b border-border px-5 py-3 flex items-center justify-between sticky top-0 bg-background/90 backdrop-blur z-30">
       <div className="flex items-center gap-2">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
-            F
+            L
           </div>
-          <span className="font-heading font-bold tracking-tight text-lg">FleetFinder</span>
+          <span className="font-heading font-bold tracking-tight text-lg">LotCompas</span>
         </Link>
         <nav className="hidden md:flex items-center gap-1 ml-6 text-sm">
           {LINKS.map((l) => {
@@ -42,11 +42,6 @@ export function AppNav({ live }: { live?: number }) {
         </nav>
       </div>
       <div className="flex items-center gap-3">
-        {typeof live === "number" && (
-          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="w-1.5 h-1.5 rounded-full bg-positive" /> {live.toLocaleString()} vehicles live
-          </div>
-        )}
         <Link
           href="/login"
           className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-xs font-semibold text-primary hover:bg-primary/30 transition"

@@ -297,7 +297,7 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <AppNav live={142118} />
+      <AppNav />
 
       {/* Mobile filter bar — only after a search has run; lets you reopen the
           criteria. Before the first search the criteria form IS the page. */}
