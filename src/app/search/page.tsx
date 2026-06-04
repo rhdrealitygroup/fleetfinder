@@ -39,7 +39,7 @@ export default function SearchPage() {
   const [color, setColor] = useState("");
   const [colors, setColors] = useState<Color[]>([]);
   const [colorsLoading, setColorsLoading] = useState(false);
-  const [featureOpts, setFeatureOpts] = useState<{ value: string; label: string; count: number }[]>([]);
+  const [featureOpts, setFeatureOpts] = useState<{ value: string; label: string; msrp: number; count: number }[]>([]);
   const [featuresLoading, setFeaturesLoading] = useState(false);
   const [yearIdx, setYearIdx] = useState(0);
   const [priceIdx, setPriceIdx] = useState(0);
@@ -183,7 +183,7 @@ export default function SearchPage() {
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
-          features: [...features],
+          option_names: features.size ? [...features] : undefined,
         }),
       });
       const d = await res.json();
@@ -345,20 +345,21 @@ export default function SearchPage() {
           {make && !featuresLoading && featureOpts.length > 0 && <span className="normal-case tracking-normal text-muted-foreground/70">· {make}{model ? ` ${model}` : ""}</span>}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {(make && featureOpts.length ? featureOpts : FEATURE_PICKS.map((f) => ({ ...f, count: 0 }))).slice(0, 24).map((f) => {
+          {(make && featureOpts.length ? featureOpts : FEATURE_PICKS.map((f) => ({ ...f, msrp: 0, count: 0 }))).slice(0, 28).map((f: { value: string; label: string; msrp?: number }) => {
             const on = features.has(f.value);
             return (
               <button key={f.value} onClick={() => toggleFeature(f.value)}
                 className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
-                {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}{f.count ? <span className="opacity-50 ml-1">{f.count.toLocaleString()}</span> : null}
+                {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}{f.msrp ? <span className="opacity-50 ml-1">${f.msrp.toLocaleString()}</span> : null}
               </button>
             );
           })}
           {make && !featuresLoading && featureOpts.length === 0 && (
             <span className="text-xs text-muted-foreground py-1.5">No model-specific options found — generic list shown.</span>
           )}
-          {!make && <span className="text-[11px] text-muted-foreground py-1.5">Pick a make to see its real options.</span>}
+          {!make && <span className="text-[11px] text-muted-foreground py-1.5">Pick a make to see its real factory options.</span>}
         </div>
+        {make && featureOpts.length > 0 && <p className="text-[11px] text-muted-foreground mt-1.5">Real options from build sheets of in-stock {make} {model}. Filters match the factory VIN decode.</p>}
       </div>
 
       <button onClick={() => { runSearch(); setFiltersOpen(false); }} disabled={searching}

@@ -38,6 +38,7 @@ function cacheKeyFor(body: any) {
     features: Array.isArray(body.features) ? [...body.features].sort() : [],
     max_monthly: Number(body.max_monthly) || 0,
     option_query: (body.option_query || "").toString().trim().toLowerCase(),
+    option_names: Array.isArray(body.option_names) ? [...body.option_names].map((s) => String(s).toLowerCase()).sort() : [],
     zip: (body.zip || "").toString().trim(),
     radius: Math.min(100, Number(body.radius) || 100),
     lat: Math.round(Number(body.latitude || DEFAULT_LAT) * 10) / 10,
@@ -217,7 +218,13 @@ export async function POST(req: Request) {
   // result's VIN (NeoVIN, cached) and keep only those whose installed options
   // match every term. Expensive on first run (one decode per VIN), cheap after.
   const optionQuery = String(body.option_query || "").trim().toLowerCase();
-  if (optionQuery) {
+  // Selected option pills (named build-sheet options, e.g. "ultraview sunroof").
+  // Each must appear as a phrase in the decoded options; the free-text query
+  // matches as individual words. Both run in one decode pass.
+  const optionNames: string[] = Array.isArray(body.option_names)
+    ? body.option_names.map((s: unknown) => String(s || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  if (optionQuery || optionNames.length) {
     const terms = optionQuery.split(/[,\s]+/).filter(Boolean);
     const withVin = results.filter((r) => r.vin && r.vin.length === 17);
     const kept: UnifiedVehicle[] = [];
@@ -227,13 +234,15 @@ export async function POST(req: Request) {
       const names = await Promise.all(chunk.map((r) => decodeVinOptionNames(r.vin)));
       chunk.forEach((r, j) => {
         const hay = names[j].join(" | ");
-        if (terms.every((t) => hay.includes(t))) kept.push(r);
+        const okQuery = terms.every((t) => hay.includes(t));
+        const okNames = optionNames.every((n) => hay.includes(n));
+        if (okQuery && okNames) kept.push(r);
       });
     }
     results = kept;
   }
 
-  const narrowed = !!variant || maxMonthly > 0 || !!optionQuery;
+  const narrowed = !!variant || maxMonthly > 0 || !!optionQuery || optionNames.length > 0;
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider };
   cacheSet(ckey, payload, HOUR);
 

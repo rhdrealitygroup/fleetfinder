@@ -377,6 +377,41 @@ export async function decodeVinOptionNames(vin: string): Promise<string[]> {
   }
 }
 
+export type VinOption = { code: string; name: string; msrp: number; type: string };
+
+// Detailed factory build-sheet options for a VIN (named + priced), e.g.
+// "UltraView Sunroof" / $1450. Cached 30d. Powers the per-model option catalog.
+export async function decodeVinOptionDetails(vin: string): Promise<VinOption[]> {
+  const v = String(vin || "").toUpperCase().trim();
+  if (v.length !== 17) return [];
+  const ck = `vinoptdet::${v}`;
+  const hit = cacheGet<VinOption[]>(ck);
+  if (hit) return hit;
+  const apiKey = mcKey();
+  if (!apiKey) return [];
+  try {
+    const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
+    u.searchParams.set("api_key", apiKey);
+    const r = await fetch(u.toString(), { cache: "no-store" });
+    if (!r.ok) return [];
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const d: any = await r.json();
+    const details = Array.isArray(d.installed_options_details) ? d.installed_options_details : [];
+    const out: VinOption[] = details
+      .map((x: any) => ({
+        code: String(x.code || ""),
+        name: String(x.name || "").trim(),
+        msrp: num(x.msrp || x.sale_price),
+        type: String(x.type || ""),
+      }))
+      .filter((o: VinOption) => o.name);
+    cacheSet(ck, out, DAY * 30);
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function mcKey() {
   return process.env.MARKETCHECK_API_KEY || "";
 }
