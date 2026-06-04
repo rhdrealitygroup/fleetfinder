@@ -47,7 +47,7 @@ function LoginForm() {
   return (
     <div className="w-full max-w-sm">
       <h1 className="font-heading text-2xl font-bold mb-1">Welcome back</h1>
-      <p className="text-sm text-muted-foreground mb-6">Sign in to LotCompas.</p>
+      <p className="text-sm text-muted-foreground mb-6">Sign in to LotCompass.</p>
 
       <GoogleSignInButton next={next} />
       <div className="flex items-center gap-3 my-5 text-xs text-muted-foreground">

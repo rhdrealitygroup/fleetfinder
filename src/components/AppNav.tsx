@@ -22,7 +22,7 @@ export function AppNav() {
           <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
             L
           </div>
-          <span className="font-heading font-bold tracking-tight text-lg">LotCompas</span>
+          <span className="font-heading font-bold tracking-tight text-lg">LotCompass</span>
         </Link>
         <nav className="hidden md:flex items-center gap-1 ml-6 text-sm">
           {LINKS.map((l) => {

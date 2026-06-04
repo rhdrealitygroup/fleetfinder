@@ -10,7 +10,7 @@ export default function HomePage() {
       <header className="px-6 py-5 max-w-6xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-md bg-[#b85c1e] flex items-center justify-center text-white text-sm font-bold">L</div>
-          <div className="text-xl font-bold tracking-tight" style={serif}>LotCompas</div>
+          <div className="text-xl font-bold tracking-tight" style={serif}>LotCompass</div>
         </div>
         <nav className="hidden md:flex items-center gap-7 text-sm text-stone-600">
           <a href="#features" className="hover:text-stone-900 transition">Product</a>
@@ -106,7 +106,7 @@ export default function HomePage() {
 
       <footer className="px-6 py-10 border-t border-stone-200">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-stone-500">
-          <div style={serif} className="font-bold text-stone-800">LotCompas <span className="font-sans font-normal text-stone-500">· by RHD Reality Group</span></div>
+          <div style={serif} className="font-bold text-stone-800">LotCompass <span className="font-sans font-normal text-stone-500">· by RHD Reality Group</span></div>
           <div>© 2026 — Oakhurst, NJ</div>
         </div>
       </footer>
