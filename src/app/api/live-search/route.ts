@@ -80,16 +80,21 @@ export async function POST(req: Request) {
       const url = new URL(`${MC_HOST}/search/car/active`);
       url.searchParams.set("api_key", marketKey);
       url.searchParams.set("car_type", body.car_type || "new");
+      // ZIP → local (geocoded), explicit lat/lng → local, neither → nationwide.
+      // The Basic MarketCheck tier allows unbounded nationwide queries; on those
+      // we skip radius + distance sort (there's no center to measure from).
+      const hasGeo = !!zip || !!body.latitude;
       if (zip) {
-        // Center on the customer's ZIP (MarketCheck geocodes it).
         url.searchParams.set("zip", zip);
-      } else {
-        url.searchParams.set("latitude", String(body.latitude || DEFAULT_LAT));
-        url.searchParams.set("longitude", String(body.longitude || DEFAULT_LNG));
+      } else if (body.latitude) {
+        url.searchParams.set("latitude", String(body.latitude));
+        url.searchParams.set("longitude", String(body.longitude));
       }
-      url.searchParams.set("radius", String(radius));
-      url.searchParams.set("sort_by", "distance");
-      url.searchParams.set("sort_order", "asc");
+      if (hasGeo) {
+        url.searchParams.set("radius", String(radius));
+        url.searchParams.set("sort_by", "distance");
+        url.searchParams.set("sort_order", "asc");
+      }
       if (body.vin) url.searchParams.set("vin", String(body.vin).toUpperCase().trim());
       if (body.make) url.searchParams.set("make", body.make);
       if (mcModel) url.searchParams.set("model", mcModel);
@@ -163,9 +168,10 @@ export async function POST(req: Request) {
   let total = 0;
   let provider = "";
   let note = "";
-  // When the agent enters a customer ZIP, go straight to MarketCheck — it
-  // geocodes ZIP natively; Auto.dev only takes lat/lng.
-  const preferMarketCheck = !!zip && !!marketKey;
+  // Prefer MarketCheck whenever we have a key: it geocodes ZIPs natively AND
+  // (on the Basic tier) handles unbounded nationwide queries. Auto.dev is the
+  // fallback, used only if MarketCheck is unavailable or rate-limited.
+  const preferMarketCheck = !!marketKey;
   try {
     if (preferMarketCheck) {
       const r = await searchMarketCheck();
