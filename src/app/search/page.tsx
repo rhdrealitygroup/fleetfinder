@@ -255,7 +255,7 @@ export default function SearchPage() {
           />
           <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}
             className="rounded-lg border border-border bg-card px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50">
-            {[25, 50, 75, 100].map((r) => <option key={r} value={r}>{r} mi</option>)}
+            {[25, 50, 100, 250, 500].map((r) => <option key={r} value={r}>{r} mi</option>)}
           </select>
         </div>
         <p className="text-[11px] text-muted-foreground">{zip ? `Searching within ${radius} mi of ${zip}.` : "Enter your customer's ZIP for inventory near them."}</p>

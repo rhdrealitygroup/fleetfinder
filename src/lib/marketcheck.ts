@@ -14,9 +14,9 @@ export const AUTO_DEV_HOST = "https://api.auto.dev";
 export const DEFAULT_LAT = 40.2606;
 export const DEFAULT_LNG = -74.009;
 export const DEFAULT_ZIP = "07755";
-export const RADIUS_MILES = 100;
-export const MAX_RESULTS = 50;
-export const PAGE_SIZE = 50;
+export const RADIUS_MILES = 100; // default radius; Standard tier allows up to 500
+export const MAX_RESULTS = 300;  // Standard tier: 1500-row pagination (was 50 on Free)
+export const PAGE_SIZE = 100;    // rows per request (Standard allows up to 1500)
 
 export const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 

@@ -18,7 +18,7 @@ function summarize(body: any) {
     body.drivetrain, body.powertrain_type, body.exterior_color,
     body.price_max && `≤$${body.price_max}`, body.miles_max && `<${body.miles_max}mi`,
   ].filter(Boolean).join(" ") || "all new cars";
-  const loc = body.zip ? ` · within ${Math.min(100, Number(body.radius) || 100)}mi of ${body.zip}` : "";
+  const loc = body.zip ? ` · within ${Math.min(500, Number(body.radius) || 100)}mi of ${body.zip}` : "";
   return base + loc;
 }
 
@@ -40,7 +40,7 @@ function cacheKeyFor(body: any) {
     option_query: (body.option_query || "").toString().trim().toLowerCase(),
     option_names: Array.isArray(body.option_names) ? [...body.option_names].map((s) => String(s).toLowerCase()).sort() : [],
     zip: (body.zip || "").toString().trim(),
-    radius: Math.min(100, Number(body.radius) || 100),
+    radius: Math.min(500, Number(body.radius) || 100),
     lat: Math.round(Number(body.latitude || DEFAULT_LAT) * 10) / 10,
     lng: Math.round(Number(body.longitude || DEFAULT_LNG) * 10) / 10,
   };
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   // Customer location: search around their ZIP. Radius is capped at 100mi
   // (MarketCheck Free-tier limit). Falls back to a default center when blank.
   const zip = String(body.zip || "").trim();
-  const radius = Math.min(100, Number(body.radius) || RADIUS_MILES);
+  const radius = Math.min(500, Number(body.radius) || RADIUS_MILES);
 
   // ── Cache check (1h) ────────────────────────────────────────────────────
   const ckey = cacheKeyFor(body);
