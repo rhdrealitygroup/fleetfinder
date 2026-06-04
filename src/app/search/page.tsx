@@ -39,6 +39,8 @@ export default function SearchPage() {
   const [color, setColor] = useState("");
   const [colors, setColors] = useState<Color[]>([]);
   const [colorsLoading, setColorsLoading] = useState(false);
+  const [featureOpts, setFeatureOpts] = useState<{ value: string; label: string; count: number }[]>([]);
+  const [featuresLoading, setFeaturesLoading] = useState(false);
   const [yearIdx, setYearIdx] = useState(0);
   const [priceIdx, setPriceIdx] = useState(0);
   const [features, setFeatures] = useState<Set<string>>(new Set());
@@ -111,6 +113,31 @@ export default function SearchPage() {
       })
       .catch(() => !cancelled && setColors([]))
       .finally(() => !cancelled && setColorsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [make, model, carType]);
+
+  // Load make/model-specific options/features whenever make is set.
+  useEffect(() => {
+    if (!make) {
+      setFeatureOpts([]);
+      return;
+    }
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFeaturesLoading(true);
+    fetch("/api/list-features", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ make, model, car_type: carType }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setFeatureOpts(Array.isArray(d.features) ? d.features : []);
+      })
+      .catch(() => !cancelled && setFeatureOpts([]))
+      .finally(() => !cancelled && setFeaturesLoading(false));
     return () => {
       cancelled = true;
     };
@@ -234,14 +261,14 @@ export default function SearchPage() {
       </div>
 
       <Field label="Make">
-        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); }} className={selectCls}>
+        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setFeatures(new Set()); }} className={selectCls}>
           <option value="">Any make</option>
           {CATALOG_MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
 
       <Field label="Model">
-        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); }} disabled={!make} className={selectCls}>
+        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
           <option value="">{make ? "Any model" : "Pick a make first"}</option>
           {models.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
@@ -313,17 +340,24 @@ export default function SearchPage() {
       </Field>
 
       <div>
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Must-have features</div>
+        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2 flex items-center gap-2">
+          Must-have options {featuresLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+          {make && !featuresLoading && featureOpts.length > 0 && <span className="normal-case tracking-normal text-muted-foreground/70">· {make}{model ? ` ${model}` : ""}</span>}
+        </div>
         <div className="flex flex-wrap gap-1.5">
-          {FEATURE_PICKS.slice(0, 14).map((f) => {
+          {(make && featureOpts.length ? featureOpts : FEATURE_PICKS.map((f) => ({ ...f, count: 0 }))).slice(0, 24).map((f) => {
             const on = features.has(f.value);
             return (
               <button key={f.value} onClick={() => toggleFeature(f.value)}
                 className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
-                {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}
+                {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}{f.count ? <span className="opacity-50 ml-1">{f.count.toLocaleString()}</span> : null}
               </button>
             );
           })}
+          {make && !featuresLoading && featureOpts.length === 0 && (
+            <span className="text-xs text-muted-foreground py-1.5">No model-specific options found — generic list shown.</span>
+          )}
+          {!make && <span className="text-[11px] text-muted-foreground py-1.5">Pick a make to see its real options.</span>}
         </div>
       </div>
 
