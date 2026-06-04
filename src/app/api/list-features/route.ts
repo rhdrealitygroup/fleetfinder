@@ -20,7 +20,21 @@ const SAMPLE_VINS = 8; // build sheets to decode per model load (cached 30d each
 const NOISE =
   /\b(full[- ]?size|mid[- ]?size|midsize|compact|subcompact|pickup|suv|sedan|coupe|hatchback|minivan|wagon|convertible|crossover|truck)\b|transmission|\bupgrade[d]?\s+(paint|wheel|tire|usb)/i;
 
-type Opt = { value: string; label: string; msrp: number; count: number };
+type Opt = { value: string; label: string; msrp: number; count: number; cat: string };
+
+// Group an option into a configurator-style category from its name. Order of
+// the tests matters (packages first, then specific buckets, exterior/interior
+// last as catch-alls).
+function categorize(name: string): string {
+  const n = name.toLowerCase();
+  if (/\b(package|pkg|group|edition|collection|preferred equipment)\b/.test(n)) return "Packages";
+  if (/audio|speaker|bose|akg|sound system|infotainment|navigation|nav system|wi-?fi|hotspot|entertainment|subwoofer|amplifier|rear (seat )?entertainment/.test(n)) return "Entertainment";
+  if (/assist|collision|blind ?spot|lane keep|adaptive cruise|safety|air ?bag|night vision|service plan|maintenance|care plan|protection plan|warranty|driver alert|parking sensor|surround vision/.test(n)) return "Safety & Service";
+  if (/transmission|engine|\bbrake|caliper|exhaust|suspension|\btow|trailer|axle|differential|performance|battery|charger|drivetrain|limited slip|cooling|cylinder|turbo|all-?wheel|rear-?wheel|four-?wheel/.test(n)) return "Mechanical";
+  if (/wheel|tire|lug ?nut|spoiler|grille|tail ?lamp|head ?lamp|mirror|paint|tintcoat|metallic|pearl|clear ?coat|decklid|applique|molding|running board|roof rail|tonneau|side step|splash|mud ?guard|chrome|badge|emblem|exterior|tow hitch cover/.test(n)) return "Exterior";
+  if (/seat|floor (mat|liner)|cargo|sill|pedal|console|leather|suede|cabin|dash|steering wheel|sun ?roof|moon ?roof|headliner|\binterior|armrest|ambient|interior trim|carpet|net\b/.test(n)) return "Interior";
+  return "Other";
+}
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -67,7 +81,7 @@ export async function POST(req: Request) {
           cur.count += 1;
           if (o.msrp > cur.msrp) cur.msrp = o.msrp;
         } else {
-          map.set(key, { value: key, label: o.name, msrp: o.msrp, count: 1 });
+          map.set(key, { value: key, label: o.name, msrp: o.msrp, count: 1, cat: categorize(o.name) });
         }
       }
     }
@@ -92,7 +106,7 @@ export async function POST(req: Request) {
         const fData = await fRes.json();
         const seen = new Set(features.map((f) => f.value));
         const facet: Opt[] = (fData.facets?.high_value_features || [])
-          .map((c: any) => ({ value: String(c.item || "").trim().toLowerCase(), label: normalizeFeature(c.item), msrp: 0, count: num(c.count) }))
+          .map((c: any) => ({ value: String(c.item || "").trim().toLowerCase(), label: normalizeFeature(c.item), msrp: 0, count: num(c.count), cat: categorize(String(c.item || "")) }))
           .filter((f: Opt) => f.value && f.label && !NOISE.test(f.value) && !seen.has(f.value));
         features = [...features, ...facet].slice(0, 30);
       }
