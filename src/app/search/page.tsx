@@ -25,6 +25,7 @@ type Vehicle = {
 
 type Variant = { label: string; count: number };
 type Trim = { name: string; count: number; available: boolean; msrp?: number; variants?: Variant[] };
+type Color = { name: string; count: number; variants: string[] };
 
 const FEATURE_PICKS = FEATURE_GROUPS.flatMap((g) => g.items);
 
@@ -35,6 +36,9 @@ export default function SearchPage() {
   const [variant, setVariant] = useState("");
   const [trims, setTrims] = useState<Trim[]>([]);
   const [trimsLoading, setTrimsLoading] = useState(false);
+  const [color, setColor] = useState("");
+  const [colors, setColors] = useState<Color[]>([]);
+  const [colorsLoading, setColorsLoading] = useState(false);
   const [yearIdx, setYearIdx] = useState(0);
   const [priceIdx, setPriceIdx] = useState(0);
   const [features, setFeatures] = useState<Set<string>>(new Set());
@@ -87,6 +91,31 @@ export default function SearchPage() {
     };
   }, [make, model, carType]);
 
+  // Load make/model-specific exterior colors whenever make is set.
+  useEffect(() => {
+    if (!make) {
+      setColors([]);
+      return;
+    }
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setColorsLoading(true);
+    fetch("/api/list-colors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ make, model, car_type: carType }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setColors(Array.isArray(d.colors) ? d.colors : []);
+      })
+      .catch(() => !cancelled && setColors([]))
+      .finally(() => !cancelled && setColorsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [make, model, carType]);
+
   const toggleFeature = (v: string) =>
     setFeatures((prev) => {
       const n = new Set(prev);
@@ -120,6 +149,7 @@ export default function SearchPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant,
+          exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
           zip: zip.trim() || undefined, radius: effRadius,
           max_monthly: Number(maxMonthly) || undefined,
           option_query: optionQuery.trim() || undefined,
@@ -141,7 +171,7 @@ export default function SearchPage() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, optionQuery, bodyType, drivetrain]);
+  }, [make, model, trim, variant, color, colors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, optionQuery, bodyType, drivetrain]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -204,14 +234,14 @@ export default function SearchPage() {
       </div>
 
       <Field label="Make">
-        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); }} className={selectCls}>
+        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); }} className={selectCls}>
           <option value="">Any make</option>
           {CATALOG_MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
 
       <Field label="Model">
-        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); }} disabled={!make} className={selectCls}>
+        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); }} disabled={!make} className={selectCls}>
           <option value="">{make ? "Any model" : "Pick a make first"}</option>
           {models.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
@@ -246,6 +276,16 @@ export default function SearchPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Exterior color — make/model-specific, pulled live from MarketCheck */}
+      {make && (
+        <Field label="Exterior color">
+          <select value={color} onChange={(e) => setColor(e.target.value)} className={selectCls} disabled={colorsLoading && colors.length === 0}>
+            <option value="">{colorsLoading && colors.length === 0 ? "Loading colors…" : "Any color"}</option>
+            {colors.map((c) => <option key={c.name} value={c.name}>{c.name}{c.count ? ` · ${c.count.toLocaleString()}` : ""}</option>)}
+          </select>
+        </Field>
       )}
 
       <Field label="Year"><select value={yearIdx} onChange={(e) => setYearIdx(Number(e.target.value))} className={selectCls}>{YEAR_RANGES.map((y, i) => <option key={y.label} value={i}>{y.label}</option>)}</select></Field>

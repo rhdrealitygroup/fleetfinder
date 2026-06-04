@@ -51,8 +51,13 @@ export async function POST(req: Request) {
       .replace(/\s+/g, " ")
       .trim();
 
-    const buckets = new Map<string, { name: string; count: number }>();
+    // Each bucket merges spelling variants (e.g. "Agate Black" +
+    // "Agate Black Metallic") under one display name, but keeps the RAW facet
+    // values in `variants` so search can filter MarketCheck exactly — it matches
+    // the full color string and accepts a comma-separated OR list.
+    const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
     for (const c of facetItems) {
+      const raw = String(c.item || "").trim();
       const cleaned = cleanName(c.item);
       if (!cleaned) continue;
       const key = dedupKey(cleaned);
@@ -62,8 +67,9 @@ export async function POST(req: Request) {
       if (prev) {
         prev.count += cnt;
         if (cleaned.length > prev.name.length) prev.name = cleaned;
+        if (raw && !prev.variants.includes(raw)) prev.variants.push(raw);
       } else {
-        buckets.set(key, { name: cleaned, count: cnt });
+        buckets.set(key, { name: cleaned, count: cnt, variants: raw ? [raw] : [] });
       }
     }
     const colors = [...buckets.values()]

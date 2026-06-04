@@ -99,7 +99,9 @@ export async function POST(req: Request) {
       if (body.powertrain_type) url.searchParams.set("powertrain_type", body.powertrain_type);
       if (body.body_type) url.searchParams.set("body_type", body.body_type);
       if (body.drivetrain) url.searchParams.set("drivetrain", body.drivetrain);
-      if (body.exterior_color) url.searchParams.set("base_ext_color", body.exterior_color);
+      // exterior_color matches the full color string and accepts a comma-OR
+      // list (e.g. "Agate Black,Agate Black Metallic") from the color picker.
+      if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);
       if (Array.isArray(body.features) && body.features.length) url.searchParams.set("high_value_features", body.features.join(","));
       url.searchParams.set("rows", String(PAGE_SIZE));
       url.searchParams.set("start", String(page * PAGE_SIZE));
