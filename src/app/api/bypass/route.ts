@@ -24,7 +24,9 @@ export async function POST(req: Request) {
   if (Date.now() > BYPASS_EXPIRES) return NextResponse.json({ error: "Access code expired" }, { status: 403 });
 
   const { code } = await req.json().catch(() => ({}));
-  if (String(code || "").trim() !== expected) {
+  // Match dash-insensitively: "917-645-3071" and "9176453071" both work.
+  const norm = (s: string) => String(s || "").replace(/[^0-9a-z]/gi, "").toLowerCase();
+  if (norm(code) !== norm(expected)) {
     return NextResponse.json({ error: "Invalid access code" }, { status: 401 });
   }
 
