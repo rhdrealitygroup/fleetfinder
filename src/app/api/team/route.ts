@@ -17,6 +17,14 @@ export async function POST(req: Request) {
 
   const db = createServiceRoleClient();
 
+  // Seat limit: don't let an org exceed its paid agent_limit (billing integrity).
+  const { data: org } = await db.from("organizations").select("agent_limit").eq("id", membership.org_id).single();
+  const { count: seatCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
+  const limit = (org?.agent_limit ?? 1) + 1; // owner seat + agent_limit additional seats
+  if ((seatCount ?? 0) >= limit) {
+    return NextResponse.json({ error: `Seat limit reached (${limit}). Add seats in Billing to invite more agents.` }, { status: 402 });
+  }
+
   // Invite (or fetch) the auth user.
   let userId: string | null = null;
   const invite = await db.auth.admin.inviteUserByEmail(email).catch(() => null);
@@ -26,6 +34,11 @@ export async function POST(req: Request) {
     // Already exists — look them up via the profiles table by email.
     const { data: prof } = await db.from("profiles").select("id").eq("email", email).limit(1);
     userId = prof?.[0]?.id || null;
+    // Consent guard: never force-join a user who already belongs to another org.
+    if (userId) {
+      const { data: other } = await db.from("memberships").select("id").eq("user_id", userId).neq("org_id", membership.org_id).limit(1);
+      if (other?.length) return NextResponse.json({ error: "That person already belongs to another company." }, { status: 409 });
+    }
   }
   if (!userId) return NextResponse.json({ error: "Could not invite that email" }, { status: 400 });
 

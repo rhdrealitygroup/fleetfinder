@@ -9,6 +9,7 @@ import {
   resolveModel, decodeVinOptionNames, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
+import { getSessionContext } from "@/lib/auth";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -49,6 +50,11 @@ function cacheKeyFor(body: any) {
 }
 
 export async function POST(req: Request) {
+  // Defense-in-depth: this endpoint spends paid API quota, so require a session
+  // directly (not just the proxy gate).
+  const { user } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const body = await req.json().catch(() => ({}));
   const autoKey = autoDevKey();
   const marketKey = mcKey();
