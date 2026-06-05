@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/search", label: "Live Search" },
   { href: "/calculator", label: "Calculator" },
   { href: "/saved", label: "Saved" },
+  { href: "/customers", label: "Customers" },
   { href: "/dealers", label: "Dealers" },
   { href: "/team", label: "Team" },
   { href: "/billing", label: "Billing" },

@@ -71,6 +71,17 @@ export default function SearchPage() {
   const [compare, setCompare] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
 
+  // Prefill criteria from the URL (e.g. opened via a customer's "Search").
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const m = p.get("make"), md = p.get("model"), z = p.get("zip"), mx = p.get("max");
+    if (m) setMake(m);
+    if (md) setModel(md);
+    if (z) setZip(z);
+    if (mx) setMaxMonthly(mx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const models = make ? CAR_CATALOG[make] || [] : [];
 
   // Load trims whenever make+model are both set.
