@@ -17,7 +17,7 @@
 //   4. Errors are surfaced; empty/failed results are cached only briefly.
 
 import { NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/auth";
+import { requireActivePlan } from "@/lib/auth";
 import {
   MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
   isNoiseVariant, resolveModel,
@@ -34,14 +34,15 @@ type Variant = { label: string; count: number };
 type Trim = { name: string; count: number; available: boolean; msrp?: number; variants?: Variant[] };
 
 export async function POST(req: Request) {
-  const { user } = await getSessionContext();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const gate = await requireActivePlan();
+  if (!gate.ok) return NextResponse.json({ error: gate.error, trims: [] }, { status: gate.status });
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();
   if (!make) return NextResponse.json({ trims: [], error: "make required" }, { status: 400 });
 
-  const cacheKey = `trims::${make}::${model}`.toLowerCase();
+  const carType = body.car_type || "new";
+  const cacheKey = `trims::${make}::${model}::${carType}`.toLowerCase();
   if (!body.fresh) {
     const hit = cacheGet<Trim[]>(cacheKey);
     if (hit) return NextResponse.json({ trims: hit, cached: true, provider: "cache" });

@@ -52,3 +52,41 @@ export async function getSessionContext(): Promise<SessionContext> {
     return { user: null, isSuperAdmin: false, membership: null };
   }
 }
+
+export type PlanGate = { ok: boolean; status: number; error?: string; ctx: SessionContext };
+
+// Server-side subscription enforcement for paid, quota-spending routes
+// (live-search, diagnose, list-*). Without this a canceled/past-due org or an
+// expired free trial could keep hitting MarketCheck for free — the billing UI
+// alone is not a control. Rules:
+//   • signed out                       → 401
+//   • super-admin                      → allowed (platform owner)
+//   • no org yet (pre-onboarding)      → allowed (implicit fresh trial)
+//   • plan_status active               → allowed
+//   • plan_status trial, not expired   → allowed
+//   • trial expired / past_due / canceled → 402 (must fix billing)
+// Fails OPEN on a transient DB read error so a blip never blocks a paying agent;
+// only a definitive inactive status returns 402.
+export async function requireActivePlan(): Promise<PlanGate> {
+  const ctx = await getSessionContext();
+  if (!ctx.user) return { ok: false, status: 401, error: "Unauthorized", ctx };
+  if (ctx.isSuperAdmin || !ctx.membership) return { ok: true, status: 200, ctx };
+  try {
+    const supabase = await createClient();
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("plan_status, trial_ends_at")
+      .eq("id", ctx.membership.org_id)
+      .single();
+    if (!org) return { ok: true, status: 200, ctx }; // unreadable → don't hard-block
+    const status = String(org.plan_status || "");
+    const trialOk = status === "trial" && (!org.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
+    if (status === "active" || trialOk) return { ok: true, status: 200, ctx };
+    const error = status === "trial"
+      ? "Your free trial has ended — add a payment method to keep searching."
+      : "Your subscription is inactive. Update billing to continue.";
+    return { ok: false, status: 402, error, ctx };
+  } catch {
+    return { ok: true, status: 200, ctx }; // transient error → fail open
+  }
+}

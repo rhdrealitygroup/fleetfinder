@@ -1,7 +1,10 @@
 // Per-AGENT saved vehicles + named lists (a list is just payload.list).
 //   GET                              → this agent's saved vehicles
 //   POST   { vehicle, list? }        → save (default list "Saved")
-//   DELETE { id } | { vin }          → remove
+//   DELETE { id }                    → remove that one saved row
+//   DELETE { vin, list? }            → remove a VIN from ONE list (default
+//                                      "Saved"); never touches other lists
+//   DELETE { vin, allLists:true }    → remove a VIN from every list
 // Stored in public.saved_vehicles (RLS: owning user only).
 
 import { NextResponse } from "next/server";
@@ -58,9 +61,20 @@ export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const supabase = await createClient();
   let qb = supabase.from("saved_vehicles").delete().eq("user_id", user.id);
-  if (body.id) qb = qb.eq("id", String(body.id));
-  else if (body.vin) qb = qb.eq("vin", String(body.vin));
-  else return NextResponse.json({ error: "id or vin required" }, { status: 400 });
+  if (body.id) {
+    qb = qb.eq("id", String(body.id));
+  } else if (body.vin) {
+    qb = qb.eq("vin", String(body.vin));
+    // Scope to a single list unless the caller explicitly asks for all lists.
+    // Without this, un-starring a VIN in search would wipe it from EVERY named
+    // customer list (data loss). `payload->>list` defaults to "Saved".
+    if (!body.allLists) {
+      const list = String(body.list || "Saved").trim() || "Saved";
+      qb = qb.eq("payload->>list", list);
+    }
+  } else {
+    return NextResponse.json({ error: "id or vin required" }, { status: 400 });
+  }
   await qb;
   return NextResponse.json({ ok: true });
 }

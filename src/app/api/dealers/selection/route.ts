@@ -22,7 +22,11 @@ export async function GET() {
   const ctx = await resolveOrg();
   if ("error" in ctx) return NextResponse.json({ error: ctx.error, dealers: [] }, { status: ctx.status });
   const supabase = await createClient();
-  const { data } = await supabase.from("dealers").select("dealer_key,name,city,state").eq("org_id", ctx.org);
+  // Only currently-selected dealers (treat legacy null as selected).
+  const { data } = await supabase
+    .from("dealers").select("dealer_key,name,city,state")
+    .eq("org_id", ctx.org)
+    .or("selected.is.null,selected.eq.true");
   const dealers = (data || []).filter((d) => d.dealer_key).map((d) => ({ id: d.dealer_key, name: d.name, city: d.city, state: d.state }));
   return NextResponse.json({ dealers });
 }
@@ -40,6 +44,9 @@ export async function POST(req: Request) {
     await db.from("dealers").insert({
       org_id: ctx.org, dealer_key: id, name: d.name || "", city: d.city || "", state: d.state || "", selected: true,
     });
+  } else {
+    // Re-selecting a previously deselected dealer.
+    await db.from("dealers").update({ selected: true }).eq("org_id", ctx.org).eq("dealer_key", id);
   }
   return NextResponse.json({ ok: true });
 }
@@ -50,6 +57,8 @@ export async function DELETE(req: Request) {
   const body = await req.json().catch(() => ({}));
   const id = String(body.id || "").trim();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-  await createServiceRoleClient().from("dealers").delete().eq("org_id", ctx.org).eq("dealer_key", id);
+  // Soft-deselect (set selected=false) rather than hard-delete, so the row's
+  // metadata survives and selection state stays a clean boolean.
+  await createServiceRoleClient().from("dealers").update({ selected: false }).eq("org_id", ctx.org).eq("dealer_key", id);
   return NextResponse.json({ ok: true });
 }

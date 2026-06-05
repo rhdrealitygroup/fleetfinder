@@ -2,21 +2,22 @@
 // MarketCheck facet, deduped across dealer spelling variants. Ported from Base44.
 
 import { NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/auth";
+import { requireActivePlan } from "@/lib/auth";
 import { MC_HOST, mcKey, num, resolveModel } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function POST(req: Request) {
-  const { user } = await getSessionContext();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const gate = await requireActivePlan();
+  if (!gate.ok) return NextResponse.json({ error: gate.error, colors: [] }, { status: gate.status });
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();
   if (!make) return NextResponse.json({ colors: [], error: "make required" }, { status: 400 });
 
-  const cacheKey = `colors::${make}::${model}`.toLowerCase();
+  const carType = body.car_type || "new";
+  const cacheKey = `colors::${make}::${model}::${carType}`.toLowerCase();
   if (!body.fresh) {
     const hit = cacheGet<any[]>(cacheKey);
     if (hit) return NextResponse.json({ colors: hit, cached: true, provider: "cache" });

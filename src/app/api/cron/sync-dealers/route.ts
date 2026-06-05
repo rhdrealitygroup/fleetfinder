@@ -24,8 +24,14 @@ function mapDealer(x: any) {
   };
 }
 
+// Returns the dealers AND whether the pull completed cleanly. A 429/5xx
+// mid-pagination leaves `complete=false` so the caller won't mark the state
+// freshly synced with a partial list (which would hide the rest for a full
+// ~2-week rotation). Collected dealers are still upserted — we just retry the
+// state next run instead of advancing its cursor.
 async function pullState(state: string, apiKey: string) {
   const out = new Map<string, any>();
+  let complete = true;
   for (const type of ["franchise", "independent"]) {
     for (let start = 0; start < 1500; start += 50) {
       const u = new URL(`${MC_HOST}/dealers/car`);
@@ -35,14 +41,14 @@ async function pullState(state: string, apiKey: string) {
       u.searchParams.set("rows", "50");
       u.searchParams.set("start", String(start));
       const r = await fetch(u.toString());
-      if (!r.ok) break;
+      if (!r.ok) { complete = false; break; }
       const d = await r.json();
       const ds: any[] = d.dealers || [];
       for (const x of ds) out.set(String(x.id), mapDealer(x));
       if (ds.length < 50) break;
     }
   }
-  return [...out.values()];
+  return { dealers: [...out.values()], complete };
 }
 
 export async function GET(req: Request) {
@@ -65,15 +71,19 @@ export async function GET(req: Request) {
   const batchSize = Math.max(1, Number(url.searchParams.get("batch")) || 3);
   const batch = ordered.slice(0, batchSize);
 
-  const refreshed: { state: string; n: number }[] = [];
+  const refreshed: { state: string; n: number; complete: boolean }[] = [];
   for (const st of batch) {
-    const dealers = await pullState(st, apiKey);
+    const { dealers, complete } = await pullState(st, apiKey);
     if (dealers.length) {
       // Upsert without `makes` → existing make tags are preserved on update.
       await db.from("dealer_catalog").upsert(dealers, { onConflict: "id" });
-      await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), count: dealers.length });
-      refreshed.push({ state: st, n: dealers.length });
     }
+    // Only advance the cursor when the state pulled cleanly; a partial pull
+    // (rate-limited) is retried next run instead of being recorded as fresh.
+    if (complete && dealers.length) {
+      await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), count: dealers.length });
+    }
+    refreshed.push({ state: st, n: dealers.length, complete });
   }
   return NextResponse.json({ ok: true, refreshed });
 }

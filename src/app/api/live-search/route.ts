@@ -6,10 +6,10 @@ import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
   MAX_RESULTS, PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
-  resolveModel, decodeVinOptionNames, type UnifiedVehicle,
+  resolveModel, decodeVinOptionNames, phraseMatch, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
-import { getSessionContext } from "@/lib/auth";
+import { requireActivePlan } from "@/lib/auth";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -51,9 +51,9 @@ function cacheKeyFor(body: any) {
 
 export async function POST(req: Request) {
   // Defense-in-depth: this endpoint spends paid API quota, so require a session
-  // directly (not just the proxy gate).
-  const { user } = await getSessionContext();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // AND an active plan directly (not just the proxy gate / billing UI).
+  const gate = await requireActivePlan();
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));
   const autoKey = autoDevKey();
@@ -250,8 +250,9 @@ export async function POST(req: Request) {
       const names = await Promise.all(chunk.map((r) => decodeVinOptionNames(r.vin)));
       chunk.forEach((r, j) => {
         const hay = names[j].join(" | ");
-        const okQuery = terms.every((t) => hay.includes(t));
-        const okNames = optionNames.every((n) => hay.includes(n));
+        // Word-boundary match so "tow" can't match "Towel Hooks" etc.
+        const okQuery = terms.every((t) => phraseMatch(hay, t));
+        const okNames = optionNames.every((n) => phraseMatch(hay, n));
         if (okQuery && okNames) kept.push(r);
       });
     }

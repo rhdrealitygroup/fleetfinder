@@ -21,12 +21,19 @@ export async function snapshotModel(make: string, model: string) {
     return u;
   };
 
-  // Trims + sub-variants + colors in a single faceted call.
+  // Trims + sub-variants + colors in a single faceted call. If this call fails
+  // (429/5xx), return null so the cron does NOT persist an empty snapshot or
+  // advance the staleness cursor — otherwise a rate-limited night would wipe a
+  // model's catalog to empty and skip retrying it for a full rotation.
   const fRes = await fetch(base({ rows: 0, facets: "trim|0|40,version|0|60,exterior_color|0|60" }).toString());
-  const fd: any = fRes.ok ? await fRes.json() : {};
+  if (!fRes.ok) return null;
+  const fd: any = await fRes.json().catch(() => null);
+  if (!fd) return null;
   const trims = (fd.facets?.trim || []).map((t: any) => ({ name: t.item, count: num(t.count) }));
   const versions = (fd.facets?.version || []).map((t: any) => ({ name: t.item, count: num(t.count) }));
   const colors = (fd.facets?.exterior_color || []).map((c: any) => ({ name: c.item, count: num(c.count) }));
+  // No facet data at all → treat as a transient miss, don't overwrite good data.
+  if (!trims.length && !versions.length && !colors.length) return null;
 
   // Options: union named build-sheet options from a small VIN sample.
   const vRes = await fetch(base({ rows: 6, fields: "vin" }).toString());

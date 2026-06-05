@@ -15,10 +15,30 @@ export const DEFAULT_LAT = 40.2606;
 export const DEFAULT_LNG = -74.009;
 export const DEFAULT_ZIP = "07755";
 export const RADIUS_MILES = 100; // default radius; Standard tier allows up to 500
-export const MAX_RESULTS = 300;  // Standard tier: 1500-row pagination (was 50 on Free)
-export const PAGE_SIZE = 100;    // rows per request (Standard allows up to 1500)
+export const MAX_RESULTS = 1500; // Standard tier: start offset caps at 1500
+export const PAGE_SIZE = 100;    // rows per request (start + rows must stay ≤ 1500)
 
 export const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// Word-boundary phrase match. True only when `needle` appears in `hay` bounded
+// by non-alphanumerics on both sides — so "tow" does NOT match "Towel Hooks",
+// "red" does NOT match "Predator", "sport" does NOT match "Passport". Used by
+// the option/feature filters (search + diagnose) instead of raw .includes(),
+// which produced false matches. Multi-word needles match as a contiguous phrase.
+const RX_ESCAPE = /[.*+?^${}()|[\]\\]/g;
+export function phraseMatch(hay: string, needle: string): boolean {
+  const n = String(needle || "").trim().toLowerCase();
+  if (!n) return false;
+  const h = String(hay || "").toLowerCase();
+  const esc = n.replace(RX_ESCAPE, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(h);
+}
+
+// Bidirectional word-boundary match: handles the case where either side is the
+// shorter token (e.g. facet "sunroof" vs requested "ultraview sunroof").
+export function phraseMatchEither(a: string, b: string): boolean {
+  return phraseMatch(a, b) || phraseMatch(b, a);
+}
 
 // Capitalize each alphabetic run — handles "Mercedes-Benz", "Big Horn/Lone
 // Star", "F-Pace" correctly (the old \w\S* version lowercased after / and -).

@@ -21,11 +21,18 @@ export function cacheGet<T>(key: string): T | null {
 export function cacheSet(key: string, value: unknown, ttlMs: number) {
   // Never cache empty/failed payloads for long — avoids the "poisoned 30-day
   // cache" bug that made trims appear permanently broken on Base44.
+  store.delete(key); // re-insert so this key becomes the most-recent (insertion order)
   store.set(key, { value, expires: Date.now() + ttlMs });
-  // Soft cap to keep memory bounded.
+  // Soft cap to keep memory bounded: drop an already-expired entry first, and
+  // only fall back to evicting the oldest live entry if nothing has expired.
   if (store.size > 500) {
-    const oldest = store.keys().next().value;
-    if (oldest) store.delete(oldest);
+    const now = Date.now();
+    let victim: string | undefined;
+    for (const [k, e] of store) {
+      if (e.expires < now) { victim = k; break; }
+    }
+    if (!victim) victim = store.keys().next().value;
+    if (victim) store.delete(victim);
   }
 }
 

@@ -7,7 +7,7 @@
 // only as a fallback for models with no decodeable build data.
 
 import { NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/auth";
+import { requireActivePlan } from "@/lib/auth";
 import {
   MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionDetails,
 } from "@/lib/marketcheck";
@@ -38,8 +38,8 @@ function categorize(name: string): string {
 }
 
 export async function POST(req: Request) {
-  const { user } = await getSessionContext();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const gate = await requireActivePlan();
+  if (!gate.ok) return NextResponse.json({ error: gate.error, features: [] }, { status: gate.status });
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();

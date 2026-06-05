@@ -29,24 +29,26 @@ export function useOrgDealers() {
   const add = useCallback(async (dealer: OrgDealer) => {
     setItems((prev) => (prev.some((x) => x.id === dealer.id) ? prev : [dealer, ...prev]));
     try {
-      await fetch("/api/dealers/selection", {
+      const r = await fetch("/api/dealers/selection", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dealer }),
       });
+      if (!r.ok) await reload(); // failed write → resync so the UI matches the server
     } catch {
-      /* ignore */
+      await reload();
     }
-  }, []);
+  }, [reload]);
 
   const remove = useCallback(async (id: string) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
     try {
-      await fetch("/api/dealers/selection", {
+      const r = await fetch("/api/dealers/selection", {
         method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
       });
+      if (!r.ok) await reload();
     } catch {
-      /* ignore */
+      await reload();
     }
-  }, []);
+  }, [reload]);
 
   return { items, add, remove, ready, reload };
 }

@@ -5,14 +5,14 @@
 // car matching the MOST of the requested options. Cheap (facets) + a few decodes.
 
 import { NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/auth";
-import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing } from "@/lib/marketcheck";
+import { requireActivePlan } from "@/lib/auth";
+import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function POST(req: Request) {
-  const { user } = await getSessionContext();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const gate = await requireActivePlan();
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const b = await req.json().catch(() => ({}));
   const apiKey = mcKey();
   if (!apiKey) return NextResponse.json({ error: "MARKETCHECK_API_KEY not set" }, { status: 500 });
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     let colorOk = true;
     if (wantColors.length) {
       const have = colorFacet.map((c) => String(c.item || "").toLowerCase());
-      colorOk = wantColors.some((w) => have.some((h) => h.includes(w) || w.includes(h)));
+      colorOk = wantColors.some((w) => have.some((h) => phraseMatchEither(h, w)));
       if (!colorOk) {
         const top = colorFacet.slice(0, 4).map((c) => c.item).filter(Boolean);
         reasons.push(`That color isn't in stock. Available: ${top.join(", ")}.`);
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     let trimOk = true;
     if (wantTrim) {
       const have = trimFacet.map((t) => String(t.item || "").toLowerCase());
-      trimOk = have.some((h) => h.includes(wantTrim.toLowerCase()));
+      trimOk = have.some((h) => phraseMatch(h, wantTrim));
       if (!trimOk) reasons.push(`No ${wantTrim} in stock. Available trims: ${trimFacet.slice(0, 5).map((t) => t.item).join(", ")}.`);
     }
 
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     const optionStatus = optionNames.map((o) => ({
       name: normalizeFeature(o),
       value: o,
-      available: featFacet.some((f) => f.includes(o) || o.includes(f)),
+      available: featFacet.some((f) => phraseMatchEither(f, o)),
     }));
     const missing = optionStatus.filter((o) => !o.available);
     if (missing.length) reasons.push(`${optionStatus.length - missing.length} of ${optionStatus.length} options in stock; not found: ${missing.map((m) => m.name).join(", ")}.`);
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
       let best: any = null, bestScore = -1, bestMissing: string[] = [];
       for (const l of cands.slice(0, 10)) {
         const names = (await decodeVinOptionNames(l.vin)).join(" | ");
-        const hasList = optionStatus.map((o) => ({ ...o, on: names.includes(o.value) }));
+        const hasList = optionStatus.map((o) => ({ ...o, on: phraseMatch(names, o.value) }));
         const score = hasList.filter((o) => o.on).length;
         if (score > bestScore) { bestScore = score; best = l; bestMissing = hasList.filter((o) => !o.on).map((o) => o.name); }
         if (score === optionStatus.length) break;

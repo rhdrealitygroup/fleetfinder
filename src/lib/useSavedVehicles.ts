@@ -35,27 +35,42 @@ export function useSavedVehicles() {
       const r = await fetch("/api/saved", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vehicle, list }),
       });
+      if (!r.ok) { await reload(); return; } // failed write → resync from server
       const d = await r.json().catch(() => ({}));
       // Stamp the server id onto the optimistic row (so remove-by-id works).
-      // No reload() here — it could resurrect a row removed in the meantime.
+      // No reload() on success — it could resurrect a row removed in the meantime.
       if (d?.id) setItems((prev) => prev.map((v) => (v.vin === vehicle.vin && (v.list || "Saved") === list && !v.id ? { ...v, id: d.id } : v)));
     } catch {
-      /* ignore */
+      await reload(); // network error → resync rather than leave a phantom row
     }
-  }, []);
+  }, [reload]);
 
-  const remove = useCallback(async (ref: { id?: string; vin?: string }) => {
-    setItems((prev) => prev.filter((v) => (ref.id ? v.id !== ref.id : v.vin !== ref.vin)));
+  // Remove one saved row. `ref` is { id } (exact row), { vin, list } (one list,
+  // default "Saved"), or { vin, allLists:true } (every list). List-scoped so a
+  // search un-star never wipes a VIN from other customers' named lists.
+  const remove = useCallback(async (ref: { id?: string; vin?: string; list?: string; allLists?: boolean }) => {
+    const list = String(ref.list || "Saved");
+    setItems((prev) => prev.filter((v) => {
+      if (ref.id) return v.id !== ref.id;
+      if (v.vin !== ref.vin) return true;
+      return ref.allLists ? false : (v.list || "Saved") !== list;
+    }));
     try {
-      await fetch("/api/saved", {
+      const r = await fetch("/api/saved", {
         method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ref),
       });
+      if (!r.ok) await reload();
     } catch {
-      /* ignore */
+      await reload();
     }
-  }, []);
+  }, [reload]);
 
-  const has = useCallback((vin?: string) => !!vin && items.some((v) => v.vin === vin), [items]);
+  // has(vin) → saved in ANY list; has(vin, list) → saved in that specific list.
+  const has = useCallback(
+    (vin?: string, list?: string) =>
+      !!vin && items.some((v) => v.vin === vin && (list === undefined || (v.list || "Saved") === list)),
+    [items],
+  );
 
   return { items, lists, save, remove, has, ready, reload };
 }

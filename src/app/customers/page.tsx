@@ -57,6 +57,7 @@ export default function CustomersPage() {
     if (n.model) p.set("model", n.model);
     if (n.zip) p.set("zip", n.zip);
     if (n.max_monthly) p.set("max", n.max_monthly);
+    if (n.color) p.set("color", n.color);
     return `/search?${p.toString()}`;
   }
 

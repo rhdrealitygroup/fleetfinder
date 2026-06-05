@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Search, SlidersHorizontal, ArrowUpDown, Star, Building2, X, Check,
   Award, GitCompare, Loader2, ExternalLink, FileText, MapPin,
@@ -31,7 +32,7 @@ type Color = { name: string; count: number; variants: string[] };
 const FEATURE_PICKS = FEATURE_GROUPS.flatMap((g) => g.items);
 const OPTION_CATS = ["Packages", "Exterior", "Interior", "Mechanical", "Entertainment", "Safety & Service", "Other"];
 
-export default function SearchPage() {
+function SearchPageInner() {
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [trim, setTrim] = useState("");
@@ -41,6 +42,7 @@ export default function SearchPage() {
   const [color, setColor] = useState("");
   const [colors, setColors] = useState<Color[]>([]);
   const [colorsLoading, setColorsLoading] = useState(false);
+  const [wantColor, setWantColor] = useState(""); // requested color from URL, matched once colors load
   const [featureOpts, setFeatureOpts] = useState<{ value: string; label: string; msrp: number; count: number; cat: string }[]>([]);
   const [featuresLoading, setFeaturesLoading] = useState(false);
   const [yearIdx, setYearIdx] = useState(0);
@@ -63,7 +65,7 @@ export default function SearchPage() {
   const [open, setOpen] = useState<Vehicle | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const { items: saved, save, remove: removeSaved, lists, ready } = useSavedVehicles();
+  const { items: saved, save, remove: removeSaved, has: hasSaved, lists, ready } = useSavedVehicles();
   const { items: myDealers } = useOrgDealers();
   const [scopeDealers, setScopeDealers] = useState(true); // default: search your dealers
   const [searchedAll, setSearchedAll] = useState(false);  // last search overrode to all dealers
@@ -75,15 +77,30 @@ export default function SearchPage() {
   const [compareOpen, setCompareOpen] = useState(false);
 
   // Prefill criteria from the URL (e.g. opened via a customer's "Search").
+  // Uses useSearchParams so it re-applies on client-side navigation too — e.g.
+  // clicking a different customer's "Search" while already on /search (a soft
+  // nav that does NOT remount, so a one-time window.location read would miss it).
+  const searchParams = useSearchParams();
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const m = p.get("make"), md = p.get("model"), z = p.get("zip"), mx = p.get("max");
+    const m = searchParams.get("make"), md = searchParams.get("model");
+    const z = searchParams.get("zip"), mx = searchParams.get("max"), cl = searchParams.get("color");
     if (m) setMake(m);
     if (md) setModel(md);
     if (z) setZip(z);
     if (mx) setMaxMonthly(mx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setWantColor(cl || "");
+  }, [searchParams]);
+
+  // Once colors load, map a requested color (from a customer's needs) to a real
+  // color option and select it.
+  useEffect(() => {
+    if (!wantColor || !colors.length) return;
+    const w = wantColor.toLowerCase();
+    const match = colors.find((c) => c.name.toLowerCase() === w)
+      || colors.find((c) => c.name.toLowerCase().includes(w) || w.includes(c.name.toLowerCase()));
+    if (match) setColor(match.name);
+    setWantColor("");
+  }, [colors, wantColor]);
 
   const models = make ? CAR_CATALOG[make] || [] : [];
 
@@ -169,8 +186,10 @@ export default function SearchPage() {
       else n.add(v);
       return n;
     });
+  // List-aware toggle: un-saving only removes the VIN from THIS list, never
+  // from other named customer lists.
   const toggleSaved = (v: Vehicle, list = "Saved") => {
-    if (savedVins.has(v.vin)) removeSaved({ vin: v.vin });
+    if (hasSaved(v.vin, list)) removeSaved({ vin: v.vin, list });
     else save(v, list);
   };
   const toggleCompare = (vin: string) =>
@@ -621,7 +640,7 @@ export default function SearchPage() {
             <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {sorted.map((v) => (
                 <VehicleCard key={v.vin || `${v.dealer_name}-${v.price}`} v={v}
-                  saved={savedVins.has(v.vin)} compareOn={compare.has(v.vin)}
+                  saved={hasSaved(v.vin, "Saved")} compareOn={compare.has(v.vin)}
                   onOpen={() => setOpen(v)} onSave={() => toggleSaved(v)} onCompare={() => toggleCompare(v.vin)} />
               ))}
             </div>
@@ -653,6 +672,15 @@ export default function SearchPage() {
       )}
       {!ready && null}
     </div>
+  );
+}
+
+// useSearchParams must be inside a Suspense boundary in the App Router.
+export default function SearchPage() {
+  return (
+    <Suspense fallback={null}>
+      <SearchPageInner />
+    </Suspense>
   );
 }
 
