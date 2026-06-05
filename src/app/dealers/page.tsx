@@ -11,6 +11,8 @@ type Dealer = {
   makes?: string[];
 };
 
+const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+
 export default function DealersPage() {
   const [q, setQ] = useState("");
   const [state, setState] = useState("");
@@ -19,7 +21,7 @@ export default function DealersPage() {
   const [makes, setMakes] = useState<string[]>([]);
   const [items, setItems] = useState<Dealer[]>([]);
   const [total, setTotal] = useState(0);
-  const [counts, setCounts] = useState<{ all: number; nj: number; ny: number }>({ all: 0, nj: 0, ny: 0 });
+  const [counts, setCounts] = useState<{ all: number }>({ all: 0 });
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [onlySelected, setOnlySelected] = useState(false);
@@ -69,7 +71,7 @@ export default function DealersPage() {
         <div className="flex items-start justify-between flex-wrap gap-3 mb-1">
           <div>
             <h1 className="font-heading text-2xl font-bold">Your dealer list</h1>
-            <p className="text-sm text-muted-foreground">Pick the dealers you work with — {counts.all.toLocaleString()} across NJ ({counts.nj.toLocaleString()}) &amp; NY ({counts.ny.toLocaleString()}).</p>
+            <p className="text-sm text-muted-foreground">Pick the dealers you work with — {(counts.all || 0).toLocaleString()} dealers nationwide.</p>
           </div>
           <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm">
             <span className="font-semibold text-primary">{selected.length}</span> <span className="text-muted-foreground">selected</span>
@@ -85,8 +87,7 @@ export default function DealersPage() {
           </div>
           <select value={state} onChange={(e) => setState(e.target.value)} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
             <option value="">All states</option>
-            <option value="NJ">New Jersey</option>
-            <option value="NY">New York</option>
+            {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <select value={make} onChange={(e) => setMake(e.target.value)} className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
             <option value="">All makes</option>
