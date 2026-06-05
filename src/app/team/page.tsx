@@ -1,12 +1,20 @@
 import { redirect } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
-import { getSessionContext } from "@/lib/auth";
+import { getSessionContext, type Role } from "@/lib/auth";
+import { ensureOrgForUser } from "@/lib/account";
 import { createClient } from "@/lib/supabase/server";
 import { TeamManager } from "./TeamManager";
 
 export default async function TeamPage() {
-  const { user, membership } = await getSessionContext();
-  if (!user) redirect("/login?next=/team");
+  const ctx = await getSessionContext();
+  if (!ctx.user) redirect("/login?next=/team");
+
+  // Auto-provision the org for accounts that never went through onboarding.
+  let membership = ctx.membership;
+  if (!membership) {
+    const created = await ensureOrgForUser();
+    if (created) membership = { org_id: created.org_id, role: created.role as Role };
+  }
 
   const supabase = await createClient();
   const { data: members } = membership

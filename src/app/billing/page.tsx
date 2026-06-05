@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
-import { getSessionContext } from "@/lib/auth";
+import { getSessionContext, type Role } from "@/lib/auth";
+import { ensureOrgForUser } from "@/lib/account";
 import { createClient } from "@/lib/supabase/server";
 import { stripeConfigured } from "@/lib/stripe";
 import { BillingActions } from "./BillingActions";
@@ -13,8 +14,16 @@ const STATUS_LABEL: Record<string, { t: string; c: string }> = {
 };
 
 export default async function BillingPage() {
-  const { user, membership } = await getSessionContext();
-  if (!user) redirect("/login?next=/billing");
+  const ctx = await getSessionContext();
+  if (!ctx.user) redirect("/login?next=/billing");
+
+  // Auto-provision the org if this account never got one (e.g. signed up with
+  // email auto-confirm, which skips the onboarding step). Idempotent.
+  let membership = ctx.membership;
+  if (!membership) {
+    const created = await ensureOrgForUser();
+    if (created) membership = { org_id: created.org_id, role: created.role as Role };
+  }
 
   const supabase = await createClient();
   const { data: org } = membership

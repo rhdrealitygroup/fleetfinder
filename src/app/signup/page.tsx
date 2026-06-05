@@ -20,7 +20,7 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
     const supabase = createClient();
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -29,8 +29,12 @@ export default function SignupPage() {
       },
     });
     setLoading(false);
-    if (error) setError(error.message);
-    else setDone(true);
+    if (error) { setError(error.message); return; }
+    // If email confirmation is disabled, signUp returns a live session — route
+    // straight to onboarding so the org + trial get created. Otherwise the user
+    // must confirm via email (which lands on /onboarding through the callback).
+    if (data.session) { window.location.href = "/onboarding"; return; }
+    setDone(true);
   }
 
   return (
