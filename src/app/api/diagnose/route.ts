@@ -1,0 +1,126 @@
+// POST /api/diagnose — when a search returns nothing, explain WHY and find the
+// closest in-stock car. Strategy: query the pool with the "hard" constraints
+// only (make/model/year/price/geo/dealers) and pull facets to see what colors /
+// trims / options actually exist; then decode the top candidates to find the
+// car matching the MOST of the requested options. Cheap (facets) + a few decodes.
+
+import { NextResponse } from "next/server";
+import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing } from "@/lib/marketcheck";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+export async function POST(req: Request) {
+  const b = await req.json().catch(() => ({}));
+  const apiKey = mcKey();
+  if (!apiKey) return NextResponse.json({ error: "MARKETCHECK_API_KEY not set" }, { status: 500 });
+  const make = String(b.make || "").trim();
+  const model = String(b.model || "").trim();
+  if (!make) return NextResponse.json({ error: "make required" }, { status: 400 });
+
+  const mcModel = model ? await resolveModel(make, model) : "";
+  const optionNames: string[] = (Array.isArray(b.option_names) ? b.option_names : []).map((s: any) => String(s).toLowerCase()).filter(Boolean);
+  const wantColors: string[] = String(b.exterior_color || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const wantTrim = String(b.trim || "").trim();
+
+  // ── Base pool: hard constraints only (no trim/color/options) ───────────────
+  function withHard(url: URL) {
+    url.searchParams.set("api_key", apiKey);
+    url.searchParams.set("car_type", b.car_type || "new");
+    url.searchParams.set("make", make);
+    if (mcModel) url.searchParams.set("model", mcModel);
+    if (b.year_min || b.year_max) url.searchParams.set("year_range", `${b.year_min || 2020}-${b.year_max || 2027}`);
+    if (b.price_min || b.price_max) url.searchParams.set("price_range", `${b.price_min || 0}-${b.price_max || 999999}`);
+    const zip = String(b.zip || "").trim();
+    if (zip) { url.searchParams.set("zip", zip); url.searchParams.set("radius", String(Math.min(500, Number(b.radius) || 100))); }
+    if (Array.isArray(b.dealer_ids) && b.dealer_ids.length) url.searchParams.set("dealer_id", b.dealer_ids.slice(0, 200).join(","));
+  }
+
+  try {
+    const fUrl = new URL(`${MC_HOST}/search/car/active`);
+    withHard(fUrl);
+    fUrl.searchParams.set("rows", "0");
+    fUrl.searchParams.set("facets", "exterior_color|0|60,trim|0|40,high_value_features|0|80");
+    const fRes = await fetch(fUrl.toString());
+    const fData = fRes.ok ? await fRes.json() : {};
+    const poolTotal = num(fData.num_found);
+    const colorFacet: any[] = fData.facets?.exterior_color || [];
+    const trimFacet: any[] = fData.facets?.trim || [];
+    const featFacet: string[] = (fData.facets?.high_value_features || []).map((x: any) => String(x.item || "").toLowerCase());
+
+    const reasons: string[] = [];
+    const fixes: { label: string; action: string; value?: string }[] = [];
+
+    if (poolTotal === 0) {
+      reasons.push(`No in-stock ${make}${model ? ` ${model}` : ""} matches your year/price${b.zip ? "/area" : ""}.`);
+      if (b.zip && (Number(b.radius) || 100) < 500) fixes.push({ label: "Widen to 500 mi", action: "radius", value: "500" });
+      if (Array.isArray(b.dealer_ids) && b.dealer_ids.length) fixes.push({ label: "Search all dealers", action: "all_dealers" });
+      return NextResponse.json({ poolTotal, reasons, fixes, options: [], closest: null });
+    }
+
+    // ── Color ──
+    let colorOk = true;
+    if (wantColors.length) {
+      const have = colorFacet.map((c) => String(c.item || "").toLowerCase());
+      colorOk = wantColors.some((w) => have.some((h) => h.includes(w) || w.includes(h)));
+      if (!colorOk) {
+        const top = colorFacet.slice(0, 4).map((c) => c.item).filter(Boolean);
+        reasons.push(`That color isn't in stock. Available: ${top.join(", ")}.`);
+      }
+    }
+
+    // ── Trim ──
+    let trimOk = true;
+    if (wantTrim) {
+      const have = trimFacet.map((t) => String(t.item || "").toLowerCase());
+      trimOk = have.some((h) => h.includes(wantTrim.toLowerCase()));
+      if (!trimOk) reasons.push(`No ${wantTrim} in stock. Available trims: ${trimFacet.slice(0, 5).map((t) => t.item).join(", ")}.`);
+    }
+
+    // ── Options: which exist at all in the pool ──
+    const optionStatus = optionNames.map((o) => ({
+      name: normalizeFeature(o),
+      value: o,
+      available: featFacet.some((f) => f.includes(o) || o.includes(f)),
+    }));
+    const missing = optionStatus.filter((o) => !o.available);
+    if (missing.length) reasons.push(`${optionStatus.length - missing.length} of ${optionStatus.length} options in stock; not found: ${missing.map((m) => m.name).join(", ")}.`);
+
+    // ── Closest match: query the "wants" minus options, decode top candidates ──
+    let closest: any = null;
+    if (optionNames.length) {
+      const cUrl = new URL(`${MC_HOST}/search/car/active`);
+      withHard(cUrl);
+      if (wantTrim && trimOk) cUrl.searchParams.set("trim", wantTrim);
+      if (wantColors.length && colorOk) cUrl.searchParams.set("exterior_color", String(b.exterior_color));
+      cUrl.searchParams.set("rows", "12");
+      cUrl.searchParams.set("sort_by", "price"); cUrl.searchParams.set("sort_order", "asc");
+      const cRes = await fetch(cUrl.toString());
+      const cData = cRes.ok ? await cRes.json() : { listings: [] };
+      const cands: any[] = (cData.listings || []).filter((l: any) => l.vin);
+      let best: any = null, bestScore = -1, bestMissing: string[] = [];
+      for (const l of cands.slice(0, 10)) {
+        const names = (await decodeVinOptionNames(l.vin)).join(" | ");
+        const hasList = optionStatus.map((o) => ({ ...o, on: names.includes(o.value) }));
+        const score = hasList.filter((o) => o.on).length;
+        if (score > bestScore) { bestScore = score; best = l; bestMissing = hasList.filter((o) => !o.on).map((o) => o.name); }
+        if (score === optionStatus.length) break;
+      }
+      if (best) closest = { vehicle: mcListing(best), matched: bestScore, total: optionStatus.length, missing: bestMissing };
+    }
+
+    // ── Fixes ──
+    for (const m of missing) fixes.push({ label: `Drop ${m.name}`, action: "drop_option", value: m.value });
+    if (closest && closest.missing.length && closest.missing.length <= 2) for (const mm of closest.missing) {
+      if (!fixes.some((f) => f.action === "drop_option" && normalizeFeature(String(f.value)) === mm)) {
+        const opt = optionStatus.find((o) => o.name === mm);
+        if (opt) fixes.push({ label: `Drop ${mm}`, action: "drop_option", value: opt.value });
+      }
+    }
+    if (Array.isArray(b.dealer_ids) && b.dealer_ids.length) fixes.push({ label: "Search all dealers", action: "all_dealers" });
+    if (b.zip && (Number(b.radius) || 100) < 500) fixes.push({ label: "Widen to 500 mi", action: "radius", value: "500" });
+
+    return NextResponse.json({ poolTotal, reasons, options: optionStatus, closest, fixes });
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+  }
+}

@@ -67,6 +67,9 @@ export default function SearchPage() {
   const { items: myDealers } = useOrgDealers();
   const [scopeDealers, setScopeDealers] = useState(true); // default: search your dealers
   const [searchedAll, setSearchedAll] = useState(false);  // last search overrode to all dealers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [diagnosis, setDiagnosis] = useState<any>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
   const savedVins = useMemo(() => new Set(saved.map((s) => s.vin)), [saved]);
   const [compare, setCompare] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
@@ -178,11 +181,13 @@ export default function SearchPage() {
       return n;
     });
 
-  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean }) => {
+  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean; dropOption?: string }) => {
     const effRadius = opts?.radiusOverride ?? radius;
     if (opts?.radiusOverride) setRadius(opts.radiusOverride);
     const useDealers = scopeDealers && myDealers.length > 0 && !opts?.allDealers;
+    const effFeatures = opts?.dropOption ? [...features].filter((f) => f !== opts.dropOption) : [...features];
     setSearchedAll(!!opts?.allDealers);
+    setDiagnosis(null);
     setSearching(true);
     setError("");
     setOpen(null);
@@ -200,7 +205,7 @@ export default function SearchPage() {
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
-          option_names: features.size ? [...features] : undefined,
+          option_names: effFeatures.length ? effFeatures : undefined,
           dealer_ids: useDealers ? myDealers.map((d) => d.id).filter(Boolean) : undefined,
         }),
       });
@@ -233,6 +238,47 @@ export default function SearchPage() {
       default: return arr; // distance — API already sorts
     }
   }, [results, sort]);
+
+  const runDiagnose = useCallback(async () => {
+    setDiagnosing(true);
+    try {
+      const yr = YEAR_RANGES[yearIdx], pr = PRICE_RANGES[priceIdx];
+      const useDealers = scopeDealers && myDealers.length > 0 && !searchedAll;
+      const r = await fetch("/api/diagnose", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          car_type: carType, make, model, trim,
+          exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
+          option_names: features.size ? [...features] : undefined,
+          year_min: yr.min || undefined, year_max: yr.max || undefined,
+          price_min: pr.min || undefined, price_max: pr.max || undefined,
+          zip: zip.trim() || undefined, radius,
+          dealer_ids: useDealers ? myDealers.map((d) => d.id) : undefined,
+        }),
+      });
+      setDiagnosis(await r.json());
+    } catch {
+      /* ignore */
+    } finally {
+      setDiagnosing(false);
+    }
+  }, [make, model, trim, color, colors, features, yearIdx, priceIdx, zip, radius, carType, scopeDealers, myDealers, searchedAll]);
+
+  // When a search returns nothing, diagnose why.
+  useEffect(() => {
+    if (results !== null && !searching && sorted.length === 0 && !error && make) runDiagnose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, searching]);
+
+  function applyFix(fix: { action: string; value?: string }) {
+    if (fix.action === "all_dealers") runSearch({ allDealers: true });
+    else if (fix.action === "radius") runSearch({ radiusOverride: Number(fix.value) || 500 });
+    else if (fix.action === "drop_option" && fix.value) {
+      const v = fix.value;
+      setFeatures((prev) => { const n = new Set(prev); n.delete(v); return n; });
+      runSearch({ dropOption: v });
+    }
+  }
 
   function exportCsv() {
     const head = ["Year", "Make", "Model", "Trim", "Version", "Price", "Est Monthly", "Color", "Mileage", "Dealer", "City", "State", "VIN", "Listing"];
@@ -502,23 +548,71 @@ export default function SearchPage() {
             </div>
           )}
           {results !== null && !searching && sorted.length === 0 && !error && (
-            <div className="text-center py-24 text-muted-foreground">
-              <p className="text-lg font-medium text-foreground mb-1">No matches</p>
-              <p className="text-sm mb-5">Try a different trim, widen the year/price, or drop a feature filter.</p>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {myDealers.length > 0 && scopeDealers && !searchedAll && (
-                  <button onClick={() => runSearch({ allDealers: true })}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">
-                    <Building2 className="w-4 h-4" /> Search all dealers (not just your {myDealers.length})
-                  </button>
-                )}
-                {radius < 100 && (
-                  <button onClick={() => runSearch({ radiusOverride: 100 })}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-card border border-border hover:border-primary/40 text-sm font-medium transition">
-                    <MapPin className="w-4 h-4" /> Search wider — within 100 mi{zip ? ` of ${zip}` : ""}
-                  </button>
-                )}
+            <div className="max-w-2xl mx-auto py-14">
+              <div className="text-center mb-6">
+                <p className="text-lg font-medium text-foreground mb-1">No exact match</p>
+                {diagnosing && <p className="text-sm text-muted-foreground flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Figuring out why…</p>}
               </div>
+
+              {diagnosis && !diagnosing && (
+                <div className="space-y-3 text-left">
+                  {Array.isArray(diagnosis.reasons) && diagnosis.reasons.length > 0 && (
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Why no match</div>
+                      <ul className="space-y-1.5 text-sm">
+                        {diagnosis.reasons.map((r: string, i: number) => <li key={i} className="flex gap-2"><span className="text-warning shrink-0">•</span><span>{r}</span></li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {Array.isArray(diagnosis.options) && diagnosis.options.length > 0 && (
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Your options, in stock?</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {diagnosis.options.map((o: { value: string; name: string; available: boolean }) => (
+                          <span key={o.value} className={`px-2 py-1 rounded-md text-[12px] border ${o.available ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600" : "bg-destructive/10 border-destructive/30 text-destructive"}`}>{o.available ? "✓" : "✗"} {o.name}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {diagnosis.closest?.vehicle && (
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                      <div className="text-[11px] uppercase tracking-wide text-primary font-medium mb-2">Closest in stock — {diagnosis.closest.matched} of {diagnosis.closest.total} options</div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold truncate">{diagnosis.closest.vehicle.year} {diagnosis.closest.vehicle.make} {diagnosis.closest.vehicle.model} {diagnosis.closest.vehicle.trim}</div>
+                          <div className="text-xs text-muted-foreground truncate">{diagnosis.closest.vehicle.dealer_name}{diagnosis.closest.vehicle.city ? ` · ${diagnosis.closest.vehicle.city}, ${diagnosis.closest.vehicle.state}` : ""}</div>
+                          {diagnosis.closest.missing?.length > 0 && <div className="text-xs text-destructive mt-1">Missing: {diagnosis.closest.missing.join(", ")}</div>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-semibold tabular-nums">${(diagnosis.closest.vehicle.price || 0).toLocaleString()}</div>
+                          {diagnosis.closest.vehicle.est_monthly > 0 && <div className="text-xs text-muted-foreground">~${diagnosis.closest.vehicle.est_monthly}/mo</div>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {Array.isArray(diagnosis.fixes) && diagnosis.fixes.length > 0 && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">One-tap fixes</div>
+                      <div className="flex flex-wrap gap-2">
+                        {diagnosis.fixes.map((f: { label: string; action: string; value?: string }, i: number) => (
+                          <button key={i} onClick={() => applyFix(f)} className="px-4 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-sm font-medium hover:bg-primary/20 transition">{f.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!diagnosis && !diagnosing && (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {myDealers.length > 0 && scopeDealers && !searchedAll && (
+                    <button onClick={() => runSearch({ allDealers: true })} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition"><Building2 className="w-4 h-4" /> Search all dealers</button>
+                  )}
+                  {radius < 100 && (
+                    <button onClick={() => runSearch({ radiusOverride: 100 })} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-card border border-border hover:border-primary/40 text-sm font-medium transition"><MapPin className="w-4 h-4" /> Search wider</button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
