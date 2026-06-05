@@ -3,19 +3,15 @@
 import Link from "next/link";
 import { Star, Building2, Trash2, Search } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
-import { useLocalCollection } from "@/lib/useLocalCollection";
+import { useSavedVehicles } from "@/lib/useSavedVehicles";
 import { moneyShort } from "@/lib/format";
 import { makeHue } from "@/lib/inventory";
 
-type Vehicle = {
-  vin: string; year: number; make: string; model: string; trim: string;
-  price: number; est_monthly: number; exterior_color: string; mileage: number;
-  dealer_name: string; city: string; state: string; image_url: string;
-  listing_url: string; is_cpo: boolean;
-};
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export default function SavedPage() {
-  const { items, setItems, ready } = useLocalCollection<Vehicle>("ff_saved");
+  const { items, lists, remove, ready } = useSavedVehicles();
+  const groups = (lists.length ? lists : ["Saved"]).map((name) => ({ name, vehicles: items.filter((v: any) => (v.list || "Saved") === name) })).filter((g) => g.vehicles.length);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -24,7 +20,7 @@ export default function SavedPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="font-heading text-2xl font-bold">Saved vehicles</h1>
-            <p className="text-sm text-muted-foreground">{items.length} saved · synced to this device</p>
+            <p className="text-sm text-muted-foreground">{items.length} saved across {groups.length || 0} list{groups.length === 1 ? "" : "s"} · saved to your account</p>
           </div>
           <Link href="/search" className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center gap-2">
             <Search className="w-4 h-4" /> Search inventory
@@ -39,11 +35,14 @@ export default function SavedPage() {
           </div>
         )}
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((v) => {
+        {groups.map((group) => (
+          <section key={group.name} className="mb-8">
+            <h2 className="font-heading text-sm font-bold uppercase tracking-wide text-muted-foreground mb-3">{group.name} <span className="opacity-60">· {group.vehicles.length}</span></h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {group.vehicles.map((v: any) => {
             const hue = makeHue(v.make);
             return (
-              <div key={v.vin || `${v.dealer_name}-${v.price}`} className="rounded-xl border border-border bg-card p-3 flex flex-col">
+              <div key={v.id || v.vin || `${v.dealer_name}-${v.price}`} className="rounded-xl border border-border bg-card p-3 flex flex-col">
                 <div className="relative h-32 rounded-lg overflow-hidden flex items-center justify-center mb-3 border border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 40% 22%), hsl(${hue} 30% 12%))` }}>
                   {v.image_url ? <img src={v.image_url} alt="" className="w-full h-full object-cover" /> : <span className="font-heading font-semibold tracking-[0.18em] text-lg uppercase text-white/70">{v.make}</span>}
                 </div>
@@ -53,12 +52,14 @@ export default function SavedPage() {
                 </div>
                 <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1 truncate"><Building2 className="w-3.5 h-3.5 shrink-0" /> {v.dealer_name || "—"}</span>
-                  <button onClick={() => setItems(items.filter((s) => s.vin !== v.vin))} className="text-muted-foreground hover:text-destructive transition" title="Remove"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => remove({ id: v.id, vin: v.vin })} className="text-muted-foreground hover:text-destructive transition" title="Remove"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
             );
           })}
-        </div>
+            </div>
+          </section>
+        ))}
       </main>
     </div>
   );

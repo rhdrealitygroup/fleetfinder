@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppNav } from "@/components/AppNav";
 import { Building2, Search, Check, Phone, ExternalLink, Star } from "lucide-react";
-import { useLocalCollection } from "@/lib/useLocalCollection";
+import { useOrgDealers } from "@/lib/useOrgDealers";
 
 type Dealer = {
   id: string; name: string; street: string; city: string; state: string; zip: string;
@@ -24,7 +24,7 @@ export default function DealersPage() {
   const [loading, setLoading] = useState(false);
   const [onlySelected, setOnlySelected] = useState(false);
 
-  const { items: selected, setItems: setSelected, ready } = useLocalCollection<Dealer>("ff_dealers", 2000);
+  const { items: selected, add, remove, ready } = useOrgDealers();
   const selectedIds = useMemo(() => new Set(selected.map((d) => d.id)), [selected]);
 
   const load = useCallback(async (pageNum: number, replace: boolean) => {
@@ -54,11 +54,13 @@ export default function DealersPage() {
   }, [load]);
 
   const toggle = (d: Dealer) => {
-    if (selectedIds.has(d.id)) setSelected(selected.filter((s) => s.id !== d.id));
-    else setSelected([d, ...selected]);
+    if (selectedIds.has(d.id)) remove(d.id);
+    else add({ id: d.id, name: d.name, city: d.city, state: d.state });
   };
 
-  const shown = onlySelected ? selected : items;
+  const shown: Dealer[] = onlySelected
+    ? selected.map((s) => ({ id: s.id, name: s.name || "", street: "", city: s.city || "", state: s.state || "", zip: "", phone: "", type: "", group: "", website: "", listing_count: 0 }))
+    : items;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -155,7 +157,7 @@ export default function DealersPage() {
           </button>
         )}
 
-        {ready && <p className="text-[11px] text-muted-foreground mt-4">Your selections save to this browser. Next: sync to your team + scope searches to your dealers.</p>}
+        {ready && <p className="text-[11px] text-muted-foreground mt-4">Saved to your company — shared across your team, and searches scope to these dealers by default.</p>}
       </main>
     </div>
   );

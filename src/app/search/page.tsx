@@ -9,7 +9,8 @@ import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
 import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue } from "@/lib/inventory";
 import { moneyShort } from "@/lib/format";
-import { useLocalCollection } from "@/lib/useLocalCollection";
+import { useSavedVehicles } from "@/lib/useSavedVehicles";
+import { useOrgDealers } from "@/lib/useOrgDealers";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -62,12 +63,13 @@ export default function SearchPage() {
   const [open, setOpen] = useState<Vehicle | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const { items: saved, setItems: setSaved, ready } = useLocalCollection<Vehicle>("ff_saved");
-  const { items: myDealers } = useLocalCollection<{ id: string }>("ff_dealers", 2000);
+  const { items: saved, save, remove: removeSaved, lists, ready } = useSavedVehicles();
+  const { items: myDealers } = useOrgDealers();
   const [scopeDealers, setScopeDealers] = useState(true); // default: search your dealers
   const [searchedAll, setSearchedAll] = useState(false);  // last search overrode to all dealers
   const savedVins = useMemo(() => new Set(saved.map((s) => s.vin)), [saved]);
   const [compare, setCompare] = useState<Set<string>>(new Set());
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const models = make ? CAR_CATALOG[make] || [] : [];
 
@@ -153,9 +155,9 @@ export default function SearchPage() {
       else n.add(v);
       return n;
     });
-  const toggleSaved = (v: Vehicle) => {
-    if (savedVins.has(v.vin)) setSaved(saved.filter((s) => s.vin !== v.vin));
-    else setSaved([v, ...saved]);
+  const toggleSaved = (v: Vehicle, list = "Saved") => {
+    if (savedVins.has(v.vin)) removeSaved({ vin: v.vin });
+    else save(v, list);
   };
   const toggleCompare = (vin: string) =>
     setCompare((prev) => {
@@ -447,9 +449,10 @@ export default function SearchPage() {
                   </button>
                 )}
                 {compare.size > 0 && (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/15 border border-primary/40 text-primary text-sm">
+                  <button onClick={() => setCompareOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/15 border border-primary/40 text-primary text-sm hover:bg-primary/25 transition">
                     <GitCompare className="w-4 h-4" /> Compare ({compare.size})
-                  </span>
+                  </button>
                 )}
                 <div className="relative">
                   <select value={sort} onChange={(e) => setSort(e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 rounded-md bg-card border border-border text-sm focus:outline-none cursor-pointer">
@@ -535,8 +538,65 @@ export default function SearchPage() {
         </div>
       )}
 
-      {open && <DetailPanel v={open} onClose={() => setOpen(null)} saved={savedVins.has(open.vin)} onSave={() => toggleSaved(open)} />}
+      {open && <DetailPanel v={open} onClose={() => setOpen(null)} saved={savedVins.has(open.vin)} onSave={(list) => toggleSaved(open, list)} lists={lists} />}
+      {compareOpen && (
+        <CompareModal
+          vehicles={(results || []).filter((v) => compare.has(v.vin))}
+          onClose={() => setCompareOpen(false)}
+          onRemove={(vin) => toggleCompare(vin)}
+        />
+      )}
       {!ready && null}
+    </div>
+  );
+}
+
+function CompareModal({ vehicles, onClose, onRemove }: { vehicles: Vehicle[]; onClose: () => void; onRemove: (vin: string) => void }) {
+  if (!vehicles.length) return null;
+  const rows: { label: string; get: (v: Vehicle) => string }[] = [
+    { label: "Price", get: (v) => (v.price ? moneyShort(v.price) : "—") },
+    { label: "Est. monthly", get: (v) => (v.est_monthly ? `${moneyShort(v.est_monthly)}/mo` : "—") },
+    { label: "MSRP", get: (v) => (v.msrp ? moneyShort(v.msrp) : "—") },
+    { label: "Off MSRP", get: (v) => (v.msrp > v.price ? moneyShort(v.msrp - v.price) : "—") },
+    { label: "Trim", get: (v) => [v.trim, v.version].filter(Boolean).join(" ") || "—" },
+    { label: "Color", get: (v) => v.exterior_color || "—" },
+    { label: "Mileage", get: (v) => (v.mileage > 0 ? `${v.mileage.toLocaleString()} mi` : "New") },
+    { label: "Days on lot", get: (v) => (v.days_listed > 0 ? `${v.days_listed}d` : "—") },
+    { label: "Dealer", get: (v) => v.dealer_name || "—" },
+    { label: "Location", get: (v) => [v.city, v.state].filter(Boolean).join(", ") || "—" },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-background border border-border rounded-2xl max-w-5xl w-full max-h-[88vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-background/95 backdrop-blur border-b border-border px-5 py-3 flex items-center justify-between">
+          <h2 className="font-heading font-bold text-lg flex items-center gap-2"><GitCompare className="w-5 h-5 text-primary" /> Compare ({vehicles.length})</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-sm px-2 py-1">Close ✕</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left p-3 text-xs uppercase tracking-wide text-muted-foreground sticky left-0 bg-background"></th>
+                {vehicles.map((v) => (
+                  <th key={v.vin} className="p-3 text-left align-top min-w-[180px]">
+                    <div className="font-semibold">{v.year} {v.make} {v.model}</div>
+                    <div className="text-xs text-primary">{[v.trim, v.version].filter(Boolean).join(" ")}</div>
+                    <button onClick={() => onRemove(v.vin)} className="text-[11px] text-muted-foreground hover:text-foreground underline mt-1">remove</button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label} className="border-t border-border">
+                  <td className="p-3 text-xs text-muted-foreground sticky left-0 bg-background font-medium">{r.label}</td>
+                  {vehicles.map((v) => <td key={v.vin} className="p-3 tabular-nums">{r.get(v)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -603,10 +663,11 @@ function Chip({ children }: { children: React.ReactNode }) {
   return <span className="px-2 py-0.5 rounded-md bg-secondary border border-border text-[11px] text-muted-foreground">{children}</span>;
 }
 
-function DetailPanel({ v, onClose, saved, onSave }: { v: Vehicle; onClose: () => void; saved: boolean; onSave: () => void }) {
+function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose: () => void; saved: boolean; onSave: (list: string) => void; lists: string[] }) {
   const hue = makeHue(v.make);
   const [decode, setDecode] = useState<any>(null);
   const [decoding, setDecoding] = useState(false);
+  const [listName, setListName] = useState("");
 
   useEffect(() => {
     if (!v.vin || v.vin.length !== 17) return;
@@ -660,7 +721,12 @@ function DetailPanel({ v, onClose, saved, onSave }: { v: Vehicle; onClose: () =>
           </div>
           <div className="flex flex-wrap gap-2">
             <a href="/calculator" className="flex-1 text-center py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">Calculate lease</a>
-            <button onClick={onSave} className="px-4 py-2.5 rounded-lg border border-border hover:bg-white/5 text-sm font-medium transition flex items-center gap-2"><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /> {saved ? "Saved" : "Save"}</button>
+            <div className="flex items-center gap-2">
+              <input list="lc-lists" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="List (e.g. Smith family)"
+                className="w-40 rounded-lg border border-border bg-card px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50" />
+              <datalist id="lc-lists">{lists.map((l) => <option key={l} value={l} />)}</datalist>
+              <button onClick={() => onSave(listName.trim() || "Saved")} className="px-4 py-2.5 rounded-lg border border-border hover:bg-white/5 text-sm font-medium transition flex items-center gap-2"><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /> {saved ? "Saved" : "Save"}</button>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             {v.listing_url && <a href={v.listing_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-primary hover:underline"><ExternalLink className="w-4 h-4" /> View listing</a>}
