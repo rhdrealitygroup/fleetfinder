@@ -3,13 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 
 // Exchanges the auth code (magic link / email confirmation / OAuth) for a
 // session, then redirects to ?next (default /search).
-// Only allow same-site relative redirects. Reject protocol-relative ("//host")
-// and backslash ("/\\host") values that browsers resolve to an external origin —
-// otherwise ?next becomes an open-redirect / phishing vector.
+// Only allow same-site relative redirects. Strict allowlist (not a denylist):
+// the value must be a single leading "/" followed by a non-slash/non-backslash
+// char, then no backslashes or whitespace/control chars anywhere. This blocks
+// "//host", "/\\host", and tab/newline tricks like "/\t//host" that some
+// browsers normalize back into a protocol-relative URL (open-redirect/phishing).
 function safeNext(raw: string | null): string {
   const n = raw || "/search";
-  if (!n.startsWith("/") || n.startsWith("//") || n.startsWith("/\\")) return "/search";
-  return n;
+  return /^\/[^/\\\s][^\\\s]*$/.test(n) ? n : "/search";
 }
 
 export async function GET(request: Request) {

@@ -72,7 +72,6 @@ function SearchPageInner() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [diagnosis, setDiagnosis] = useState<any>(null);
   const [diagnosing, setDiagnosing] = useState(false);
-  const savedVins = useMemo(() => new Set(saved.map((s) => s.vin)), [saved]);
   const [compare, setCompare] = useState<Set<string>>(new Set());
   const [compareOpen, setCompareOpen] = useState(false);
 
@@ -662,7 +661,7 @@ function SearchPageInner() {
         </div>
       )}
 
-      {open && <DetailPanel v={open} onClose={() => setOpen(null)} saved={savedVins.has(open.vin)} onSave={(list) => toggleSaved(open, list)} lists={lists} />}
+      {open && <DetailPanel v={open} onClose={() => setOpen(null)} saved={hasSaved(open.vin, "Saved")} onSave={(list) => toggleSaved(open, list)} lists={lists} />}
       {compareOpen && (
         <CompareModal
           vehicles={(results || []).filter((v) => compare.has(v.vin))}

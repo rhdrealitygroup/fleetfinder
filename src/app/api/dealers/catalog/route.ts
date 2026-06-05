@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getSessionContext } from "@/lib/auth";
 import { CATALOG_MAKES } from "@/lib/carCatalog";
 import dealersData from "@/data/dealers-nynj.json";
 
@@ -32,6 +33,10 @@ function fromFile(q: string, state: string, type: string, make: string, page: nu
 }
 
 export async function GET(req: Request) {
+  // Defense-in-depth: require a session in-handler, not just the proxy gate.
+  const { user } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").toLowerCase().trim();
   const state = (searchParams.get("state") || "").toUpperCase();

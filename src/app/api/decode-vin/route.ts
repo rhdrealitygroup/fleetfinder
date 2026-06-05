@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { MC_HOST, mcKey, num, titleCase } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
-import { getSessionContext } from "@/lib/auth";
+import { requireActivePlan } from "@/lib/auth";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -69,8 +69,8 @@ function normalizeBasicDecode(vin: string, raw: any) {
 }
 
 export async function POST(req: Request) {
-  const { user } = await getSessionContext();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const gate = await requireActivePlan();
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const body = await req.json().catch(() => ({}));
   const vin = String(body.vin || "").toUpperCase().trim();
   if (vin.length !== 17) return NextResponse.json({ error: "VIN must be 17 characters" }, { status: 400 });

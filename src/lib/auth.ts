@@ -37,6 +37,7 @@ export async function getSessionContext(): Promise<SessionContext> {
       .from("memberships")
       .select("org_id, role")
       .eq("user_id", user.id)
+      .order("created_at", { ascending: true }) // deterministic primary org
       .limit(1);
 
     const membership = memberships && memberships[0]

@@ -14,6 +14,7 @@ export async function ensureOrgForUser(opts?: { companyName?: string; fullName?:
     .from("memberships")
     .select("org_id, role")
     .eq("user_id", user.id)
+    .order("created_at", { ascending: true }) // deterministic primary org
     .limit(1);
   if (existing && existing[0]) return { org_id: existing[0].org_id as string, role: existing[0].role as string };
 

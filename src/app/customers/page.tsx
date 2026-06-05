@@ -17,6 +17,7 @@ export default function CustomersPage() {
   const [form, setForm] = useState({ ...empty });
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const reload = useCallback(async () => {
     try {
@@ -34,12 +35,18 @@ export default function CustomersPage() {
   async function save() {
     if (!form.name.trim()) return;
     setSaving(true);
+    setSaveError("");
     const needs: Needs = { make: form.make, model: form.model, zip: form.zip, max_monthly: form.max_monthly, color: form.color, notes: form.notes };
-    await fetch("/api/customers", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: form.name, phone: form.phone, email: form.email, notes: form.notes, needs }),
-    }).catch(() => {});
+    let ok = false;
+    try {
+      const r = await fetch("/api/customers", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: form.name, phone: form.phone, email: form.email, notes: form.notes, needs }),
+      });
+      ok = r.ok;
+    } catch { ok = false; }
     setSaving(false);
+    if (!ok) { setSaveError("Couldn't save — please try again."); return; } // keep form open, don't lose input
     setForm({ ...empty });
     setOpen(false);
     reload();
@@ -47,7 +54,10 @@ export default function CustomersPage() {
 
   async function del(id: string) {
     setCustomers((prev) => prev.filter((c) => c.id !== id));
-    await fetch("/api/customers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {});
+    try {
+      const r = await fetch("/api/customers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!r.ok) reload(); // failed delete → resync so the row reappears
+    } catch { reload(); }
   }
 
   function searchHref(c: Customer) {
@@ -93,8 +103,9 @@ export default function CustomersPage() {
               <input className={inputCls} placeholder="Max $/mo" value={form.max_monthly} onChange={(e) => set("max_monthly", e.target.value)} />
             </div>
             <textarea className={inputCls} rows={2} placeholder="Notes (trade-in, timeline, must-haves…)" value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setOpen(false); setForm({ ...empty }); }} className="px-4 py-2 rounded-lg border border-border text-sm">Cancel</button>
+              <button onClick={() => { setOpen(false); setForm({ ...empty }); setSaveError(""); }} className="px-4 py-2 rounded-lg border border-border text-sm">Cancel</button>
               <button onClick={save} disabled={saving || !form.name.trim()} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">{saving ? "Saving…" : "Save customer"}</button>
             </div>
           </div>
