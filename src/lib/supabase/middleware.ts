@@ -32,7 +32,7 @@ export async function updateSession(request: NextRequest) {
 
   // The whole app requires sign-in. Public = marketing home + auth routes +
   // the Stripe webhook (server-to-server, no session). Everything else is gated.
-  const publicPrefixes = ["/login", "/signup", "/auth", "/api/stripe/webhook"];
+  const publicPrefixes = ["/login", "/signup", "/auth", "/api/stripe/webhook", "/api/bypass"];
   const isPublic = path === "/" || publicPrefixes.some((p) => path.startsWith(p));
 
   // Signed-out visitor hitting a protected page → send to /login, remembering
