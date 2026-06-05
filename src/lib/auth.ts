@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 // Super-admins are platform owners (RHD), identified by email via env.
 // They operate above all organizations.
@@ -33,7 +33,15 @@ export async function getSessionContext(): Promise<SessionContext> {
 
     const isSuperAdmin = isSuperAdminEmail(user.email);
 
-    const { data: memberships } = await supabase
+    // Resolve the caller's OWN membership with the service-role client. The
+    // RLS-scoped read of `memberships` was returning nothing for the owning
+    // user (the members_read policy routes through my_org_ids(), which reads
+    // memberships — so a user couldn't see their own row), which made every
+    // org-scoped feature think the user had no org: billing/team/checkout
+    // returned "Unauthorized" and ensureOrgForUser kept creating duplicate orgs.
+    // We've already verified identity via auth.getUser(); scoping the lookup to
+    // this user's id keeps it safe.
+    const { data: memberships } = await createServiceRoleClient()
       .from("memberships")
       .select("org_id, role")
       .eq("user_id", user.id)

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
 import { getSessionContext, type Role } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import { TeamManager } from "./TeamManager";
 
 export default async function TeamPage() {
@@ -16,12 +16,15 @@ export default async function TeamPage() {
     if (created) membership = { org_id: created.org_id, role: created.role as Role };
   }
 
-  const supabase = await createClient();
+  // Read the roster with the service role, scoped to the caller's verified org —
+  // the org-wide RLS read of memberships recurses (see migration 0005), so a
+  // user-scoped query can't list coworkers reliably.
+  const db = createServiceRoleClient();
   const { data: members } = membership
-    ? await supabase.from("memberships").select("id, role, first_name, last_name, email, created_at").eq("org_id", membership.org_id).order("created_at")
+    ? await db.from("memberships").select("id, role, first_name, last_name, email, created_at").eq("org_id", membership.org_id).order("created_at")
     : { data: [] };
   const { data: org } = membership
-    ? await supabase.from("organizations").select("name, agent_limit").eq("id", membership.org_id).single()
+    ? await db.from("organizations").select("name, agent_limit").eq("id", membership.org_id).single()
     : { data: null };
 
   const canManage = membership?.role === "owner" || membership?.role === "admin";

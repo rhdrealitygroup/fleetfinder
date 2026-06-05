@@ -9,8 +9,12 @@ export async function ensureOrgForUser(opts?: { companyName?: string; fullName?:
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // Already a member of an org?
-  const { data: existing } = await supabase
+  const db = createServiceRoleClient();
+
+  // Already a member of an org? Check with the service-role client — the
+  // RLS-scoped read hides the user's own membership row, so a user-scoped check
+  // here would always miss and create a duplicate org on every call.
+  const { data: existing } = await db
     .from("memberships")
     .select("org_id, role")
     .eq("user_id", user.id)
@@ -18,7 +22,6 @@ export async function ensureOrgForUser(opts?: { companyName?: string; fullName?:
     .limit(1);
   if (existing && existing[0]) return { org_id: existing[0].org_id as string, role: existing[0].role as string };
 
-  const db = createServiceRoleClient();
   const companyName =
     opts?.companyName ||
     (user.user_metadata?.company_name as string) ||
