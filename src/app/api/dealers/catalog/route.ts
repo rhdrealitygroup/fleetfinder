@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { CATALOG_MAKES } from "@/lib/inventory";
+import { CATALOG_MAKES } from "@/lib/carCatalog";
 import dealersData from "@/data/dealers-nynj.json";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
