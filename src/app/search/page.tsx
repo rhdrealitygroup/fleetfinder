@@ -64,7 +64,8 @@ export default function SearchPage() {
 
   const { items: saved, setItems: setSaved, ready } = useLocalCollection<Vehicle>("ff_saved");
   const { items: myDealers } = useLocalCollection<{ id: string }>("ff_dealers", 2000);
-  const [scopeDealers, setScopeDealers] = useState(false);
+  const [scopeDealers, setScopeDealers] = useState(true); // default: search your dealers
+  const [searchedAll, setSearchedAll] = useState(false);  // last search overrode to all dealers
   const savedVins = useMemo(() => new Set(saved.map((s) => s.vin)), [saved]);
   const [compare, setCompare] = useState<Set<string>>(new Set());
 
@@ -164,9 +165,11 @@ export default function SearchPage() {
       return n;
     });
 
-  const runSearch = useCallback(async (opts?: { radiusOverride?: number }) => {
+  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean }) => {
     const effRadius = opts?.radiusOverride ?? radius;
     if (opts?.radiusOverride) setRadius(opts.radiusOverride);
+    const useDealers = scopeDealers && myDealers.length > 0 && !opts?.allDealers;
+    setSearchedAll(!!opts?.allDealers);
     setSearching(true);
     setError("");
     setOpen(null);
@@ -185,7 +188,7 @@ export default function SearchPage() {
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           option_names: features.size ? [...features] : undefined,
-          dealer_ids: scopeDealers && myDealers.length ? myDealers.map((d) => d.id).filter(Boolean) : undefined,
+          dealer_ids: useDealers ? myDealers.map((d) => d.id).filter(Boolean) : undefined,
         }),
       });
       const d = await res.json();
@@ -271,14 +274,14 @@ export default function SearchPage() {
       <Field label="Make">
         <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setFeatures(new Set()); }} className={selectCls}>
           <option value="">Any make</option>
-          {CATALOG_MAKES.map((m) => <option key={m} value={m}>{m}</option>)}
+          {[...CATALOG_MAKES].sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
 
       <Field label="Model">
         <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
           <option value="">{make ? "Any model" : "Pick a make first"}</option>
-          {models.map((m) => <option key={m} value={m}>{m}</option>)}
+          {[...models].sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
 
@@ -428,6 +431,12 @@ export default function SearchPage() {
               <div className="text-sm text-muted-foreground">
                 <span className="text-foreground font-semibold">{total || sorted.length}</span> matches
                 {zip ? <span className="ml-1">within {radius} mi of {zip}</span> : <span className="ml-1">nationwide</span>}
+                {myDealers.length > 0 && scopeDealers && !searchedAll && (
+                  <span className="ml-1">· <span className="text-primary font-medium">your {myDealers.length} dealers</span>
+                    <button onClick={() => runSearch({ allDealers: true })} className="ml-2 underline hover:text-foreground">search all dealers</button>
+                  </span>
+                )}
+                {searchedAll && myDealers.length > 0 && <span className="ml-1">· all dealers</span>}
                 {truncated && <span className="ml-2 text-xs text-warning">· showing first {sorted.length}</span>}
               </div>
               <div className="flex items-center gap-2">
@@ -482,12 +491,20 @@ export default function SearchPage() {
             <div className="text-center py-24 text-muted-foreground">
               <p className="text-lg font-medium text-foreground mb-1">No matches</p>
               <p className="text-sm mb-5">Try a different trim, widen the year/price, or drop a feature filter.</p>
-              {radius < 100 && (
-                <button onClick={() => runSearch({ radiusOverride: 100 })}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">
-                  <MapPin className="w-4 h-4" /> Search wider — within 100 mi{zip ? ` of ${zip}` : ""}
-                </button>
-              )}
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {myDealers.length > 0 && scopeDealers && !searchedAll && (
+                  <button onClick={() => runSearch({ allDealers: true })}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">
+                    <Building2 className="w-4 h-4" /> Search all dealers (not just your {myDealers.length})
+                  </button>
+                )}
+                {radius < 100 && (
+                  <button onClick={() => runSearch({ radiusOverride: 100 })}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-card border border-border hover:border-primary/40 text-sm font-medium transition">
+                    <MapPin className="w-4 h-4" /> Search wider — within 100 mi{zip ? ` of ${zip}` : ""}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

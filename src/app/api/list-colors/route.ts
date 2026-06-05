@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     }
     const colors = [...buckets.values()]
       .filter((c) => c.name.length > 0)
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     cacheSet(cacheKey, colors, colors.length ? DAY : MIN);
     return NextResponse.json({ colors, cached: false, provider: "marketcheck" });

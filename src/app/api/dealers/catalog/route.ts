@@ -12,7 +12,7 @@ type Dealer = {
   makes?: string[]; lat: string | number; lng: string | number;
 };
 
-const ALL = (dealersData as Dealer[]).slice().sort((a, b) => (b.listing_count || 0) - (a.listing_count || 0));
+const ALL = (dealersData as Dealer[]).slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 const PER = 40;
 // All new-car makes present in the directory (for the make filter dropdown).
 const MAKES = Array.from(new Set(ALL.flatMap((d) => d.makes || []))).sort();

@@ -166,13 +166,13 @@ export async function POST(req: Request) {
       const trim = byKey.get(tk);
       if (!trim) continue;
       const variants = [...m.entries()].map(([label, count]) => ({ label, count }))
-        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+        .sort((a, b) => a.label.localeCompare(b.label));
       if (variants.length >= 2) trim.variants = variants;
     }
 
     // ── 3. Sort: available first (by count desc), then the rest A-Z ────────
     const all = [...byKey.values()];
-    const available = all.filter((t) => t.available).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const available = all.filter((t) => t.available).sort((a, b) => a.name.localeCompare(b.name));
     const unavailable = all.filter((t) => !t.available).sort((a, b) => a.name.localeCompare(b.name));
     const trims = [...available, ...unavailable];
 

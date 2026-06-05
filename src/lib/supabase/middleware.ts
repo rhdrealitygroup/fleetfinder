@@ -44,8 +44,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirect);
   }
 
-  // Already signed in but on /login or /signup → bounce into the app.
-  if (user && (path === "/login" || path === "/signup")) {
+  // Already signed in but on the marketing/auth pages → go straight to the app.
+  if (user && (path === "/" || path === "/login" || path === "/signup")) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/search";
     redirect.search = "";

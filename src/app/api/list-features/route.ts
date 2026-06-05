@@ -85,9 +85,11 @@ export async function POST(req: Request) {
         }
       }
     }
-    let features = [...map.values()].sort(
-      (a, b) => b.count - a.count || b.msrp - a.msrp || a.label.localeCompare(b.label),
-    ).slice(0, 40);
+    // Keep the most common options (cap 40), then present alphabetically.
+    let features = [...map.values()]
+      .sort((a, b) => b.count - a.count || b.msrp - a.msrp)
+      .slice(0, 40)
+      .sort((a, b) => a.label.localeCompare(b.label));
 
     // 3) Supplement: when the build sheet is thin or empty (EVs like Tesla,
     //    low-option brands), top up the list with generic high_value_features
