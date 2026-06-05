@@ -49,7 +49,12 @@ export async function GET(req: Request) {
     if (state) query = query.eq("state", state);
     if (type) query = query.eq("type", type);
     if (make) query = query.contains("makes", [make]);
-    if (q) query = query.or(`name.ilike.%${q}%,city.ilike.%${q}%,zip.ilike.%${q}%,dealer_group.ilike.%${q}%`);
+    if (q) {
+    // Strip PostgREST filter metacharacters so a query like "a,id.eq.x" can't
+    // break out of the intended ilike clauses (filter injection).
+    const safe = q.replace(/[,()*\\"]/g, " ").replace(/\s+/g, " ").trim();
+    if (safe) query = query.or(`name.ilike.%${safe}%,city.ilike.%${safe}%,zip.ilike.%${safe}%,dealer_group.ilike.%${safe}%`);
+  }
     query = query.order("name").range(page * PER, page * PER + PER - 1);
     const { data, count, error } = await query;
     if (error) return NextResponse.json(fromFile(q, state, type, make, page));

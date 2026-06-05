@@ -2,12 +2,15 @@
 // MarketCheck facet, deduped across dealer spelling variants. Ported from Base44.
 
 import { NextResponse } from "next/server";
+import { getSessionContext } from "@/lib/auth";
 import { MC_HOST, mcKey, num, resolveModel } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function POST(req: Request) {
+  const { user } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();

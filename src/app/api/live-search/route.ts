@@ -177,6 +177,7 @@ export async function POST(req: Request) {
   let total = 0;
   let provider = "";
   let note = "";
+  let rateLimited = false;
   // Prefer MarketCheck whenever we have a key: it geocodes ZIPs natively AND
   // (on the Basic tier) handles unbounded nationwide queries. Auto.dev is the
   // fallback, used only if MarketCheck is unavailable or rate-limited.
@@ -184,7 +185,7 @@ export async function POST(req: Request) {
   try {
     if (preferMarketCheck) {
       const r = await searchMarketCheck();
-      results = r.results; total = r.total; provider = "marketcheck";
+      results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
     } else if (autoKey) {
       const r = await searchAutoDev();
       results = r.results; total = r.total; provider = "auto.dev";
@@ -195,7 +196,7 @@ export async function POST(req: Request) {
       }
     } else if (marketKey) {
       const r = await searchMarketCheck();
-      results = r.results; total = r.total; provider = "marketcheck";
+      results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
     }
   } catch (e) {
     if (marketKey && provider !== "marketcheck") {
@@ -259,7 +260,8 @@ export async function POST(req: Request) {
 
   const narrowed = !!variant || maxMonthly > 0 || !!optionQuery || optionNames.length > 0;
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider };
-  cacheSet(ckey, payload, HOUR);
+  // Never persist a rate-limited/partial response — it would pin an empty result.
+  if (!rateLimited) cacheSet(ckey, payload, HOUR);
 
   return NextResponse.json({
     ...payload,

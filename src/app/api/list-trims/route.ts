@@ -17,6 +17,7 @@
 //   4. Errors are surfaced; empty/failed results are cached only briefly.
 
 import { NextResponse } from "next/server";
+import { getSessionContext } from "@/lib/auth";
 import {
   MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
   isNoiseVariant, resolveModel,
@@ -33,6 +34,8 @@ type Variant = { label: string; count: number };
 type Trim = { name: string; count: number; available: boolean; msrp?: number; variants?: Variant[] };
 
 export async function POST(req: Request) {
+  const { user } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();

@@ -5,11 +5,14 @@
 // car matching the MOST of the requested options. Cheap (facets) + a few decodes.
 
 import { NextResponse } from "next/server";
+import { getSessionContext } from "@/lib/auth";
 import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function POST(req: Request) {
+  const { user } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
   const apiKey = mcKey();
   if (!apiKey) return NextResponse.json({ error: "MARKETCHECK_API_KEY not set" }, { status: 500 });

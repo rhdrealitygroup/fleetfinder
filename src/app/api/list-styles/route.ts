@@ -3,12 +3,15 @@
 // Base44. Used by the detail panel and as catalog data behind the trim picker.
 
 import { NextResponse } from "next/server";
+import { getSessionContext } from "@/lib/auth";
 import { MC_HOST, mcKey, num, titleCase } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function POST(req: Request) {
+  const { user } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const year = num(body.year);
   const make = String(body.make || "").trim();
