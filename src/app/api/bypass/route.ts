@@ -13,9 +13,15 @@ import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
 const GUEST_EMAIL = "guest@lotcompass.app";
 
+// Hard kill-switch: the access code stops working after this date no matter
+// what (set 2026-06-04, expires end of 2026-06-07 = ~3 days). Self-removing —
+// can't fail. To extend, bump this; to kill early, clear the BYPASS_CODE env.
+const BYPASS_EXPIRES = Date.parse("2026-06-08T00:00:00Z");
+
 export async function POST(req: Request) {
   const expected = process.env.BYPASS_CODE;
   if (!expected) return NextResponse.json({ error: "Access code not enabled" }, { status: 403 });
+  if (Date.now() > BYPASS_EXPIRES) return NextResponse.json({ error: "Access code expired" }, { status: 403 });
 
   const { code } = await req.json().catch(() => ({}));
   if (String(code || "").trim() !== expected) {
