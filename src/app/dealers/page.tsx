@@ -95,7 +95,9 @@ export default function DealersPage() {
       setTotal(Number(d.total) || 0);
       if (d.counts) setCounts(d.counts);
       if (Array.isArray(d.makes) && d.makes.length) setMakes(d.makes);
-      setItems((prev) => (replace ? incoming : [...prev, ...incoming]));
+      // De-dupe on append: offset pagination ordered by a non-unique name can
+      // repeat an id across pages if the catalog shifts mid-paging → key collision.
+      setItems((prev) => (replace ? incoming : [...prev, ...incoming.filter((n: Dealer) => !prev.some((p) => p.id === n.id))]));
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }

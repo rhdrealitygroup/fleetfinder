@@ -362,7 +362,7 @@ function SearchPageInner() {
     <div className="space-y-5">
       <div className="flex rounded-lg border border-border overflow-hidden text-sm">
         {(["new", "used"] as const).map((t) => (
-          <button key={t} onClick={() => setCarType(t)}
+          <button key={t} onClick={() => { setCarType(t); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }}
             className={`flex-1 py-1.5 capitalize transition ${carType === t ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}>
             {t}
           </button>
