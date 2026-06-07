@@ -84,7 +84,7 @@ export default async function BillingPage() {
               ) : comped ? (
                 <p className="text-sm text-muted-foreground">Complimentary access — there&apos;s nothing to pay. Reach out if anything changes.</p>
               ) : (
-                <BillingActions hasSubscription={hasSub} baseMonthly={baseMonthly} />
+                <BillingActions hasSubscription={hasSub} baseMonthly={baseMonthly} defaultSeats={Math.max(0, (agentCount || 1) - 1)} />
               )}
             </div>
           </>

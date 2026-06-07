@@ -18,10 +18,13 @@ export async function POST(req: Request) {
   const db = createServiceRoleClient();
 
   // Seat limit: don't let an org exceed its paid agent_limit (billing integrity).
-  // Comped orgs are complimentary and never run checkout (so agent_limit stays at
-  // the default 1) — exempt them, or the free grant couldn't add a single agent.
-  const { data: org } = await db.from("organizations").select("agent_limit, comped").eq("id", membership.org_id).single();
-  if (!org?.comped) {
+  // Exempt: (1) comped orgs — complimentary, never run checkout (agent_limit stays
+  // at the default 1); (2) orgs still on the free trial — let them build their team
+  // before subscribing. Trial-added agents are billed when they convert (checkout
+  // floors the paid seat count at the current agent count).
+  const { data: org } = await db.from("organizations").select("agent_limit, comped, plan_status").eq("id", membership.org_id).single();
+  const exemptFromSeatLimit = !!org?.comped || org?.plan_status === "trial";
+  if (!exemptFromSeatLimit) {
     const { count: seatCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
     // agent_limit is TOTAL seats and already includes the owner (the webhook sets
     // it to 1 + paid-seat-quantity). Do NOT add another +1 here, or every org gets

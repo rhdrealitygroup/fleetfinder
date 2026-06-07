@@ -16,11 +16,19 @@ export async function POST(req: Request) {
   if (membership.role !== "owner") return NextResponse.json({ error: "Only the owner can manage billing" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const seats = Math.max(0, Number(body.seats) || 0);
+  const requestedSeats = Math.max(0, Number(body.seats) || 0);
 
   const supabase = await createClient();
   const { data: org } = await supabase.from("organizations").select("*").eq("id", membership.org_id).single();
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
+
+  // A trial org can add agents before subscribing, so bill for at least the
+  // agents already on the team (members minus the owner). Otherwise those agents
+  // would convert to a paid plan unbilled.
+  const { count: memberCount } = await createServiceRoleClient()
+    .from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
+  const currentAgents = Math.max(0, (memberCount ?? 1) - 1);
+  const seats = Math.max(requestedSeats, currentAgents);
 
   // Comped orgs get free access (auth.ts grants it) — starting a paid checkout
   // would charge them for something they were given for free. Block it.

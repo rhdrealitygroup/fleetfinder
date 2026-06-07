@@ -5,8 +5,8 @@ import { Loader2 } from "lucide-react";
 
 // Client island: start checkout (with optional extra seats) or open the
 // Stripe customer portal.
-export function BillingActions({ hasSubscription, baseMonthly = 100 }: { hasSubscription: boolean; baseMonthly?: number }) {
-  const [seats, setSeats] = useState(0);
+export function BillingActions({ hasSubscription, baseMonthly = 100, defaultSeats = 0 }: { hasSubscription: boolean; baseMonthly?: number; defaultSeats?: number }) {
+  const [seats, setSeats] = useState(defaultSeats);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -41,10 +41,15 @@ export function BillingActions({ hasSubscription, baseMonthly = 100 }: { hasSubs
     <div className="space-y-3">
       <label className="flex items-center gap-3 text-sm">
         Additional agents:
-        <input type="number" min={0} value={seats} onChange={(e) => setSeats(Math.max(0, Number(e.target.value)))}
+        <input type="number" min={defaultSeats} value={seats} onChange={(e) => setSeats(Math.max(defaultSeats, Number(e.target.value)))}
           className="w-20 rounded-lg border border-border bg-card px-3 py-1.5 tnum focus:outline-none focus:ring-2 focus:ring-ring/50" />
         <span className="text-muted-foreground">× $15/mo</span>
       </label>
+      {defaultSeats > 0 && (
+        <p className="text-[11px] text-muted-foreground -mt-1">
+          You already added {defaultSeats} agent{defaultSeats === 1 ? "" : "s"} during your trial — they&apos;re included in your seat count.
+        </p>
+      )}
       <div className="text-sm text-muted-foreground">
         Total: <span className="text-foreground font-semibold tnum">${baseMonthly + seats * 15}/mo</span> after the 14-day trial
       </div>
