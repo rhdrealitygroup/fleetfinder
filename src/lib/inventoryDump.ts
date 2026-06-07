@@ -238,12 +238,12 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
       await db.from("inventory").update({ options, options_decoded: true }).eq("vin", row.vin);
       done++;
     } catch {
-      // Hard failure → record the attempt so a permanently-failing VIN backs off
-      // after MAX_DECODE_ATTEMPTS instead of being retried forever every run.
-      // Scope to THIS (dealer_id, vin) row, not .eq("vin") — fanning out would
-      // overwrite other dealers' copies and could reset a higher counter.
-      await db.from("inventory").update({ decode_attempts: (row.decode_attempts || 0) + 1 })
-        .eq("dealer_id", row.dealer_id).eq("vin", row.vin);
+      // Hard failure → bump the attempt counter so a permanently-failing VIN backs
+      // off after MAX_DECODE_ATTEMPTS. Atomic per-VIN increment (RPC): fans out to
+      // ALL dealer copies of a shared VIN so they back off together, while each
+      // advances from its own value (a literal .eq("vin") set would reset higher
+      // counters; a single-row update backed off only one copy per run).
+      await db.rpc("bump_decode_attempts", { p_vin: row.vin });
     }
   }
   return done;
