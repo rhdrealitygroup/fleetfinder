@@ -10,7 +10,11 @@ import { Loader2, Mail } from "lucide-react";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/search";
+  // Validate `next` with the same strict allowlist as /auth/callback — the
+  // password path calls router.push(next) directly (bypassing the callback), so
+  // an unvalidated "//evil.com" would be an authenticated open redirect.
+  const rawNext = params.get("next") || "/search";
+  const next = /^\/[^/\\\s][^\\\s]*$/.test(rawNext) ? rawNext : "/search";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

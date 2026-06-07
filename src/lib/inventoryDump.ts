@@ -140,7 +140,9 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
 
     // Upsert listing fields only — omit options/options_decoded so already-decoded
     // VINs keep their cached options and new VINs default to undecoded.
-    if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "vin" });
+    // Conflict on (dealer_id, vin): each dealer owns its own copy of a shared VIN
+    // so one dealer's dump can't reassign/sweep another dealer's in-stock car.
+    if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "dealer_id,vin" });
 
     // A dealer with more active listings than the tier's offset cap (1500) lets
     // us page through is TRUNCATED — we only stamped the first 1500 this run, so
@@ -186,24 +188,37 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
 // platform doesn't kill the run mid-decode. Each decode is a real HTTP call up
 // to the fetch timeout, so the caller's "ms / 600" sizing was unrealistic — the
 // deadline is the real guard.
+const MAX_DECODE_ATTEMPTS = 5; // give up on a VIN NeoVIN can't decode (e.g. permanent 404)
+
 export async function decodeUndecoded(limit = 60, deadline = 0) {
   const db = createServiceRoleClient();
-  const { data: rows } = await db.from("inventory").select("vin").eq("options_decoded", false).limit(limit);
-  const vins = (rows || []).map((r: any) => r.vin).filter(Boolean);
-  if (!vins.length) return 0;
+  // Skip VINs that have already failed too many times, and try the
+  // least-attempted first, so a handful of permanently-undecodable VINs can't
+  // starve the per-run decode budget by being retried ahead of fresh VINs.
+  const { data: rows } = await db.from("inventory")
+    .select("vin,decode_attempts")
+    .eq("options_decoded", false)
+    .lt("decode_attempts", MAX_DECODE_ATTEMPTS)
+    .order("decode_attempts", { ascending: true })
+    .limit(limit);
+  const list = (rows || []).filter((r: any) => r.vin);
+  if (!list.length) return 0;
   // Import lazily to avoid a heavy module on the hot path.
   const { decodeVinOptionNames } = await import("@/lib/marketcheck");
   let done = 0;
-  for (const vin of vins) {
+  for (const row of list) {
     if (deadline && Date.now() > deadline) break; // out of budget → rest next run
     try {
       // throwOnError=true: a transient 429/5xx/timeout throws and we leave the VIN
-      // undecoded (options_decoded stays false) to retry next run — instead of
-      // permanently marking it decoded-with-no-options.
-      const options = await decodeVinOptionNames(vin, true);
-      await db.from("inventory").update({ options, options_decoded: true }).eq("vin", vin);
+      // undecoded to retry next run — instead of marking it decoded-with-no-options.
+      const options = await decodeVinOptionNames(row.vin, true);
+      await db.from("inventory").update({ options, options_decoded: true }).eq("vin", row.vin);
       done++;
-    } catch { /* hard failure → leave undecoded; retried next run */ }
+    } catch {
+      // Hard failure → record the attempt so a permanently-failing VIN backs off
+      // after MAX_DECODE_ATTEMPTS instead of being retried forever every run.
+      await db.from("inventory").update({ decode_attempts: (row.decode_attempts || 0) + 1 }).eq("vin", row.vin);
+    }
   }
   return done;
 }

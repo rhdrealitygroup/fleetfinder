@@ -213,13 +213,15 @@ function SearchPageInner() {
     if (hasSaved(v.vin, list)) removeSaved({ vin: v.vin, list });
     else save(v, list);
   };
-  const toggleCompare = (vin: string) =>
+  const toggleCompare = (vin: string) => {
+    if (!vin) return; // VIN-less listings share the "" key — don't let one toggle all
     setCompare((prev) => {
       const n = new Set(prev);
       if (n.has(vin)) n.delete(vin);
       else n.add(vin);
       return n;
     });
+  };
 
   const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean; dropOption?: string; clearMaxMonthly?: boolean; clearVariant?: boolean; clearIntColor?: boolean }) => {
     const effRadius = opts?.radiusOverride ?? radius;

@@ -28,7 +28,7 @@ export default function DealersPage() {
   const [loading, setLoading] = useState(false);
   const [onlySelected, setOnlySelected] = useState(false);
 
-  const { items: selected, add, remove, ready } = useOrgDealers();
+  const { items: selected, add, remove, reload, ready } = useOrgDealers();
   const selectedIds = useMemo(() => new Set(selected.map((d) => d.id)), [selected]);
 
   const [role, setRole] = useState<string | null>(null);
@@ -65,9 +65,10 @@ export default function DealersPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }),
       });
       if (!r.ok) { setRequests(prevRequests); return; } // failed → restore the row so it can be retried
-      // Approve removes the dealer for the whole org — refresh selections so it
-      // disappears from everyone's list without a manual reload.
-      if (action === "approve") loadRequests();
+      // Approve removes the dealer for the whole org — refresh both the request
+      // queue AND the dealer selection so it disappears (checkmark/border/count)
+      // without a manual reload.
+      if (action === "approve") { loadRequests(); reload(); }
     } catch { setRequests(prevRequests); }
   }
 

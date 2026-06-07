@@ -45,6 +45,19 @@ export async function POST(req: Request) {
     // (which a status-only guard couldn't catch).
     if (eventCreated && org.last_sub_event_at && eventCreated * 1000 < Date.parse(org.last_sub_event_at)) return;
 
+    // Foreign-subscription guard: ignore events for a subscription this org does
+    // NOT currently point at, so canceling a race-duplicate (or an old sub after
+    // a resubscribe) can't clobber the org's live subscription. Adopt a different
+    // sub only when ours is already gone AND the incoming one is live.
+    if (org.stripe_subscription_id && sub.id !== org.stripe_subscription_id) {
+      const liveStatuses = ["active", "trialing", "past_due", "unpaid", "paused"];
+      if (isDeleted || !liveStatuses.includes(sub.status)) return;
+      try {
+        const current = await stripe.subscriptions.retrieve(org.stripe_subscription_id);
+        if (liveStatuses.includes(current.status)) return; // keep the existing live sub
+      } catch { /* current sub gone in Stripe → fall through and adopt the incoming one */ }
+    }
+
     const status = isDeleted ? "canceled"
       : sub.status === "trialing" ? "trial"
       : sub.status === "active" ? "active"
