@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     const orgId = (sub.metadata?.org_id as string) || null;
 
     // Locate the org row first (by metadata, else by Stripe customer id).
-    const sel = "id, plan_status, stripe_subscription_id, last_sub_event_at";
+    const sel = "id, plan_status, stripe_subscription_id, last_sub_event_at, comped";
     const { data: org } = orgId
       ? await db.from("organizations").select(sel).eq("id", orgId).maybeSingle()
       : typeof sub.customer === "string"
@@ -92,6 +92,28 @@ export async function POST(req: Request) {
     if (eventCreated) patch.last_sub_event_at = new Date(eventCreated * 1000).toISOString();
 
     await db.from("organizations").update(patch).eq("id", org.id);
+
+    // Durable comp reconciliation: if the org is comped, ensure the 100%-off
+    // coupon is on this subscription. The admin toggle only reconciles at toggle
+    // time, so a checkout that completes AFTER an org was comped (its session was
+    // issued before) would otherwise be a live full-price sub on a "free" org.
+    // Idempotent — only adds the coupon when missing, preserving any real promo.
+    if (!isDeleted && org.comped && ["active", "trialing", "past_due", "unpaid", "paused"].includes(sub.status)) {
+      try {
+        const COMP = "lotcompass_comp_100";
+        const full: any = await stripe.subscriptions.retrieve(sub.id, { expand: ["discounts"] });
+        const has = (full.discounts || []).some((d: any) => (typeof d === "string" ? d : d?.coupon?.id || d?.coupon) === COMP);
+        if (!has) {
+          try { await stripe.coupons.retrieve(COMP); }
+          catch { await stripe.coupons.create({ id: COMP, percent_off: 100, duration: "forever", name: "LotCompass complimentary" }); }
+          const others = (full.discounts || [])
+            .map((d: any) => d?.promotion_code ? { promotion_code: typeof d.promotion_code === "string" ? d.promotion_code : d.promotion_code.id }
+              : (d?.coupon ? { coupon: typeof d.coupon === "string" ? d.coupon : d.coupon.id } : null))
+            .filter(Boolean);
+          await stripe.subscriptions.update(sub.id, { discounts: [...others, { coupon: COMP }] });
+        }
+      } catch { /* best-effort; the admin comp toggle also reconciles */ }
+    }
   }
 
   switch (event.type) {

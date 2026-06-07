@@ -15,18 +15,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Wall-clock budget so the run always finishes within maxDuration (60s). A
+  // hard platform kill mid-dump would skip the lock-release finally and leave a
+  // dealer locked for ~3 min; stopping early avoids that and keeps each run clean.
+  // Start the clock BEFORE syncTrackedDealers (its paged reads + GC delete can
+  // take seconds) so that time is counted against the budget, not the safety margin.
+  const startedAt = Date.now();
+  const BUDGET_MS = 45_000;
+
   const tracked = await syncTrackedDealers();
 
   // Batches sized to finish within maxDuration (60s) of sequential MarketCheck
   // calls; the rolling cron covers the rest of the fleet across runs.
   const dealerBatch = Math.max(1, Number(url.searchParams.get("dealers")) || 6);
   const decodeBatch = Math.max(0, Number(url.searchParams.get("decode")) || 60);
-
-  // Wall-clock budget so the run always finishes within maxDuration (60s). A
-  // hard platform kill mid-dump would skip the lock-release finally and leave a
-  // dealer locked for ~3 min; stopping early avoids that and keeps each run clean.
-  const startedAt = Date.now();
-  const BUDGET_MS = 45_000;
 
   const due = await stalestDealers(dealerBatch);
   const refreshed: { dealer: string; n: number }[] = [];

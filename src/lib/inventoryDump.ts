@@ -62,9 +62,13 @@ export async function syncTrackedDealers() {
   // (deleting from an incomplete view could wipe still-selected dealers).
   if (trackedBefore == null) return ids.length;
   const stale = trackedBefore.map((t: any) => t.dealer_id).filter((id: string) => !seen.has(id));
-  if (stale.length) {
-    await db.from("inventory").delete().in("dealer_id", stale);
-    await db.from("tracked_dealers").delete().in("dealer_id", stale);
+  // Chunk the deletes: PostgREST serializes .in() values into the request URL,
+  // so a large one-time deselection could overflow the URL length limit and fail
+  // the whole delete (leaving orphan rows). ~500 ids/chunk stays well under it.
+  for (let i = 0; i < stale.length; i += 500) {
+    const chunk = stale.slice(i, i + 500);
+    await db.from("inventory").delete().in("dealer_id", chunk);
+    await db.from("tracked_dealers").delete().in("dealer_id", chunk);
   }
   return ids.length;
 }

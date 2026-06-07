@@ -99,14 +99,26 @@ export async function POST(req: Request) {
   const line_items = [{ price: basePrice, quantity: 1 }];
   if (seats > 0 && seatPriceId()) line_items.push({ price: seatPriceId(), quantity: seats });
 
+  // Trial: continue the org's EXISTING app trial (set at org creation) rather
+  // than granting a fresh 14 days on top — otherwise a new org gets ~14 app-trial
+  // days + 14 Stripe-trial days = ~28 free. Never trialed → full 14; already used
+  // (resubscribe) or expired → none (charged immediately).
+  let trialDays: number | undefined;
+  if (!org.trial_used) {
+    if (org.trial_ends_at) {
+      const remaining = Math.ceil((Date.parse(org.trial_ends_at as string) - Date.now()) / 86_400_000);
+      trialDays = remaining > 0 ? remaining : undefined;
+    } else {
+      trialDays = PRICING.trialDays;
+    }
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     line_items,
-    // Grant the 14-day trial only to orgs that have never trialed — otherwise a
-    // cancel -> resubscribe loop would hand out unlimited free 14-day windows.
     subscription_data: {
-      ...(org.trial_used ? {} : { trial_period_days: PRICING.trialDays }),
+      ...(trialDays ? { trial_period_days: trialDays } : {}),
       metadata: { org_id: org.id },
     },
     success_url: `${origin}/billing?checkout=success`,

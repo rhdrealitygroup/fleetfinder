@@ -267,6 +267,9 @@ function SearchPageInner() {
     } catch (e) {
       setError((e as Error).message);
       setResults([]);
+      // Clear stale result metadata so a failed search doesn't show the previous
+      // search's "N matches" count next to the error banner.
+      setTotal(0); setTruncated(false); setNote(""); setProvider("");
     } finally {
       setSearching(false);
     }
