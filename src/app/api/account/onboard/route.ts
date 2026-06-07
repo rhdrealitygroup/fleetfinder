@@ -8,17 +8,21 @@ import { ensureOrgForUser } from "@/lib/account";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
-  const { user } = await getSessionContext();
+  const { user, membership } = await getSessionContext();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const b = await req.json().catch(() => ({}));
   const companyName = String(b.companyName || "").trim();
   const fullName = String(b.fullName || "").trim();
-  if (!companyName) return NextResponse.json({ error: "Company name is required." }, { status: 400 });
+  // An invited agent already belongs to a company they didn't create — they only
+  // confirm their own name; company is neither asked for nor required.
+  const isInvitedAgent = !!membership && membership.role !== "owner";
   if (!fullName) return NextResponse.json({ error: "Your name is required." }, { status: 400 });
+  if (!isInvitedAgent && !companyName) return NextResponse.json({ error: "Company name is required." }, { status: 400 });
 
-  // Creates the org (named from companyName) if none exists, else returns it.
-  const ensured = await ensureOrgForUser({ companyName, fullName });
+  // Creates the org (named from companyName) if none exists, else returns it. For
+  // an agent we pass no companyName so their existing org is never renamed/created.
+  const ensured = await ensureOrgForUser(isInvitedAgent ? { fullName } : { companyName, fullName });
   if (!ensured) return NextResponse.json({ error: "Couldn't set up your account — try again." }, { status: 500 });
 
   const db = createServiceRoleClient();
@@ -30,7 +34,7 @@ export async function POST(req: Request) {
   await db.from("profiles").update({ full_name: fullName }).eq("id", user.id);
   // Only the OWNER may (re)name the company — an invited agent must not rename
   // their company's org.
-  if (ensured.role === "owner") {
+  if (ensured.role === "owner" && companyName) {
     await db.from("organizations").update({ name: companyName }).eq("id", ensured.org_id);
   }
 
@@ -38,7 +42,7 @@ export async function POST(req: Request) {
   // reads this flag to stop funnelling the user back to /onboarding. (Supabase
   // merges these keys into existing user_metadata rather than replacing it.)
   const { error: metaErr } = await db.auth.admin.updateUserById(user.id, {
-    user_metadata: { full_name: fullName, company_name: companyName, onboarded: true },
+    user_metadata: { full_name: fullName, ...(companyName ? { company_name: companyName } : {}), onboarded: true },
   });
   // The middleware gates the whole app on this flag. If the write fails we MUST
   // NOT report success — otherwise the client navigates to /search and the gate

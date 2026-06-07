@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 
 const inputCls = "w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50";
 
-export function OnboardingForm({ initialFullName, initialCompany }: { initialFullName: string; initialCompany: string }) {
+export function OnboardingForm({ initialFullName, initialCompany, isAgent = false, joiningCompany = "" }: { initialFullName: string; initialCompany: string; isAgent?: boolean; joiningCompany?: string }) {
   const [fullName, setFullName] = useState(initialFullName);
   const [company, setCompany] = useState(initialCompany);
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,8 @@ export function OnboardingForm({ initialFullName, initialCompany }: { initialFul
       const r = await fetch("/api/account/onboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, companyName: company }),
+        // Agents don't set a company — they already belong to one.
+        body: JSON.stringify(isAgent ? { fullName } : { fullName, companyName: company }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError(d.error || "Something went wrong — try again."); setLoading(false); return; }
@@ -36,11 +37,19 @@ export function OnboardingForm({ initialFullName, initialCompany }: { initialFul
         <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Your full name</label>
         <input required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Broker" className={inputCls} />
       </div>
-      <div>
-        <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Leasing company name</label>
-        <input required value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Acme Auto Leasing" className={inputCls} />
-        <p className="text-[11px] text-muted-foreground mt-1">You can invite agents to this company later in Team.</p>
-      </div>
+      {isAgent ? (
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Company</label>
+          <div className={`${inputCls} bg-muted/40 text-muted-foreground`}>{joiningCompany || "Your company"}</div>
+          <p className="text-[11px] text-muted-foreground mt-1">You were invited to this company by its owner.</p>
+        </div>
+      ) : (
+        <div>
+          <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Leasing company name</label>
+          <input required value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Acme Auto Leasing" className={inputCls} />
+          <p className="text-[11px] text-muted-foreground mt-1">You can invite agents to this company later in Team.</p>
+        </div>
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center justify-center gap-2 disabled:opacity-60">
         {loading && <Loader2 className="w-4 h-4 animate-spin" />} Finish setup →
