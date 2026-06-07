@@ -121,7 +121,10 @@ export async function POST(req: Request) {
       if (body.interior_color) url.searchParams.set("interior_color", body.interior_color);
       if (Array.isArray(body.features) && body.features.length) url.searchParams.set("high_value_features", body.features.join(","));
       // Scope to the company's selected dealers (MarketCheck OR-list of IDs).
-      if (Array.isArray(body.dealer_ids) && body.dealer_ids.length) url.searchParams.set("dealer_id", body.dealer_ids.slice(0, 200).join(","));
+      // Sort BEFORE slicing so the searched first-200 subset matches the
+      // (sorted) cache key — otherwise an org with >200 dealers could be served a
+      // cached result computed from a different 200-dealer subset.
+      if (Array.isArray(body.dealer_ids) && body.dealer_ids.length) url.searchParams.set("dealer_id", [...body.dealer_ids].map(String).sort().slice(0, 200).join(","));
       url.searchParams.set("rows", String(PAGE_SIZE));
       url.searchParams.set("start", String(page * PAGE_SIZE));
       let res: Response;
@@ -198,6 +201,20 @@ export async function POST(req: Request) {
     if (preferMarketCheck) {
       const r = await searchMarketCheck();
       results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
+      if (r.rateLimited) {
+        // A 429 returns empty rather than throwing, so fall back to Auto.dev when
+        // available — otherwise the UI shows a rate-limit as "no inventory" and
+        // sends the agent chasing filters that are actually fine.
+        if (autoKey) {
+          try {
+            const r2 = await searchAutoDev();
+            results = r2.results; total = r2.total; provider = "auto.dev"; rateLimited = r2.rateLimited;
+            note = " (marketcheck rate-limited, used auto.dev)";
+          } catch { note = " (inventory service rate-limited — try again shortly)"; }
+        } else {
+          note = " (inventory service rate-limited — try again shortly)";
+        }
+      }
     } else if (autoKey) {
       const r = await searchAutoDev();
       results = r.results; total = r.total; provider = "auto.dev";

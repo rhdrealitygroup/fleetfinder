@@ -67,7 +67,7 @@ export async function syncTrackedDealers() {
 }
 
 // ── Dump one dealer's full inventory (fast: listings only, no decode) ─────────
-export async function dumpDealerListings(dealerId: string, meta?: { name?: string; city?: string; state?: string }) {
+export async function dumpDealerListings(dealerId: string, meta?: { name?: string; city?: string; state?: string }, deadline = 0) {
   const apiKey = mcKey();
   if (!apiKey || !dealerId) return 0;
   const db = createServiceRoleClient();
@@ -97,11 +97,13 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     const rows: any[] = [];
     let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
     let numFound = 0;
-    // Internal page-loop deadline so a large dealer can't run past the function's
-    // time budget (the on-select after() path has no external budget guard like
-    // the cron does). Stopping early marks the pull incomplete → no sweep, and the
-    // finally still releases the lock — preventing a dangling lock on a kill.
-    const pageDeadline = Date.now() + 45_000;
+    // Page-loop deadline so a large dealer can't run past the function's time
+    // budget (the on-select after() path has no external budget guard). When the
+    // caller passes its own run deadline (the cron's shared budget), respect the
+    // EARLIER of the two so one dealer can't blow the whole run's 60s. Stopping
+    // early marks the pull incomplete → no sweep, and the finally still releases
+    // the lock — preventing a dangling lock on a kill.
+    const pageDeadline = deadline ? Math.min(deadline, Date.now() + 45_000) : Date.now() + 45_000;
     for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
       if (Date.now() > pageDeadline) { complete = false; break; }
       const u = new URL(`${MC_HOST}/search/car/active`);

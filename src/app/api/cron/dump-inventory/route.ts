@@ -33,7 +33,8 @@ export async function GET(req: Request) {
   for (const d of due as Array<{ dealer_id: string; name?: string; city?: string; state?: string }>) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → rest rolls to next run
     try {
-      const n = await dumpDealerListings(d.dealer_id, { name: d.name, city: d.city, state: d.state });
+      // Pass the shared run deadline so a dealer started late can't page past 60s.
+      const n = await dumpDealerListings(d.dealer_id, { name: d.name, city: d.city, state: d.state }, startedAt + BUDGET_MS);
       refreshed.push({ dealer: d.dealer_id, n });
     } catch { /* skip, retried next run */ }
   }

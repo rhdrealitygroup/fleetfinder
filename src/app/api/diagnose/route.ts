@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither, fetchWithTimeout } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -38,7 +38,9 @@ export async function POST(req: Request) {
     if (b.price_min || b.price_max) url.searchParams.set("price_range", `${b.price_min || 0}-${b.price_max || 999999}`);
     const zip = String(b.zip || "").trim();
     if (zip) { url.searchParams.set("zip", zip); url.searchParams.set("radius", String(Math.min(500, Number(b.radius) || 100))); }
-    if (Array.isArray(b.dealer_ids) && b.dealer_ids.length) url.searchParams.set("dealer_id", b.dealer_ids.slice(0, 200).join(","));
+    // Sort BEFORE slicing so the searched first-200 subset matches the (sorted)
+    // cache key in live-search for orgs with >200 dealers.
+    if (Array.isArray(b.dealer_ids) && b.dealer_ids.length) url.searchParams.set("dealer_id", [...b.dealer_ids].map(String).sort().slice(0, 200).join(","));
   }
 
   try {
@@ -46,7 +48,7 @@ export async function POST(req: Request) {
     withHard(fUrl);
     fUrl.searchParams.set("rows", "0");
     fUrl.searchParams.set("facets", "exterior_color|0|60,interior_color|0|60,trim|0|40,high_value_features|0|80");
-    const fRes = await fetch(fUrl.toString());
+    const fRes = await fetchWithTimeout(fUrl.toString());
     // Distinguish "the data source is unavailable" from "nothing is in stock" —
     // a 429/5xx must NOT be reported to the agent as "no matches" (it'd send
     // them chasing constraints that are actually fine).
@@ -134,7 +136,7 @@ export async function POST(req: Request) {
       if (wantColors.length && colorOk) cUrl.searchParams.set("exterior_color", String(b.exterior_color));
       cUrl.searchParams.set("rows", "12");
       cUrl.searchParams.set("sort_by", "price"); cUrl.searchParams.set("sort_order", "asc");
-      const cRes = await fetch(cUrl.toString());
+      const cRes = await fetchWithTimeout(cUrl.toString());
       const cData = cRes.ok ? await cRes.json() : { listings: [] };
       const cands: any[] = (cData.listings || []).filter((l: any) => l.vin);
       let best: any = null, bestScore = -1, bestMissing: string[] = [];

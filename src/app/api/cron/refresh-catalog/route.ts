@@ -30,11 +30,18 @@ export async function GET(req: Request) {
   const ordered = pending.length
     ? pending
     : MODELS.slice().sort((a, b) => +new Date(seen.get(`${a.make}::${a.model}`) || 0) - +new Date(seen.get(`${b.make}::${b.model}`) || 0));
-  const batch = ordered.slice(0, Math.max(1, Number(url.searchParams.get("batch")) || 25));
+  // Default batch sized to fit maxDuration (60s): each model is ~8 sequential
+  // upstream calls (facet + VIN sample + up to 6 decodes), so ~8 models is a
+  // realistic ceiling. A wall-clock budget is the real guard below.
+  const batch = ordered.slice(0, Math.max(1, Number(url.searchParams.get("batch")) || 8));
+
+  const startedAt = Date.now();
+  const BUDGET_MS = 45_000;
 
   const now = new Date().toISOString();
   const done: string[] = [];
   for (const { make, model } of batch) {
+    if (Date.now() - startedAt > BUDGET_MS) break; // out of time → next run continues the rotation
     try {
       const snap = await snapshotModel(make, model);
       if (!snap) continue;

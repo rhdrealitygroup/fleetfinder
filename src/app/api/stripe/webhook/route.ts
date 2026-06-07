@@ -79,7 +79,32 @@ export async function POST(req: Request) {
   }
 
   switch (event.type) {
-    case "customer.subscription.created":
+    case "customer.subscription.created": {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const sub = event.data.object as Stripe.Subscription;
+      // Duplicate-subscription guard (completion-time): if this org already has a
+      // DIFFERENT live subscription, this new one is a race duplicate (two
+      // checkouts completed before the first webhook landed) — cancel it and keep
+      // the original rather than silently billing the customer twice.
+      const orgId = (sub.metadata?.org_id as string) || null;
+      const { data: org } = orgId
+        ? await db.from("organizations").select("id, stripe_subscription_id").eq("id", orgId).maybeSingle()
+        : typeof sub.customer === "string"
+          ? await db.from("organizations").select("id, stripe_subscription_id").eq("stripe_customer_id", sub.customer).maybeSingle()
+          : { data: null as any };
+      const existingId = org?.stripe_subscription_id as string | undefined;
+      if (existingId && existingId !== sub.id) {
+        try {
+          const existing = await stripe.subscriptions.retrieve(existingId);
+          if (["active", "trialing", "past_due", "unpaid", "paused"].includes(existing.status)) {
+            await stripe.subscriptions.cancel(sub.id); // drop the duplicate, keep the original
+            break;
+          }
+        } catch { /* existing sub gone in Stripe → adopt this new one below */ }
+      }
+      await syncSubscription(sub, false, event.created);
+      break;
+    }
     case "customer.subscription.updated":
       await syncSubscription(event.data.object as Stripe.Subscription, false, event.created);
       break;

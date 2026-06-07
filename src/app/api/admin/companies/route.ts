@@ -19,7 +19,7 @@ export async function PATCH(req: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const db = createServiceRoleClient();
-  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id,monthly_price_override,comped").eq("id", id).maybeSingle();
+  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id,monthly_price_override,stripe_custom_price_id,comped").eq("id", id).maybeSingle();
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
 
   const COMP_COUPON = "lotcompass_comp_100";
@@ -128,7 +128,12 @@ export async function PATCH(req: Request) {
         }
       }
     } catch (e) {
-      return NextResponse.json({ ok: true, id, warning: `Saved, but updating the live subscription failed: ${(e as Error).message}` });
+      // Roll the price columns back to their prior values so the DB never claims
+      // a price Stripe isn't actually charging (avoids DB↔Stripe drift).
+      await db.from("organizations")
+        .update({ monthly_price_override: org.monthly_price_override ?? null, stripe_custom_price_id: org.stripe_custom_price_id ?? null })
+        .eq("id", id);
+      return NextResponse.json({ error: `Couldn't update the live subscription — price change reverted: ${(e as Error).message}` }, { status: 502 });
     }
   }
 

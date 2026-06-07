@@ -47,7 +47,6 @@ export async function POST(req: Request) {
 
   // Ensure a Stripe customer exists for this org.
   let customerId = org.stripe_customer_id as string | null;
-  const hadCustomer = !!customerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
       email: user.email || undefined,
@@ -63,7 +62,8 @@ export async function POST(req: Request) {
   // landing it's still null and the DB guard above is skipped. Ask Stripe
   // directly whether this customer already has a live sub before creating a
   // second one (Stripe allows multiple subs per customer → double-billing).
-  if (hadCustomer) {
+  // Always run it (a just-created customer simply returns an empty list).
+  {
     const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
     const live = subs.data.find((s) => ["active", "trialing", "past_due", "unpaid", "paused"].includes(s.status));
     if (live) {
@@ -74,9 +74,11 @@ export async function POST(req: Request) {
     }
   }
 
-  // Base price: a per-org custom monthly price overrides the standard one.
+  // Base price: a per-org custom monthly price overrides the standard one. Use
+  // != null (not truthiness) so an intentional $0 override yields a $0 custom
+  // price instead of silently falling through to the standard $100.
   let basePrice = basePriceId();
-  if (org.monthly_price_override && org.monthly_price_override > 0) {
+  if (org.monthly_price_override != null) {
     let customPriceId = org.stripe_custom_price_id as string | null;
     if (!customPriceId) {
       const cents = Math.round(org.monthly_price_override * 100);

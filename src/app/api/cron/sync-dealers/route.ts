@@ -76,8 +76,15 @@ export async function GET(req: Request) {
   const batchSize = Math.max(1, Number(url.searchParams.get("batch")) || 3);
   const batch = ordered.slice(0, batchSize);
 
+  // Wall-clock budget so the run finishes within maxDuration (60s) instead of
+  // being hard-killed mid-state (which wastes the fetched pages and stalls the
+  // cursor). Mirrors the dump-inventory cron.
+  const startedAt = Date.now();
+  const BUDGET_MS = 45_000;
+
   const refreshed: { state: string; n: number; complete: boolean }[] = [];
   for (const st of batch) {
+    if (Date.now() - startedAt > BUDGET_MS) break; // out of time → next run picks up the rest
     const { dealers, complete } = await pullState(st, apiKey);
     if (dealers.length) {
       // Upsert without `makes` → existing make tags are preserved on update.
