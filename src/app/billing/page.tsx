@@ -38,6 +38,10 @@ export default async function BillingPage() {
   const label = STATUS_LABEL[status] || STATUS_LABEL.trial;
   const hasSub = !!org?.stripe_subscription_id;
   const trialEnds = org?.trial_ends_at ? new Date(org.trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+  const periodEnds = org?.current_period_end ? new Date(org.current_period_end).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+  // A subscription that's in its trial window (started checkout, not yet charged).
+  const subTrialing = hasSub && status === "trial";
+  const cancelScheduled = !!org?.cancel_at_period_end;
   const isOwner = membership?.role === "owner";
   const comped = !!org?.comped;
   const baseMonthly = org?.monthly_price_override != null ? org.monthly_price_override : 100;
@@ -84,7 +88,14 @@ export default async function BillingPage() {
               ) : comped ? (
                 <p className="text-sm text-muted-foreground">Complimentary access — there&apos;s nothing to pay. Reach out if anything changes.</p>
               ) : (
-                <BillingActions hasSubscription={hasSub} baseMonthly={baseMonthly} defaultSeats={Math.max(0, (agentCount || 1) - 1)} />
+                <BillingActions
+                  hasSubscription={hasSub}
+                  baseMonthly={baseMonthly}
+                  defaultSeats={Math.max(0, (agentCount || 1) - 1)}
+                  cancelAtPeriodEnd={cancelScheduled}
+                  trialing={subTrialing}
+                  endLabel={subTrialing ? (trialEnds || "") : (periodEnds || "")}
+                />
               )}
             </div>
           </>

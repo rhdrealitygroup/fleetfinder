@@ -67,6 +67,9 @@ export async function POST(req: Request) {
     const patch: Record<string, any> = {
       stripe_subscription_id: sub.id,
       plan_status: status,
+      // Whether the sub is scheduled to end at period close (set via the in-app
+      // Cancel button or the Stripe portal). Fully-deleted subs are just canceled.
+      cancel_at_period_end: isDeleted ? false : !!sub.cancel_at_period_end,
     };
 
     // Seats: base qty=1 + seat price qty=N → agent_limit = 1 + N. Only derive
