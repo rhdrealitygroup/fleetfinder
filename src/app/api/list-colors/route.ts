@@ -3,7 +3,9 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, resolveModel } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout } from "@/lib/marketcheck";
+
+export const maxDuration = 30;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -35,7 +37,7 @@ export async function POST(req: Request) {
     if (mcModel) url.searchParams.set("model", mcModel);
     url.searchParams.set("rows", "0");
     url.searchParams.set("facets", "exterior_color|0|100|1");
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const b = await res.text().catch(() => "");
       return NextResponse.json({ colors: [], error: `MarketCheck ${res.status}: ${b.slice(0, 150)}` }, { status: 502 });

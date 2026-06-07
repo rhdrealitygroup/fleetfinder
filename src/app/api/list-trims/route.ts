@@ -20,8 +20,10 @@ import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
 import {
   MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
-  isNoiseVariant, resolveModel,
+  isNoiseVariant, resolveModel, fetchWithTimeout,
 } from "@/lib/marketcheck";
+
+export const maxDuration = 30;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -70,7 +72,7 @@ export async function POST(req: Request) {
         try {
           const u = new URL(`${MC_HOST}/vehicle/style/${yr}/${encodeURIComponent(make)}/${encodeURIComponent(mcModel)}`);
           u.searchParams.set("api_key", apiKey);
-          const r = await fetch(u.toString());
+          const r = await fetchWithTimeout(u.toString());
           if (!r.ok) return [];
           const d = await r.json();
           return Array.isArray(d) ? d : Array.isArray(d.styles) ? d.styles : Array.isArray(d.results) ? d.results : [];
@@ -106,7 +108,7 @@ export async function POST(req: Request) {
     if (mcModel) facetUrl.searchParams.set("model", mcModel);
     facetUrl.searchParams.set("rows", "0");
     facetUrl.searchParams.set("facets", "trim|0|100|1");
-    const facetRes = await fetch(facetUrl.toString(), { cache: "no-store" });
+    const facetRes = await fetchWithTimeout(facetUrl.toString(), { cache: "no-store" });
     if (facetRes.ok) {
       const fData = await facetRes.json();
       const facetItems: any[] = fData.facets?.trim || [];
@@ -140,7 +142,7 @@ export async function POST(req: Request) {
       if (mcModel) vUrl.searchParams.set("model", mcModel);
       vUrl.searchParams.set("rows", "0");
       vUrl.searchParams.set("facets", "version|0|200|1");
-      const vRes = await fetch(vUrl.toString());
+      const vRes = await fetchWithTimeout(vUrl.toString());
       if (vRes.ok) {
         const vData = await vRes.json();
         const items: any[] = vData.facets?.version || [];

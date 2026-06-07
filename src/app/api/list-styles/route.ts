@@ -4,7 +4,9 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, titleCase } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, titleCase, fetchWithTimeout } from "@/lib/marketcheck";
+
+export const maxDuration = 30;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -32,7 +34,7 @@ export async function POST(req: Request) {
   try {
     const url = new URL(`${MC_HOST}/vehicle/style/${year}/${encodeURIComponent(make)}/${encodeURIComponent(model)}`);
     url.searchParams.set("api_key", apiKey);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const b = await res.text().catch(() => "");
       return NextResponse.json({ styles: [], error: `MarketCheck ${res.status}: ${b.slice(0, 150)}` }, { status: 502 });

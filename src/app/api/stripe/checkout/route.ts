@@ -103,11 +103,14 @@ export async function POST(req: Request) {
   // than granting a fresh 14 days on top — otherwise a new org gets ~14 app-trial
   // days + 14 Stripe-trial days = ~28 free. Never trialed → full 14; already used
   // (resubscribe) or expired → none (charged immediately).
-  let trialDays: number | undefined;
+  let trialDays: number | undefined;   // flat trial when there's no app-trial date
+  let trialEnd: number | undefined;    // absolute end (continue the existing app trial to the exact instant)
   if (!org.trial_used) {
     if (org.trial_ends_at) {
-      const remaining = Math.ceil((Date.parse(org.trial_ends_at as string) - Date.now()) / 86_400_000);
-      trialDays = remaining > 0 ? remaining : undefined;
+      const endTs = Math.floor(Date.parse(org.trial_ends_at as string) / 1000);
+      // Only set when comfortably in the future (Stripe needs a future timestamp);
+      // an already-expired app trial → no Stripe trial (charged immediately).
+      if (endTs > Math.floor(Date.now() / 1000) + 60) trialEnd = endTs;
     } else {
       trialDays = PRICING.trialDays;
     }
@@ -118,7 +121,7 @@ export async function POST(req: Request) {
     customer: customerId,
     line_items,
     subscription_data: {
-      ...(trialDays ? { trial_period_days: trialDays } : {}),
+      ...(trialEnd ? { trial_end: trialEnd } : trialDays ? { trial_period_days: trialDays } : {}),
       metadata: { org_id: org.id },
     },
     success_url: `${origin}/billing?checkout=success`,

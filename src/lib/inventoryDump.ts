@@ -176,13 +176,15 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       if (sweepSafe) {
         await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
       }
-      // Only advance the freshness clock when we actually saw stock; an empty/soft
-      // pull should be retried on the next rotation, not marked fresh.
-      if (rows.length > 0) {
-        await db.from("tracked_dealers")
-          .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
-          .eq("dealer_id", dealerId);
-      }
+      // Advance the freshness clock on EVERY complete pull — including a clean
+      // empty one. A genuinely empty/closed-out dealer left at last_dumped_at=null
+      // would sort first forever (stalestDealers nullsFirst) and, once ≥ the per-run
+      // batch of them exist, monopolize every cron run so the rest of the fleet never
+      // refreshes. The sweepSafe guard above still prevents a transient soft-empty
+      // from wiping inventory; here we just stop re-selecting it every single run.
+      await db.from("tracked_dealers")
+        .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
+        .eq("dealer_id", dealerId);
     }
     return rows.length;
   } finally {

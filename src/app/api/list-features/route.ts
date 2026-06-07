@@ -9,8 +9,10 @@
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
 import {
-  MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionDetails,
+  MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionDetails, fetchWithTimeout,
 } from "@/lib/marketcheck";
+
+export const maxDuration = 30;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -66,7 +68,7 @@ export async function POST(req: Request) {
     if (mcModel) sUrl.searchParams.set("model", mcModel);
     sUrl.searchParams.set("rows", String(SAMPLE_VINS));
     sUrl.searchParams.set("fields", "vin");
-    const sRes = await fetch(sUrl.toString());
+    const sRes = await fetchWithTimeout(sUrl.toString());
     const sData = sRes.ok ? await sRes.json() : { listings: [] };
     const vins: string[] = (sData.listings || [])
       .map((l: any) => String(l.vin || "").toUpperCase())
@@ -106,7 +108,7 @@ export async function POST(req: Request) {
       if (mcModel) fUrl.searchParams.set("model", mcModel);
       fUrl.searchParams.set("rows", "0");
       fUrl.searchParams.set("facets", "high_value_features|0|60|1");
-      const fRes = await fetch(fUrl.toString());
+      const fRes = await fetchWithTimeout(fUrl.toString());
       if (fRes.ok) {
         const fData = await fRes.json();
         const seen = new Set(features.map((f) => f.value));

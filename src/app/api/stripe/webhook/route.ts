@@ -87,7 +87,11 @@ export async function POST(req: Request) {
     // Mark the trial as consumed the first time we see a trial/live sub, so a
     // cancel -> resubscribe loop can't keep minting fresh 14-day Stripe trials.
     if (sub.status === "trialing" || sub.trial_end || sub.status === "active") patch.trial_used = true;
-    const periodEnd = (sub.items?.data?.[0] as any)?.current_period_end ?? (sub as any).current_period_end;
+    // Read the period from the BASE item (not items[0], whose order isn't
+    // guaranteed — for a seated org items[0] could be the seat item). All items
+    // normally share the period, so this is robustness, not a behavior change.
+    const baseItem = sub.items?.data?.find((i: any) => i.price?.id !== process.env.STRIPE_PRICE_SEAT) || sub.items?.data?.[0];
+    const periodEnd = (baseItem as any)?.current_period_end ?? (sub as any).current_period_end;
     if (typeof periodEnd === "number") patch.current_period_end = new Date(periodEnd * 1000).toISOString();
     if (eventCreated) patch.last_sub_event_at = new Date(eventCreated * 1000).toISOString();
 
