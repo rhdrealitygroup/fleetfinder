@@ -1,5 +1,5 @@
 import "server-only";
-import { MC_HOST, mcKey, mcListing, num } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, mcListing, num, fetchWithTimeout } from "@/lib/marketcheck";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -12,13 +12,31 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 const MC_PAGE = 100;
 const MC_MAX_START = 1400; // keep start + rows <= 1500 (tier cap)
 
+const DB_PAGE = 1000; // PostgREST silently caps an un-ranged select at ~1000 rows
+
+// Read EVERY row of a table by paging with .range(); returns null on any read
+// error so callers can refuse to act on a partial set. Critical here: the GC
+// below would treat any rows missing from a truncated read as "unselected" and
+// delete their inventory — so a silent 1000-row cap once `dealers` grows past it
+// would wipe still-selected dealers across the whole platform.
+async function readAll(db: any, table: string, columns: string): Promise<any[] | null> {
+  const all: any[] = [];
+  for (let from = 0; ; from += DB_PAGE) {
+    const { data, error } = await db.from(table).select(columns).range(from, from + DB_PAGE - 1);
+    if (error || data == null) return null;
+    all.push(...data);
+    if (data.length < DB_PAGE) break;
+  }
+  return all;
+}
+
 // ── Keep tracked_dealers in sync with the deduped union of org selections ────
 export async function syncTrackedDealers() {
   const db = createServiceRoleClient();
-  const { data: rows, error } = await db.from("dealers").select("dealer_key,name,city,state,selected");
-  // Abort on a failed/transient read — a null `rows` here would otherwise make
-  // the GC below treat EVERY dealer as unselected and wipe all inventory.
-  if (error || rows == null) return 0;
+  // Page through ALL dealer rows. A truncated read would make the GC treat
+  // still-selected dealers as stale and wipe their inventory, so abort on error.
+  const rows = await readAll(db, "dealers", "dealer_key,name,city,state,selected");
+  if (rows == null) return 0;
   const selected = rows.filter((d: any) => d.dealer_key && d.selected !== false);
   const seen = new Map<string, any>();
   for (const d of selected) if (!seen.has(d.dealer_key)) seen.set(d.dealer_key, d);
@@ -30,9 +48,12 @@ export async function syncTrackedDealers() {
       { onConflict: "dealer_id", ignoreDuplicates: true }, // don't reset last_dumped_at
     );
   }
-  // Garbage-collect dealers no org selects anymore (and their inventory).
-  const { data: tracked } = await db.from("tracked_dealers").select("dealer_id");
-  const stale = (tracked || []).map((t: any) => t.dealer_id).filter((id: string) => !seen.has(id));
+  // Garbage-collect dealers no org selects anymore (and their inventory). Page
+  // the tracked read too, and SKIP the GC entirely on a read error/partial set
+  // (returning would risk deleting from an incomplete view).
+  const tracked = await readAll(db, "tracked_dealers", "dealer_id");
+  if (tracked == null) return ids.length;
+  const stale = tracked.map((t: any) => t.dealer_id).filter((id: string) => !seen.has(id));
   if (stale.length) {
     await db.from("inventory").delete().in("dealer_id", stale);
     await db.from("tracked_dealers").delete().in("dealer_id", stale);
@@ -77,7 +98,11 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       u.searchParams.set("dealer_id", dealerId);
       u.searchParams.set("rows", String(MC_PAGE));
       u.searchParams.set("start", String(start));
-      const r = await fetch(u.toString());
+      // A timeout throws (AbortError) — treat it exactly like a failed page:
+      // mark the pull incomplete so the destructive sweep below is skipped.
+      let r: Response;
+      try { r = await fetchWithTimeout(u.toString()); }
+      catch { complete = false; break; }
       if (!r.ok) { complete = false; break; }
       const d = await r.json();
       if (start === 0) numFound = num(d.num_found) || 0;

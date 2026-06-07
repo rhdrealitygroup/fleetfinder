@@ -1,5 +1,5 @@
 import "server-only";
-import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTimeout } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -25,8 +25,8 @@ export async function snapshotModel(make: string, model: string) {
   // (429/5xx), return null so the cron does NOT persist an empty snapshot or
   // advance the staleness cursor — otherwise a rate-limited night would wipe a
   // model's catalog to empty and skip retrying it for a full rotation.
-  const fRes = await fetch(base({ rows: 0, facets: "trim|0|40,version|0|60,exterior_color|0|60,interior_color|0|60" }).toString());
-  if (!fRes.ok) return null;
+  const fRes = await fetchWithTimeout(base({ rows: 0, facets: "trim|0|40,version|0|60,exterior_color|0|60,interior_color|0|60" }).toString()).catch(() => null);
+  if (!fRes || !fRes.ok) return null;
   const fd: any = await fRes.json().catch(() => null);
   if (!fd) return null;
   const trims = (fd.facets?.trim || []).map((t: any) => ({ name: t.item, count: num(t.count) }));
@@ -37,8 +37,8 @@ export async function snapshotModel(make: string, model: string) {
   if (!trims.length && !versions.length && !colors.length) return null;
 
   // Options: union named build-sheet options from a small VIN sample.
-  const vRes = await fetch(base({ rows: 6, fields: "vin" }).toString());
-  const vd: any = vRes.ok ? await vRes.json() : { listings: [] };
+  const vRes = await fetchWithTimeout(base({ rows: 6, fields: "vin" }).toString()).catch(() => null);
+  const vd: any = vRes && vRes.ok ? await vRes.json() : { listings: [] };
   const vins: string[] = (vd.listings || []).map((l: any) => String(l.vin || "").toUpperCase()).filter((v: string) => v.length === 17).slice(0, 6);
   const map = new Map<string, { name: string; msrp: number; count: number }>();
   for (const v of vins) {

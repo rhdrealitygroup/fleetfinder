@@ -20,6 +20,22 @@ export const PAGE_SIZE = 100;    // rows per request (start + rows must stay ≤
 
 export const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// fetch with a hard per-request timeout. A single hung MarketCheck request would
+// otherwise block a whole cron/search (maxDuration=60) until the platform kills
+// the function mid-loop — skipping cleanup (e.g. the dump's lock-release finally)
+// and starving the rest of the batch. On timeout this throws (AbortError), which
+// callers treat the same as a failed response (no destructive sweep / leave
+// undecoded). Default 12s leaves room for several sequential calls within 60s.
+export async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 12_000): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // Word-boundary phrase match. True only when `needle` appears in `hay` bounded
 // by non-alphanumerics on both sides — so "tow" does NOT match "Towel Hooks",
 // "red" does NOT match "Predator", "sport" does NOT match "Passport". Used by
@@ -188,7 +204,7 @@ export async function resolveModel(make: string, model: string): Promise<string>
     u.searchParams.set("make", make);
     u.searchParams.set("rows", "0");
     u.searchParams.set("facets", "model|0|80|1");
-    const r = await fetch(u.toString(), { cache: "no-store" });
+    const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
     if (!r.ok) return model;
     const d = await r.json();
     const items = (d.facets?.model || []) as { item: string; count: number }[];
@@ -393,7 +409,7 @@ export async function decodeVinOptionNames(vin: string): Promise<string[]> {
   try {
     const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
     u.searchParams.set("api_key", apiKey);
-    const r = await fetch(u.toString(), { cache: "no-store" });
+    const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
     if (!r.ok) return [];
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const d: any = await r.json();
@@ -425,7 +441,7 @@ export async function decodeVinOptionDetails(vin: string): Promise<VinOption[]> 
   try {
     const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
     u.searchParams.set("api_key", apiKey);
-    const r = await fetch(u.toString(), { cache: "no-store" });
+    const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
     if (!r.ok) return [];
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const d: any = await r.json();

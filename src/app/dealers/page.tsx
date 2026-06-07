@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppNav } from "@/components/AppNav";
 import { Building2, Search, Check, Phone, ExternalLink, Star, Clock, X } from "lucide-react";
 import { useOrgDealers } from "@/lib/useOrgDealers";
@@ -71,7 +71,12 @@ export default function DealersPage() {
     } catch { setRequests(prevRequests); }
   }
 
+  const loadSeq = useRef(0);
   const load = useCallback(async (pageNum: number, replace: boolean) => {
+    // Sequence guard: a filter change can fire a new request while an older one
+    // is still in flight; if the older response lands last it would overwrite the
+    // newer results (stale make/state/search). Only the latest request may write.
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -82,6 +87,7 @@ export default function DealersPage() {
       params.set("page", String(pageNum));
       const res = await fetch(`/api/dealers/catalog?${params}`);
       const d = await res.json().catch(() => ({}));
+      if (seq !== loadSeq.current) return; // superseded by a newer request — drop
       // Guard: an error/auth response (e.g. 401) has no `items` — never spread
       // undefined into state (that crashed the whole app before).
       const incoming = Array.isArray(d.items) ? d.items : [];
@@ -90,7 +96,7 @@ export default function DealersPage() {
       if (Array.isArray(d.makes) && d.makes.length) setMakes(d.makes);
       setItems((prev) => (replace ? incoming : [...prev, ...incoming]));
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [q, state, type, make]);
 

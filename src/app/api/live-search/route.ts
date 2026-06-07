@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
   MAX_RESULTS, PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
-  resolveModel, decodeVinOptionNames, phraseMatch, type UnifiedVehicle,
+  resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
@@ -124,7 +124,9 @@ export async function POST(req: Request) {
       if (Array.isArray(body.dealer_ids) && body.dealer_ids.length) url.searchParams.set("dealer_id", body.dealer_ids.slice(0, 200).join(","));
       url.searchParams.set("rows", String(PAGE_SIZE));
       url.searchParams.set("start", String(page * PAGE_SIZE));
-      const res = await fetch(url.toString());
+      let res: Response;
+      try { res = await fetchWithTimeout(url.toString()); }
+      catch { if (out.length > 0) break; throw new Error("MarketCheck request timed out"); }
       if (res.status === 429) return { results: out.map(mcListing), total, rateLimited: true };
       if (!res.ok) {
         // Past page 0 (e.g. the tier's 1500 start-offset cap) — keep the results
@@ -162,10 +164,12 @@ export async function POST(req: Request) {
       const lng = body.longitude || DEFAULT_LNG;
       url.searchParams.set("latitude", String(lat));
       url.searchParams.set("longitude", String(lng));
-      url.searchParams.set("radius", String(RADIUS_MILES));
+      url.searchParams.set("radius", String(radius)); // honor the user's chosen radius (was hardcoded to the default)
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("page", String(page));
-      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${autoKey}` } });
+      let res: Response;
+      try { res = await fetchWithTimeout(url.toString(), { headers: { Authorization: `Bearer ${autoKey}` } }); }
+      catch { if (out.length > 0) break; throw new Error("Auto.dev request timed out"); }
       if (res.status === 429) return { results: out.map(adListing), total, rateLimited: true };
       if (!res.ok) {
         if (out.length > 0) break; // keep what we have past page 0
