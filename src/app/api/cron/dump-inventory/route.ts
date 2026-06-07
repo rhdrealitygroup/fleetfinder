@@ -38,10 +38,12 @@ export async function GET(req: Request) {
     } catch { /* skip, retried next run */ }
   }
 
-  // Only decode if there's budget left, and trim the batch to the remaining time.
+  // Only decode if there's budget left. decodeUndecoded honors the wall-clock
+  // deadline internally (each decode is a real HTTP call up to the fetch
+  // timeout), so pass the deadline rather than guessing a per-VIN duration.
   const remaining = BUDGET_MS - (Date.now() - startedAt);
   const decoded = decodeBatch > 0 && remaining > 8_000
-    ? await decodeUndecoded(Math.min(decodeBatch, Math.floor(remaining / 600)))
+    ? await decodeUndecoded(decodeBatch, startedAt + BUDGET_MS)
     : 0;
 
   return NextResponse.json({ ok: true, tracked, refreshed: refreshed.length, listings: refreshed, decoded });

@@ -97,7 +97,13 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     const rows: any[] = [];
     let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
     let numFound = 0;
+    // Internal page-loop deadline so a large dealer can't run past the function's
+    // time budget (the on-select after() path has no external budget guard like
+    // the cron does). Stopping early marks the pull incomplete → no sweep, and the
+    // finally still releases the lock — preventing a dangling lock on a kill.
+    const pageDeadline = Date.now() + 45_000;
     for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
+      if (Date.now() > pageDeadline) { complete = false; break; }
       const u = new URL(`${MC_HOST}/search/car/active`);
       u.searchParams.set("api_key", apiKey);
       u.searchParams.set("dealer_id", dealerId);
@@ -174,7 +180,11 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
 }
 
 // ── Decode options for VINs not yet decoded (the heavy step; batched) ─────────
-export async function decodeUndecoded(limit = 60) {
+// deadline (epoch ms, 0 = none): stop before the function's time budget so the
+// platform doesn't kill the run mid-decode. Each decode is a real HTTP call up
+// to the fetch timeout, so the caller's "ms / 600" sizing was unrealistic — the
+// deadline is the real guard.
+export async function decodeUndecoded(limit = 60, deadline = 0) {
   const db = createServiceRoleClient();
   const { data: rows } = await db.from("inventory").select("vin").eq("options_decoded", false).limit(limit);
   const vins = (rows || []).map((r: any) => r.vin).filter(Boolean);
@@ -183,11 +193,15 @@ export async function decodeUndecoded(limit = 60) {
   const { decodeVinOptionNames } = await import("@/lib/marketcheck");
   let done = 0;
   for (const vin of vins) {
+    if (deadline && Date.now() > deadline) break; // out of budget → rest next run
     try {
-      const options = await decodeVinOptionNames(vin);
+      // throwOnError=true: a transient 429/5xx/timeout throws and we leave the VIN
+      // undecoded (options_decoded stays false) to retry next run — instead of
+      // permanently marking it decoded-with-no-options.
+      const options = await decodeVinOptionNames(vin, true);
       await db.from("inventory").update({ options, options_decoded: true }).eq("vin", vin);
       done++;
-    } catch { /* leave undecoded; retried next run */ }
+    } catch { /* hard failure → leave undecoded; retried next run */ }
   }
   return done;
 }

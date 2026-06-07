@@ -221,11 +221,16 @@ function SearchPageInner() {
       return n;
     });
 
-  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean; dropOption?: string }) => {
+  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean; dropOption?: string; clearMaxMonthly?: boolean; clearVariant?: boolean; clearIntColor?: boolean }) => {
     const effRadius = opts?.radiusOverride ?? radius;
     if (opts?.radiusOverride) setRadius(opts.radiusOverride);
     const useDealers = scopeDealers && myDealers.length > 0 && !opts?.allDealers;
     const effFeatures = opts?.dropOption ? [...features].filter((f) => f !== opts.dropOption) : [...features];
+    // Diagnose "clear X" fixes pass the cleared value explicitly so the search
+    // re-runs with it dropped immediately (state setters won't have flushed yet).
+    const effVariant = opts?.clearVariant ? "" : variant;
+    const effIntColor = opts?.clearIntColor ? "" : intColor;
+    const effMaxMonthly = opts?.clearMaxMonthly ? "" : maxMonthly;
     setSearchedAll(!!opts?.allDealers);
     setDiagnosis(null);
     setSearching(true);
@@ -238,11 +243,11 @@ function SearchPageInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          car_type: carType, make, model, trim, variant,
+          car_type: carType, make, model, trim, variant: effVariant,
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
-          interior_color: (intColors.find((c) => c.name === intColor)?.variants || []).join(",") || undefined,
+          interior_color: (intColors.find((c) => c.name === effIntColor)?.variants || []).join(",") || undefined,
           zip: zip.trim() || undefined, radius: effRadius,
-          max_monthly: Number(maxMonthly) || undefined,
+          max_monthly: Number(effMaxMonthly) || undefined,
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
@@ -274,9 +279,12 @@ function SearchPageInner() {
     switch (sort) {
       case "price_asc": return arr.sort((a, b) => a.price - b.price);
       case "price_desc": return arr.sort((a, b) => b.price - a.price);
-      case "monthly_asc": return arr.sort((a, b) => a.est_monthly - b.est_monthly);
+      // Treat unknown (0) as +Infinity so "no estimate" cars sort to the BOTTOM
+      // for low→high, instead of masquerading as the cheapest. Same for unknown
+      // days_listed on "recently added".
+      case "monthly_asc": return arr.sort((a, b) => (a.est_monthly || Infinity) - (b.est_monthly || Infinity));
       case "monthly_desc": return arr.sort((a, b) => b.est_monthly - a.est_monthly);
-      case "recent": return arr.sort((a, b) => a.days_listed - b.days_listed);
+      case "recent": return arr.sort((a, b) => (a.days_listed || Infinity) - (b.days_listed || Infinity));
       default: return arr; // distance — API already sorts
     }
   }, [results, sort]);
@@ -322,9 +330,9 @@ function SearchPageInner() {
       setFeatures((prev) => { const n = new Set(prev); n.delete(v); return n; });
       runSearch({ dropOption: v });
     }
-    else if (fix.action === "drop_max_monthly") { setMaxMonthly(""); setTimeout(() => runSearch(), 0); }
-    else if (fix.action === "drop_variant") { setVariant(""); setTimeout(() => runSearch(), 0); }
-    else if (fix.action === "drop_interior_color") { setIntColor(""); setTimeout(() => runSearch(), 0); }
+    else if (fix.action === "drop_max_monthly") { setMaxMonthly(""); runSearch({ clearMaxMonthly: true }); }
+    else if (fix.action === "drop_variant") { setVariant(""); runSearch({ clearVariant: true }); }
+    else if (fix.action === "drop_interior_color") { setIntColor(""); runSearch({ clearIntColor: true }); }
   }
 
   function exportCsv() {
@@ -612,7 +620,13 @@ function SearchPageInner() {
                 {diagnosing && <p className="text-sm text-muted-foreground flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Figuring out why…</p>}
               </div>
 
-              {diagnosis && !diagnosing && (
+              {diagnosis && !diagnosing && (diagnosis.error || diagnosis.unavailable) && (
+                <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-warning-foreground text-left">
+                  {diagnosis.error || "The inventory service is temporarily unavailable — try again in a moment."}
+                </div>
+              )}
+
+              {diagnosis && !diagnosing && !diagnosis.error && !diagnosis.unavailable && (
                 <div className="space-y-3 text-left">
                   {Array.isArray(diagnosis.reasons) && diagnosis.reasons.length > 0 && (
                     <div className="rounded-xl border border-border bg-card p-4">

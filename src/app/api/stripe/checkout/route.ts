@@ -47,6 +47,7 @@ export async function POST(req: Request) {
 
   // Ensure a Stripe customer exists for this org.
   let customerId = org.stripe_customer_id as string | null;
+  const hadCustomer = !!customerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
       email: user.email || undefined,
@@ -57,17 +58,34 @@ export async function POST(req: Request) {
     await createServiceRoleClient().from("organizations").update({ stripe_customer_id: customerId }).eq("id", org.id);
   }
 
+  // Stripe-side dedup: the DB stripe_subscription_id is written only by the
+  // webhook, so in the window between a checkout completing and the webhook
+  // landing it's still null and the DB guard above is skipped. Ask Stripe
+  // directly whether this customer already has a live sub before creating a
+  // second one (Stripe allows multiple subs per customer → double-billing).
+  if (hadCustomer) {
+    const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
+    const live = subs.data.find((s) => ["active", "trialing", "past_due", "unpaid", "paused"].includes(s.status));
+    if (live) {
+      return NextResponse.json(
+        { error: "You already have a subscription. Manage seats from the billing portal.", alreadySubscribed: true },
+        { status: 409 },
+      );
+    }
+  }
+
   // Base price: a per-org custom monthly price overrides the standard one.
   let basePrice = basePriceId();
   if (org.monthly_price_override && org.monthly_price_override > 0) {
     let customPriceId = org.stripe_custom_price_id as string | null;
     if (!customPriceId) {
+      const cents = Math.round(org.monthly_price_override * 100);
       const p = await stripe.prices.create({
-        unit_amount: Math.round(org.monthly_price_override * 100),
+        unit_amount: cents,
         currency: "usd",
         recurring: { interval: "month" },
         product_data: { name: `LotCompass — ${org.name} (custom)` },
-      });
+      }, { idempotencyKey: `custom-price-${org.id}-${cents}` }); // dedupe concurrent first-checkout submits
       customPriceId = p.id;
       await createServiceRoleClient().from("organizations").update({ stripe_custom_price_id: customPriceId }).eq("id", org.id);
     }
@@ -85,7 +103,7 @@ export async function POST(req: Request) {
     success_url: `${origin}/billing?checkout=success`,
     cancel_url: `${origin}/billing?checkout=cancelled`,
     allow_promotion_codes: true,
-  });
+  }, { idempotencyKey: `checkout-${org.id}-${basePrice}-${seats}` }); // dedupe rapid double-submits
 
   return NextResponse.json({ url: session.url });
 }

@@ -398,19 +398,23 @@ export function adListing(l: any): UnifiedVehicle {
 // Decode a VIN to the lowercase names of its installed options/packages/
 // features — for filtering search results by package ("Premium Package",
 // "Tow", etc.). Cached 30 days per VIN (build never changes).
-export async function decodeVinOptionNames(vin: string): Promise<string[]> {
+// throwOnError: callers that must distinguish a HARD failure (429/5xx/timeout)
+// from a genuinely empty option list pass true (the dump's decodeUndecoded does,
+// so it doesn't permanently mark a VIN decoded-with-no-options after a transient
+// blip). Search/diagnose pass false and treat a failed decode as "no options".
+export async function decodeVinOptionNames(vin: string, throwOnError = false): Promise<string[]> {
   const v = String(vin || "").toUpperCase().trim();
   if (v.length !== 17) return [];
   const ck = `vinopts::${v}`;
   const hit = cacheGet<string[]>(ck);
   if (hit) return hit;
   const apiKey = mcKey();
-  if (!apiKey) return [];
+  if (!apiKey) { if (throwOnError) throw new Error("MarketCheck key not configured"); return []; }
   try {
     const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
     u.searchParams.set("api_key", apiKey);
     const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
-    if (!r.ok) return [];
+    if (!r.ok) { if (throwOnError) throw new Error(`decode ${r.status}`); return []; }
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const d: any = await r.json();
     const details = Array.isArray(d.installed_options_details) ? d.installed_options_details : [];
@@ -421,7 +425,8 @@ export async function decodeVinOptionNames(vin: string): Promise<string[]> {
       .map((s: string) => String(s).toLowerCase());
     cacheSet(ck, names, DAY * 30);
     return names;
-  } catch {
+  } catch (e) {
+    if (throwOnError) throw e;
     return [];
   }
 }
