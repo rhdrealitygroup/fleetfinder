@@ -1,10 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CompassMark } from "@/components/CompassMark";
+import { getSessionContext } from "@/lib/auth";
 
 // Landing — Gallery design: warm cream, serif display, terracotta accent.
 const serif = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Signed-in users never need the marketing page — send them straight to the
+  // app. (Middleware also does this; this is a server-side guarantee in case the
+  // page is ever served without the middleware redirect, e.g. a cached path.)
+  const { user } = await getSessionContext();
+  if (user) redirect("/search");
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#F6F4EF", color: "#1c1917" }}>
       {/* Nav */}
