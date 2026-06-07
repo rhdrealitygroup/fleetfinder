@@ -43,6 +43,7 @@ export async function GET(req: Request) {
         { key: k("trims"), make, model, kind: "trims", payload: snap.trims, updated_at: now },
         { key: k("versions"), make, model, kind: "versions", payload: snap.versions, updated_at: now },
         { key: k("colors"), make, model, kind: "colors", payload: snap.colors, updated_at: now },
+        { key: k("interior_colors"), make, model, kind: "interior_colors", payload: snap.interiorColors, updated_at: now },
         { key: k("options"), make, model, kind: "options", payload: snap.options, updated_at: now },
       ], { onConflict: "key" });
       await db.from("catalog_sync_state").upsert({ key: `${make}::${model}`, updated_at: now });

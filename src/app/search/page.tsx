@@ -43,6 +43,9 @@ function SearchPageInner() {
   const [colors, setColors] = useState<Color[]>([]);
   const [colorsLoading, setColorsLoading] = useState(false);
   const [wantColor, setWantColor] = useState(""); // requested color from URL, matched once colors load
+  const [intColor, setIntColor] = useState("");
+  const [intColors, setIntColors] = useState<Color[]>([]);
+  const [intColorsLoading, setIntColorsLoading] = useState(false);
   const [featureOpts, setFeatureOpts] = useState<{ value: string; label: string; msrp: number; count: number; cat: string }[]>([]);
   const [featuresLoading, setFeaturesLoading] = useState(false);
   const [yearIdx, setYearIdx] = useState(0);
@@ -153,6 +156,24 @@ function SearchPageInner() {
     };
   }, [make, model, carType]);
 
+  // Load make/model-specific interior colors whenever make is set.
+  useEffect(() => {
+    if (!make) { setIntColors([]); return; }
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIntColorsLoading(true);
+    fetch("/api/list-interior-colors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ make, model, car_type: carType }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setIntColors(Array.isArray(d.colors) ? d.colors : []); })
+      .catch(() => !cancelled && setIntColors([]))
+      .finally(() => !cancelled && setIntColorsLoading(false));
+    return () => { cancelled = true; };
+  }, [make, model, carType]);
+
   // Load make/model-specific options/features whenever make is set.
   useEffect(() => {
     if (!make) {
@@ -218,6 +239,7 @@ function SearchPageInner() {
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant,
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
+          interior_color: (intColors.find((c) => c.name === intColor)?.variants || []).join(",") || undefined,
           zip: zip.trim() || undefined, radius: effRadius,
           max_monthly: Number(maxMonthly) || undefined,
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
@@ -239,7 +261,7 @@ function SearchPageInner() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, color, colors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain, scopeDealers, myDealers]);
+  }, [make, model, trim, variant, color, colors, intColor, intColors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain, scopeDealers, myDealers]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -349,14 +371,14 @@ function SearchPageInner() {
       </div>
 
       <Field label="Make">
-        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setFeatures(new Set()); }} className={selectCls}>
+        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} className={selectCls}>
           <option value="">Any make</option>
           {[...CATALOG_MAKES].sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
 
       <Field label="Model">
-        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
+        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
           <option value="">{make ? "Any model" : "Pick a make first"}</option>
           {[...models].sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
@@ -399,6 +421,16 @@ function SearchPageInner() {
           <select value={color} onChange={(e) => setColor(e.target.value)} className={selectCls} disabled={colorsLoading && colors.length === 0}>
             <option value="">{colorsLoading && colors.length === 0 ? "Loading colors…" : "Any color"}</option>
             {colors.map((c) => <option key={c.name} value={c.name}>{c.name}{c.count ? ` · ${c.count.toLocaleString()}` : ""}</option>)}
+          </select>
+        </Field>
+      )}
+
+      {/* Interior color — make/model-specific, pulled live from MarketCheck */}
+      {make && (
+        <Field label="Interior color">
+          <select value={intColor} onChange={(e) => setIntColor(e.target.value)} className={selectCls} disabled={intColorsLoading && intColors.length === 0}>
+            <option value="">{intColorsLoading && intColors.length === 0 ? "Loading colors…" : "Any interior"}</option>
+            {intColors.map((c) => <option key={c.name} value={c.name}>{c.name}{c.count ? ` · ${c.count.toLocaleString()}` : ""}</option>)}
           </select>
         </Field>
       )}

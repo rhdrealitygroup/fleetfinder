@@ -38,7 +38,7 @@ function cacheKeyFor(body: any) {
     miles_max: body.miles_max || null,
     variant: (body.variant || "").toLowerCase(),
     powertrain_type: body.powertrain_type || "", body_type: body.body_type || "",
-    drivetrain: body.drivetrain || "", exterior_color: body.exterior_color || "",
+    drivetrain: body.drivetrain || "", exterior_color: body.exterior_color || "", interior_color: body.interior_color || "",
     features: Array.isArray(body.features) ? [...body.features].sort() : [],
     max_monthly: Number(body.max_monthly) || 0,
     option_query: (body.option_query || "").toString().trim().toLowerCase(),
@@ -118,6 +118,7 @@ export async function POST(req: Request) {
       // exterior_color matches the full color string and accepts a comma-OR
       // list (e.g. "Agate Black,Agate Black Metallic") from the color picker.
       if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);
+      if (body.interior_color) url.searchParams.set("interior_color", body.interior_color);
       if (Array.isArray(body.features) && body.features.length) url.searchParams.set("high_value_features", body.features.join(","));
       // Scope to the company's selected dealers (MarketCheck OR-list of IDs).
       if (Array.isArray(body.dealer_ids) && body.dealer_ids.length) url.searchParams.set("dealer_id", body.dealer_ids.slice(0, 200).join(","));
