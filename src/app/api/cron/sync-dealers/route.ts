@@ -98,9 +98,12 @@ export async function GET(req: Request) {
       // Upsert without `makes` → existing make tags are preserved on update.
       await db.from("dealer_catalog").upsert(dealers, { onConflict: "id" });
     }
-    // Only advance the cursor when the state pulled cleanly; a partial pull
-    // (rate-limited) is retried next run instead of being recorded as fresh.
-    if (complete && dealers.length) {
+    // Advance the cursor whenever the state pulled CLEANLY (complete) — even if it
+    // genuinely returned zero dealers. Gating on dealers.length too would leave an
+    // empty-but-complete state permanently "pending", so it sorts first forever and
+    // blocks the rolling refresh of every other state. Only a partial/rate-limited
+    // pull (complete=false) is left to retry next run.
+    if (complete) {
       await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), count: dealers.length });
     }
     refreshed.push({ state: st, n: dealers.length, complete });

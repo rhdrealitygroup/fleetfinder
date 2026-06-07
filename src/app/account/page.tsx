@@ -9,8 +9,11 @@ const STATUS_LABEL: Record<string, { t: string; c: string }> = {
   trial: { t: "Free trial", c: "text-warning" },
   active: { t: "Active", c: "text-positive" },
   past_due: { t: "Past due", c: "text-destructive" },
+  unpaid: { t: "Payment issue", c: "text-destructive" },
+  paused: { t: "Paused", c: "text-muted-foreground" },
   canceled: { t: "Canceled", c: "text-muted-foreground" },
 };
+const labelFor = (s: string) => STATUS_LABEL[s] || { t: s ? s[0].toUpperCase() + s.slice(1) : "Inactive", c: "text-muted-foreground" };
 
 export default async function AccountOverviewPage() {
   const ctx = await getSessionContext();
@@ -32,7 +35,7 @@ export default async function AccountOverviewPage() {
 
   const comped = !!org?.comped;
   const status = org?.plan_status || "trial";
-  const label = STATUS_LABEL[status] || STATUS_LABEL.trial;
+  const label = labelFor(status);
   const trialEnds = org?.trial_ends_at ? new Date(org.trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const baseMonthly = org?.monthly_price_override != null ? org.monthly_price_override : 100;
   const monthly = baseMonthly + Math.max(0, (org?.agent_limit || 1) - 1) * 15;
@@ -41,7 +44,8 @@ export default async function AccountOverviewPage() {
   if (comped) planLine = "Complimentary access — no charge on this account.";
   else if (status === "trial") planLine = trialEnds ? `Your free trial runs through ${trialEnds}. No card on file — you won't be charged.` : "You're on the free trial.";
   else if (status === "active") planLine = org?.cancel_at_period_end ? "Active — set to cancel at the end of the period." : `Active — $${monthly}/mo.`;
-  else if (status === "past_due") planLine = "Payment past due — update your card in Billing.";
+  else if (status === "past_due" || status === "unpaid") planLine = "Payment problem — update your card in Billing to keep access.";
+  else if (status === "paused") planLine = "Your subscription is paused.";
   else planLine = "Subscription canceled.";
 
   const agents = agentCount || 1;

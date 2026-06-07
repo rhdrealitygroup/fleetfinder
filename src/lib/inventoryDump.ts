@@ -104,6 +104,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // NOT-IN VIN list, so no URL-length/malformed-VIN issues).
     const rows: any[] = [];
     let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
+    let deadlineCut = false; // true only when we stopped on the wall-clock budget (not a fetch failure)
     let numFound = 0;
     // Page-loop deadline so a large dealer can't run past the function's time
     // budget (the on-select after() path has no external budget guard). When the
@@ -113,7 +114,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // the lock — preventing a dangling lock on a kill.
     const pageDeadline = deadline ? Math.min(deadline, Date.now() + 45_000) : Date.now() + 45_000;
     for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
-      if (Date.now() > pageDeadline) { complete = false; break; }
+      if (Date.now() > pageDeadline) { complete = false; deadlineCut = true; break; }
       const u = new URL(`${MC_HOST}/search/car/active`);
       u.searchParams.set("api_key", apiKey);
       u.searchParams.set("dealer_id", dealerId);
@@ -190,6 +191,13 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       await db.from("tracked_dealers")
         .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
         .eq("dealer_id", dealerId);
+    } else if (deadlineCut && rows.length > 0) {
+      // We ran out of wall-clock mid-pull (not a fetch failure). Don't sweep — the
+      // un-fetched tail is unconfirmed — but still advance last_dumped_at so this
+      // dealer rotates out of the front of the stalest-first queue instead of
+      // monopolizing every cron run. (A real fetch failure leaves complete=false
+      // AND deadlineCut=false, so it retries soon, unchanged.)
+      await db.from("tracked_dealers").update({ last_dumped_at: runStart }).eq("dealer_id", dealerId);
     }
     return rows.length;
   } finally {

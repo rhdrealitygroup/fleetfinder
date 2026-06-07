@@ -26,7 +26,17 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // getUser() makes a network call to the auth server. A transient failure must
+  // NOT throw out of the proxy — the matcher runs on nearly every route, so an
+  // uncaught error would 500 the whole site, including /login. Fail open and let
+  // page-level getSessionContext (which also try/catches) handle gating.
+  let user = null;
+  try {
+    const res = await supabase.auth.getUser();
+    user = res.data.user;
+  } catch {
+    return response;
+  }
 
   const path = request.nextUrl.pathname;
 

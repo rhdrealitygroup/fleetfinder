@@ -9,8 +9,13 @@ const STATUS_LABEL: Record<string, { t: string; c: string }> = {
   trial: { t: "Free trial", c: "text-warning" },
   active: { t: "Active", c: "text-positive" },
   past_due: { t: "Past due", c: "text-destructive" },
+  unpaid: { t: "Payment issue", c: "text-destructive" },
+  paused: { t: "Paused", c: "text-muted-foreground" },
   canceled: { t: "Canceled", c: "text-muted-foreground" },
 };
+// Neutral fallback for any unmapped status — never default to the reassuring
+// "Free trial" label (which would hide an actual billing problem).
+const labelFor = (s: string) => STATUS_LABEL[s] || { t: s ? s[0].toUpperCase() + s.slice(1) : "Inactive", c: "text-muted-foreground" };
 
 export default async function BillingPage() {
   const ctx = await getSessionContext();
@@ -32,7 +37,7 @@ export default async function BillingPage() {
     : { count: 0 };
 
   const status = org?.plan_status || "trial";
-  const label = STATUS_LABEL[status] || STATUS_LABEL.trial;
+  const label = labelFor(status);
   const hasSub = !!org?.stripe_subscription_id;
   const trialEnds = org?.trial_ends_at ? new Date(org.trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const periodEnds = org?.current_period_end ? new Date(org.current_period_end).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;

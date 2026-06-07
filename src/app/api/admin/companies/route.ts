@@ -214,7 +214,17 @@ export async function DELETE(req: Request) {
   // so the email is freed up to sign up fresh. Never delete a super-admin login.
   let deletedUsers = 0;
   for (const m of roster) {
-    if (isSuperAdminEmail(m.email)) continue;
+    // Resolve the AUTHORITATIVE auth email — memberships.email is a denormalized,
+    // nullable copy that can be stale, and super-admin status is defined by the
+    // real auth.users email. Trusting the stale copy could delete the platform
+    // owner's login.
+    let realEmail: string | null = (m.email as string) ?? null;
+    try {
+      const { data } = await db.auth.admin.getUserById(m.user_id as string);
+      realEmail = data?.user?.email ?? realEmail;
+    } catch { /* fall back to the denormalized value */ }
+    if (isSuperAdminEmail(realEmail)) continue;     // never delete a super-admin login
+    if (!realEmail) continue;                        // unknown identity → don't auto-delete
     const { count } = await db.from("memberships")
       .select("*", { count: "exact", head: true }).eq("user_id", m.user_id as string);
     if ((count || 0) > 0) continue; // still belongs to another company → keep login

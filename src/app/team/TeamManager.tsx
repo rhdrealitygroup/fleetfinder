@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, UserPlus, Trash2, ShieldCheck } from "lucide-react";
 
@@ -12,6 +12,11 @@ export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSe
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // router.refresh() re-renders the server component but does NOT reset this
+  // useState, so sync from the fresh prop — otherwise a newly invited agent
+  // never shows up and a failed-then-refreshed removal wouldn't reconcile.
+  useEffect(() => { setMembers(initialMembers); }, [initialMembers]);
 
   // Trial/comped orgs have no seat cap — never show the "at your limit" gate.
   const overLimit = !unlimitedSeats && members.length >= agentLimit;
@@ -29,12 +34,13 @@ export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSe
   }
 
   async function remove(id: string) {
+    const prev = members;
     setMembers((m) => m.filter((x) => x.id !== id)); // optimistic
     try {
       const r = await fetch("/api/team", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membership_id: id }) });
-      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); }
-    } catch { setError("Couldn't remove that member."); }
-    router.refresh(); // re-syncs (restores the row if the delete failed)
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); setMembers(prev); return; }
+      router.refresh(); // reconcile from the server on success
+    } catch { setError("Couldn't remove that member."); setMembers(prev); } // explicit rollback — refresh() can't restore useState
   }
 
   return (

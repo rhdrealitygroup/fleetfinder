@@ -132,8 +132,8 @@ export async function POST(req: Request) {
       ...(trialEnd ? { trial_end: trialEnd } : trialDays ? { trial_period_days: trialDays } : {}),
       metadata: { org_id: org.id },
     },
-    success_url: `${origin}/billing?checkout=success`,
-    cancel_url: `${origin}/billing?checkout=cancelled`,
+    success_url: `${origin}/account/billing?checkout=success`,
+    cancel_url: `${origin}/account/billing?checkout=cancelled`,
     allow_promotion_codes: true,
   }, { idempotencyKey: `checkout-${org.id}-${basePrice}-${seats}-t${trialEnd ?? trialDays ?? 0}` }); // dedupe rapid double-submits; include trial so a post-trial retry can't replay a stale-trial session
 

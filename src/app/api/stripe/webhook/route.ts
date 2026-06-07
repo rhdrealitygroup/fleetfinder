@@ -65,7 +65,10 @@ export async function POST(req: Request) {
       : sub.status === "canceled" ? "canceled" : sub.status;
 
     const patch: Record<string, any> = {
-      stripe_subscription_id: sub.id,
+      // Clear the pointer when the sub is fully deleted so the billing UI drops
+      // back to "Start subscription" (hasSub=false) and the org can resubscribe
+      // from inside the app. plan_status stays 'canceled' for gating.
+      stripe_subscription_id: isDeleted ? null : sub.id,
       plan_status: status,
       // Whether the sub is scheduled to end at period close (set via the in-app
       // Cancel button or the Stripe portal). Fully-deleted subs are just canceled.

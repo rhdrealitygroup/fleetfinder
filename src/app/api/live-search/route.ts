@@ -222,12 +222,23 @@ export async function POST(req: Request) {
         }
       }
     } else if (autoKey) {
-      const r = await searchAutoDev();
-      results = r.results; total = r.total; provider = "auto.dev";
-      if (r.rateLimited && marketKey) {
-        note = " (auto.dev quota reached, used marketcheck)";
-        const r2 = await searchMarketCheck();
-        results = r2.results; total = r2.total; provider = "marketcheck";
+      // Auto.dev has no dealer_id filter. If the search is scoped to the org's
+      // dealers and MarketCheck isn't available to honor that scope, running
+      // Auto.dev would return nationwide inventory from dealers the org doesn't
+      // work with (and cache it under the dealer-scoped key). Return nothing with
+      // a clear note instead, and don't cache it (rateLimited gates caching).
+      const dealerScoped = Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0;
+      if (dealerScoped && !marketKey) {
+        results = []; total = 0; provider = "auto.dev"; rateLimited = true;
+        note = " (dealer-scoped search needs MarketCheck — not available in this configuration)";
+      } else {
+        const r = await searchAutoDev();
+        results = r.results; total = r.total; provider = "auto.dev";
+        if (r.rateLimited && marketKey) {
+          note = " (auto.dev quota reached, used marketcheck)";
+          const r2 = await searchMarketCheck();
+          results = r2.results; total = r2.total; provider = "marketcheck";
+        }
       }
     } else if (marketKey) {
       const r = await searchMarketCheck();
