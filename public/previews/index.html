@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LotCompass — Design previews</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opt@0,6..72;1,6..72&family=Newsreader:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{ --cream:#f6f4ef; --ink:#1c1917; --muted:#78716c; --terra:#b85c1e; --line:#e7e2d9; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--cream);color:var(--ink);font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:980px;margin:0 auto;padding:64px 24px 80px}
+  .serif{font-family:Newsreader,Georgia,serif}
+  h1{font-family:Newsreader,Georgia,serif;font-size:46px;line-height:1.05;margin:0 0 10px;font-weight:500}
+  .sub{color:var(--muted);font-size:17px;max-width:620px;line-height:1.6;margin:0 0 40px}
+  .kicker{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--terra);margin-bottom:18px}
+  .grid{display:grid;gap:20px}
+  .card{display:block;text-decoration:none;color:inherit;background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px 28px;transition:.15s;box-shadow:0 1px 2px rgba(28,25,23,.03)}
+  .card:hover{border-color:#d8d0c2;box-shadow:0 10px 30px -12px rgba(28,25,23,.18);transform:translateY(-1px)}
+  .card h2{font-family:Newsreader,Georgia,serif;font-size:24px;margin:0 0 4px;font-weight:600}
+  .card .tag{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--terra);margin-bottom:14px}
+  .card p{color:var(--muted);font-size:15px;line-height:1.6;margin:0 0 16px}
+  .card .go{font-size:14px;font-weight:600;color:var(--ink)}
+  .swatch{display:flex;gap:6px;margin-bottom:16px}
+  .swatch span{width:26px;height:26px;border-radius:6px;border:1px solid rgba(0,0,0,.06)}
+  .foot{margin-top:36px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="kicker">LotCompass · Design study</div>
+    <h1>Three ways to make it feel <span class="serif" style="font-style:italic;color:var(--muted)">more premium.</span></h1>
+    <p class="sub">Same bones as today — warm canvas, the compass mark, the terracotta accent — pushed toward something that reads hand-built and high-end, not generated. Open each and compare the search screen. Nothing here is wired to the live app.</p>
+
+    <div class="grid">
+      <a class="card" href="./design-a.html">
+        <div class="tag">Direction A</div>
+        <div class="swatch"><span style="background:#f6f4ef"></span><span style="background:#fff"></span><span style="background:#1c1917"></span><span style="background:#b85c1e"></span></div>
+        <h2>Refined Gallery</h2>
+        <p>Your current look, elevated: tighter type scale, hairline rules instead of heavy boxes, more whitespace, tabular figures. The safest, most faithful upgrade.</p>
+        <div class="go">View the search screen →</div>
+      </a>
+
+      <a class="card" href="./design-b.html">
+        <div class="tag">Direction B</div>
+        <div class="swatch"><span style="background:#f1ece1"></span><span style="background:#fbfaf6"></span><span style="background:#211c18"></span><span style="background:#a8501a"></span></div>
+        <h2>Ink &amp; Paper</h2>
+        <p>Lean fully editorial — magazine-grade. Big serif headlines, ruled rows instead of cards, prices set large in type. Feels like a luxury trade publication.</p>
+        <div class="go">View the search screen →</div>
+      </a>
+
+      <a class="card" href="./design-c.html">
+        <div class="tag">Direction C</div>
+        <div class="swatch"><span style="background:#faf9f7"></span><span style="background:#fff"></span><span style="background:#14302a"></span><span style="background:#b85c1e"></span></div>
+        <h2>Modern Professional</h2>
+        <p>Crisp SaaS-pro: a quiet side rail, a dense, scannable results table, deep evergreen + terracotta. The most "serious software" of the three.</p>
+        <div class="go">View the search screen →</div>
+      </a>
+    </div>
+
+    <p class="foot">Previews only · not connected to your data · Live app stays exactly as it is until you pick a direction.</p>
+  </div>
+</body>
+</html>
