@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { dumpDealerListings } from "@/lib/inventoryDump";
 
 async function resolveOrg() {
   const { user, membership } = await getSessionContext();
@@ -50,6 +51,9 @@ export async function POST(req: Request) {
     // Re-selecting a previously deselected dealer.
     await db.from("dealers").update({ selected: true }).eq("org_id", ctx.org).eq("dealer_key", id);
   }
+  // Dump this dealer's inventory right away so scoped + /usedcar search have it
+  // immediately (options get decoded by the cron shortly after). Best-effort.
+  try { await dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }); } catch { /* cron will catch up */ }
   return NextResponse.json({ ok: true });
 }
 
