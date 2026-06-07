@@ -32,9 +32,7 @@ const LINKS = [
   { href: "/calculator", label: "Calculator" },
   { href: "/saved", label: "Saved" },
   { href: "/customers", label: "Customers" },
-  { href: "/dealers", label: "Dealers" },
-  { href: "/team", label: "Team" },
-  { href: "/billing", label: "Billing" },
+  { href: "/account", label: "Account" },
 ];
 
 export function AppNav() {
@@ -73,9 +71,9 @@ export function AppNav() {
       </div>
       <div className="flex items-center gap-3">
         <Link
-          href="/billing"
+          href="/account"
           className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-xs font-semibold text-primary hover:bg-primary/30 transition"
-          title="Account & billing"
+          title="Account"
         >
           {initials || <span className="w-3.5 h-3.5 rounded-full bg-primary/40" />}
         </Link>
