@@ -27,12 +27,13 @@ function useUserInitials() {
 }
 
 // Top navigation shared across the authenticated app pages (Modern look).
-const LINKS = [
+const LINKS: { href: string; label: string; dot?: boolean }[] = [
   { href: "/search", label: "Live Search" },
   { href: "/calculator", label: "Calculator" },
   { href: "/saved", label: "Saved" },
   { href: "/customers", label: "Customers" },
   { href: "/account", label: "Account" },
+  { href: "/account/referrals", label: "Refer & Earn", dot: true },
 ];
 
 export function AppNav() {
@@ -54,16 +55,21 @@ export function AppNav() {
         </Link>
         <nav className="hidden md:flex items-center gap-1 ml-6 text-sm">
           {links.map((l) => {
-            const active = pathname === l.href || pathname.startsWith(l.href + "/");
+            // "Account" should not also light up on the referrals sub-route — the
+            // dedicated "Refer & Earn" item owns it.
+            const active = l.href === "/account"
+              ? pathname === "/account" || (pathname.startsWith("/account/") && !pathname.startsWith("/account/referrals"))
+              : pathname === l.href || pathname.startsWith(l.href + "/");
             return (
               <Link
                 key={l.href}
                 href={l.href}
-                className={`px-3 py-1.5 rounded-md transition ${
+                className={`px-3 py-1.5 rounded-md transition inline-flex items-center gap-1.5 ${
                   active ? "bg-white/10 text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {l.label}
+                {l.dot && <span className="w-1.5 h-1.5 rounded-full bg-primary" aria-hidden />}
               </Link>
             );
           })}

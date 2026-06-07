@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { getStripe, stripeConfigured } from "@/lib/stripe";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { onRefereePaid } from "@/lib/referrals";
 import type Stripe from "stripe";
 
 export async function POST(req: Request) {
@@ -180,6 +181,19 @@ export async function POST(req: Request) {
       if (s.subscription && typeof s.subscription === "string") {
         const sub = await stripe.subscriptions.retrieve(s.subscription);
         await syncSubscription(sub, false, event.created); // freshly retrieved → live status
+      }
+      break;
+    }
+    case "invoice.payment_succeeded": {
+      // Referral reward trigger: the referee made a REAL payment (amount_paid>0,
+      // i.e. not a $0 trial invoice). Credit the referrer $50. Idempotent via the
+      // referrals flags + balance-transaction idempotency keys.
+      const inv = event.data.object as Stripe.Invoice;
+      const amountPaid = (inv as any).amount_paid || 0;
+      const cust = typeof inv.customer === "string" ? inv.customer : null;
+      if (amountPaid > 0 && cust) {
+        const { data: refereeOrg } = await db.from("organizations").select("id, referred_by_org").eq("stripe_customer_id", cust).maybeSingle();
+        if (refereeOrg?.referred_by_org) await onRefereePaid(stripe, refereeOrg.id as string);
       }
       break;
     }

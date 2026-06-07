@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2, Mail, Gift } from "lucide-react";
 
 export default function SignupPage() {
   const [company, setCompany] = useState("");
@@ -14,6 +14,15 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [referrer, setReferrer] = useState<string | null>(null);
+
+  // Referral welcome banner: if arriving via a ?ref link, show who invited them.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("ref");
+    if (!code) return;
+    fetch(`/api/referral/resolve?code=${encodeURIComponent(code)}`)
+      .then((r) => r.json()).then((d) => { if (d?.company) setReferrer(d.company); }).catch(() => {});
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +51,13 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <h1 className="font-heading text-2xl font-bold mb-1">Start your free trial</h1>
         <p className="text-sm text-muted-foreground mb-6">14 days free · no card required · $100/mo after.</p>
+
+        {referrer && (
+          <div className="mb-6 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm flex items-start gap-2.5">
+            <Gift className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div><span className="font-medium text-foreground">{referrer}</span> invited you — get <span className="font-medium text-foreground">$50 off</span> your first month.</div>
+          </div>
+        )}
 
         <GoogleSignInButton next="/onboarding" />
         <div className="flex items-center gap-3 my-5 text-xs text-muted-foreground">

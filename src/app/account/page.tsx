@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getSessionContext, type Role } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { referralStats } from "@/lib/referrals";
+import { ReferralPanel } from "./referrals/ReferralPanel";
 import { Building2, CreditCard, Users, Store } from "lucide-react";
 
 const STATUS_LABEL: Record<string, { t: string; c: string }> = {
@@ -27,11 +29,12 @@ export default async function AccountOverviewPage() {
 
   const db = createServiceRoleClient();
   const { data: org } = membership
-    ? await db.from("organizations").select("name, plan_status, comped, trial_ends_at, current_period_end, cancel_at_period_end, agent_limit, monthly_price_override").eq("id", membership.org_id).single()
+    ? await db.from("organizations").select("name, plan_status, comped, trial_ends_at, current_period_end, cancel_at_period_end, agent_limit, monthly_price_override, referral_code").eq("id", membership.org_id).single()
     : { data: null };
   const { count: agentCount } = membership
     ? await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id)
     : { count: 0 };
+  const refStats = membership ? await referralStats(membership.org_id) : { invited: 0, joined: 0, earnedDollars: 0 };
 
   const comped = !!org?.comped;
   const status = org?.plan_status || "trial";
@@ -56,6 +59,11 @@ export default async function AccountOverviewPage() {
         <h1 className="font-heading text-2xl font-bold mb-1">Account</h1>
         <p className="text-sm text-muted-foreground">{org?.name || "Your company"}</p>
       </div>
+
+      {/* Refer & earn — the boldest thing on the page */}
+      {org?.referral_code && (
+        <ReferralPanel code={org.referral_code as string} invited={refStats.invited} joined={refStats.joined} earned={refStats.earnedDollars} compact />
+      )}
 
       {/* Plan & trial status */}
       <div className="rounded-xl border border-border bg-card p-6">

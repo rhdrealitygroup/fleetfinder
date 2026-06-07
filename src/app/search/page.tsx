@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import {
   Search, SlidersHorizontal, ArrowUpDown, Star, Building2, X, Check,
-  Award, GitCompare, Loader2, ExternalLink, FileText, MapPin,
+  Award, GitCompare, Loader2, ExternalLink, FileText, MapPin, Gift,
 } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
@@ -63,6 +63,8 @@ function SearchPageInner() {
   const [truncated, setTruncated] = useState(false);
   const [note, setNote] = useState("");
   const [rateLimited, setRateLimited] = useState(false);
+  const [refNudge, setRefNudge] = useState(false);
+  useEffect(() => { setRefNudge(typeof window !== "undefined" && localStorage.getItem("lc_ref_nudge") !== "off"); }, []);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [provider, setProvider] = useState("");
@@ -563,6 +565,17 @@ function SearchPageInner() {
 
         {/* ── Results ─────────────────────────────────────────────────── */}
         <main className="flex-1 min-w-0 p-4 sm:p-5">
+          {/* Refer-a-broker nudge (after a search with results; dismissible) */}
+          {results !== null && sorted.length > 0 && refNudge && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/[0.06] px-3.5 py-2 text-sm">
+              <span className="inline-flex items-center gap-2 min-w-0">
+                <Gift className="w-4 h-4 text-primary shrink-0" />
+                <span className="truncate">Know a broker who&apos;d use this? <a href="/account/referrals" className="text-primary font-medium hover:underline">Refer them — you both get $50.</a></span>
+              </span>
+              <button onClick={() => { setRefNudge(false); try { localStorage.setItem("lc_ref_nudge", "off"); } catch {} }}
+                className="shrink-0 text-muted-foreground hover:text-foreground" title="Dismiss"><X className="w-4 h-4" /></button>
+            </div>
+          )}
           {/* Result bar */}
           {results !== null && (
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">

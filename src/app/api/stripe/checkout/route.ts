@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { getStripe, stripeConfigured, basePriceId, seatPriceId, PRICING } from "@/lib/stripe";
 import { getSessionContext } from "@/lib/auth";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { applyRefereeCredit, creditReferrerIfPossible } from "@/lib/referrals";
 
 export async function POST(req: Request) {
   if (!stripeConfigured() || !basePriceId()) {
@@ -64,6 +65,12 @@ export async function POST(req: Request) {
     customerId = customer.id;
     await createServiceRoleClient().from("organizations").update({ stripe_customer_id: customerId }).eq("id", org.id);
   }
+
+  // Referral credits ($50/$50). If this org was referred, drop their $50 welcome
+  // credit onto the customer now so it applies to the first invoice. Also flush
+  // any referrer reward this org earned before it had a Stripe customer.
+  if (org.referred_by_org) await applyRefereeCredit(stripe, org.id as string, customerId);
+  await creditReferrerIfPossible(stripe, org.id as string);
 
   // Stripe-side dedup: the DB stripe_subscription_id is written only by the
   // webhook, so in the window between a checkout completing and the webhook

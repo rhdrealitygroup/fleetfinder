@@ -3,6 +3,7 @@
 // signup path (email or Google), so org naming never depends on the signup form.
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getSessionContext } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createServiceRoleClient } from "@/lib/supabase/server";
@@ -55,5 +56,29 @@ export async function POST(req: Request) {
   // user retry (org creation above is idempotent).
   if (metaErr) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
 
-  return NextResponse.json({ ok: true });
+  // Referral capture: link this newly-set-up company to its referrer from the
+  // ?ref cookie, once. Owners only (the referred company); self-referral blocked;
+  // best-effort so it never blocks onboarding.
+  let refLinked = false;
+  try {
+    if (ensured.role === "owner") {
+      const jar = await cookies();
+      const refCode = (jar.get("lc_ref")?.value || "").toUpperCase();
+      if (refCode) {
+        const { data: thisOrg } = await db.from("organizations").select("referred_by_org").eq("id", ensured.org_id).maybeSingle();
+        if (thisOrg && !thisOrg.referred_by_org) {
+          const { data: refOrg } = await db.from("organizations").select("id").eq("referral_code", refCode).maybeSingle();
+          if (refOrg && refOrg.id !== ensured.org_id) {
+            await db.from("organizations").update({ referred_by_org: refOrg.id }).eq("id", ensured.org_id);
+            await db.from("referrals").insert({ referrer_org: refOrg.id, referee_org: ensured.org_id, code: refCode });
+            refLinked = true;
+          }
+        }
+      }
+    }
+  } catch { /* referral linking is best-effort */ }
+
+  const res = NextResponse.json({ ok: true });
+  if (refLinked) res.cookies.set("lc_ref", "", { path: "/", maxAge: 0 }); // consume the cookie
+  return res;
 }

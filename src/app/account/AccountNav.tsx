@@ -10,6 +10,7 @@ const ITEMS = [
   { href: "/account/billing", label: "Billing" },
   { href: "/account/team", label: "Agents" },
   { href: "/account/dealers", label: "Dealers" },
+  { href: "/account/referrals", label: "Refer & Earn" },
 ];
 
 export function AccountNav() {
