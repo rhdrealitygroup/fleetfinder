@@ -89,6 +89,23 @@ export default async function BillingPage() {
             </div>
           </>
         )}
+
+        <div className="rounded-xl border border-border bg-card p-6 mt-6 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="font-semibold mb-1">Account</h2>
+            <p className="text-sm text-muted-foreground truncate">
+              Signed in as <span className="text-foreground">{ctx.user.email}</span>
+            </p>
+          </div>
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </main>
     </div>
   );
