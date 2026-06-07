@@ -39,11 +39,14 @@ export default function DealersPage() {
       if (make) params.set("make", make);
       params.set("page", String(pageNum));
       const res = await fetch(`/api/dealers/catalog?${params}`);
-      const d = await res.json();
-      setTotal(d.total || 0);
+      const d = await res.json().catch(() => ({}));
+      // Guard: an error/auth response (e.g. 401) has no `items` — never spread
+      // undefined into state (that crashed the whole app before).
+      const incoming = Array.isArray(d.items) ? d.items : [];
+      setTotal(Number(d.total) || 0);
       if (d.counts) setCounts(d.counts);
       if (Array.isArray(d.makes) && d.makes.length) setMakes(d.makes);
-      setItems((prev) => (replace ? d.items : [...prev, ...d.items]));
+      setItems((prev) => (replace ? incoming : [...prev, ...incoming]));
     } finally {
       setLoading(false);
     }

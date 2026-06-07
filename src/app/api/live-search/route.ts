@@ -13,6 +13,9 @@ import { requireActivePlan } from "@/lib/auth";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// This route can decode many VINs for option filtering; give it headroom.
+export const maxDuration = 60;
+
 function summarize(body: any) {
   const base = [
     body.year_min && `${body.year_min}+`, body.make, body.model, body.trim, body.body_type,
@@ -123,6 +126,9 @@ export async function POST(req: Request) {
       const res = await fetch(url.toString());
       if (res.status === 429) return { results: out.map(mcListing), total, rateLimited: true };
       if (!res.ok) {
+        // Past page 0 (e.g. the tier's 1500 start-offset cap) — keep the results
+        // already collected instead of throwing the whole search away.
+        if (out.length > 0) break;
         const b = await res.text().catch(() => "");
         throw new Error(`MarketCheck ${res.status}: ${b.slice(0, 150)}`);
       }
@@ -161,6 +167,7 @@ export async function POST(req: Request) {
       const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${autoKey}` } });
       if (res.status === 429) return { results: out.map(adListing), total, rateLimited: true };
       if (!res.ok) {
+        if (out.length > 0) break; // keep what we have past page 0
         const b = await res.text().catch(() => "");
         throw new Error(`Auto.dev ${res.status}: ${b.slice(0, 150)}`);
       }
@@ -240,9 +247,15 @@ export async function POST(req: Request) {
   const optionNames: string[] = Array.isArray(body.option_names)
     ? body.option_names.map((s: unknown) => String(s || "").trim().toLowerCase()).filter(Boolean)
     : [];
+  let optionScanLimited = false;
   if (optionQuery || optionNames.length) {
     const terms = optionQuery.split(/[,\s]+/).filter(Boolean);
-    const withVin = results.filter((r) => r.vin && r.vin.length === 17);
+    const all17 = results.filter((r) => r.vin && r.vin.length === 17);
+    // Cap the number of VINs we decode per request — option filtering does one
+    // decode per VIN, so an unbounded result set would time out and burn quota.
+    const DECODE_CAP = 240;
+    const withVin = all17.slice(0, DECODE_CAP);
+    optionScanLimited = all17.length > DECODE_CAP;
     const kept: UnifiedVehicle[] = [];
     // Decode in small chunks to avoid hammering MarketCheck.
     for (let i = 0; i < withVin.length; i += 8) {
@@ -259,6 +272,7 @@ export async function POST(req: Request) {
     results = kept;
   }
 
+  if (optionScanLimited) note += " (option filter scanned the first 240 closest matches)";
   const narrowed = !!variant || maxMonthly > 0 || !!optionQuery || optionNames.length > 0;
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider };
   // Never persist a rate-limited/partial response — it would pin an empty result.

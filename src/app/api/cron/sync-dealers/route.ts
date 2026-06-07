@@ -33,7 +33,8 @@ async function pullState(state: string, apiKey: string) {
   const out = new Map<string, any>();
   let complete = true;
   for (const type of ["franchise", "independent"]) {
-    for (let start = 0; start < 1500; start += 50) {
+    // start + rows must stay within the tier's 1500 offset cap, so stop at 1450.
+    for (let start = 0; start + 50 <= 1500; start += 50) {
       const u = new URL(`${MC_HOST}/dealers/car`);
       u.searchParams.set("api_key", apiKey);
       u.searchParams.set("state", state);

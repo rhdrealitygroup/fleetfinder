@@ -13,9 +13,10 @@ async function resolveOrg() {
   const { user, membership } = await getSessionContext();
   if (!user) return { error: "Unauthorized" as const, status: 401 };
   let org = membership?.org_id;
-  if (!org) org = (await ensureOrgForUser())?.org_id;
+  let role = membership?.role as string | undefined;
+  if (!org) { const ensured = await ensureOrgForUser(); org = ensured?.org_id; role = ensured?.role; }
   if (!org) return { error: "No organization" as const, status: 400 };
-  return { org };
+  return { org, role };
 }
 
 export async function GET() {
@@ -34,6 +35,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const ctx = await resolveOrg();
   if ("error" in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
+  if (!["owner", "admin"].includes(ctx.role || "")) return NextResponse.json({ error: "Only an owner or admin can change the company dealer list" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const d = body.dealer || {};
   const id = String(d.id || "").trim();
@@ -54,6 +56,7 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const ctx = await resolveOrg();
   if ("error" in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
+  if (!["owner", "admin"].includes(ctx.role || "")) return NextResponse.json({ error: "Only an owner or admin can change the company dealer list" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const id = String(body.id || "").trim();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

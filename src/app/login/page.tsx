@@ -18,23 +18,6 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
-  const [showCode, setShowCode] = useState(false);
-  const [code, setCode] = useState("");
-
-  async function signInCode(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    const res = await fetch("/api/bypass", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
-    setLoading(false);
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      setError(d.error || "Invalid access code");
-    } else {
-      router.push("/search");
-      router.refresh();
-    }
-  }
 
   async function signInPassword(e: React.FormEvent) {
     e.preventDefault();
@@ -95,17 +78,6 @@ function LoginForm() {
 
       <div className="mt-6 text-sm text-muted-foreground">
         New here? <Link href="/signup" className="text-primary hover:underline">Start a free trial</Link>
-      </div>
-
-      <div className="mt-4 pt-4 border-t border-border">
-        {showCode ? (
-          <form onSubmit={signInCode} className="flex gap-2">
-            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Access code" autoFocus className={inputCls} />
-            <button type="submit" disabled={loading} className="shrink-0 px-4 rounded-lg bg-card border border-border text-sm hover:border-primary/40 disabled:opacity-60">Enter</button>
-          </form>
-        ) : (
-          <button onClick={() => setShowCode(true)} className="text-xs text-muted-foreground hover:text-foreground">Have an access code?</button>
-        )}
       </div>
     </div>
   );

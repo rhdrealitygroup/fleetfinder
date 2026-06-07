@@ -26,7 +26,7 @@ export default async function AdminPage() {
   }
 
   const db = createServiceRoleClient();
-  const { data: orgs } = await db.from("organizations").select("id, name, plan_status, agent_limit, trial_ends_at, created_at").order("created_at", { ascending: false });
+  const { data: orgs } = await db.from("organizations").select("id, name, plan_status, agent_limit, trial_ends_at, created_at, comped").order("created_at", { ascending: false });
   const { data: members } = await db.from("memberships").select("org_id, role, email");
 
   const membersByOrg: Record<string, Member[]> = {};

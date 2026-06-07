@@ -1,11 +1,11 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { ChevronRight, Users } from "lucide-react";
+import { ChevronRight, Users, Gift } from "lucide-react";
 
 export type Org = {
   id: string; name: string; plan_status: string; agent_limit: number;
-  trial_ends_at: string | null; created_at: string;
+  trial_ends_at: string | null; created_at: string; comped?: boolean;
 };
 export type Member = { email: string | null; role: string };
 
@@ -17,6 +17,20 @@ const PLAN: Record<string, string> = {
 // Platform-wide company list. Click a company to expand its people + seat usage.
 export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByOrg: Record<string, Member[]> }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [comped, setComped] = useState<Record<string, boolean>>(() => Object.fromEntries(orgs.map((o) => [o.id, !!o.comped])));
+
+  // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
+  async function toggleComp(id: string) {
+    const next = !comped[id];
+    setComped((c) => ({ ...c, [id]: next }));
+    try {
+      const r = await fetch("/api/admin/companies", {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, comped: next }),
+      });
+      if (!r.ok) setComped((c) => ({ ...c, [id]: !next })); // revert on failure
+    } catch { setComped((c) => ({ ...c, [id]: !next })); }
+  }
+
   if (!orgs.length) {
     return <div className="p-6 text-sm text-muted-foreground">No companies yet. They appear here as accounts sign up.</div>;
   }
@@ -44,7 +58,11 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                     {o.name}
                   </span>
                 </td>
-                <td className="px-4 py-2.5"><span className={`text-xs font-medium ${PLAN[o.plan_status] || "text-muted-foreground"}`}>{o.plan_status}</span></td>
+                <td className="px-4 py-2.5">
+                  {comped[o.id]
+                    ? <span className="inline-flex items-center gap-1 text-xs font-medium text-primary"><Gift className="w-3 h-3" /> Free access</span>
+                    : <span className={`text-xs font-medium ${PLAN[o.plan_status] || "text-muted-foreground"}`}>{o.plan_status}</span>}
+                </td>
                 <td className="px-4 py-2.5 tnum">{people.length}</td>
                 <td className="px-4 py-2.5 tnum">{o.agent_limit}</td>
               </tr>
@@ -66,9 +84,18 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                         ))}
                       </ul>
                     )}
-                    {o.trial_ends_at && o.plan_status === "trial" && (
+                    {o.trial_ends_at && o.plan_status === "trial" && !comped[o.id] && (
                       <p className="text-[11px] text-muted-foreground mt-2">Trial ends {new Date(o.trial_ends_at).toLocaleDateString()}</p>
                     )}
+                    <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+                      <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+                        <Gift className="w-3.5 h-3.5" /> Complimentary access — full app, no Stripe payment
+                      </span>
+                      <button onClick={() => toggleComp(o.id)}
+                        className={`text-xs font-medium px-2.5 py-1 rounded-md border transition ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        {comped[o.id] ? "Revoke free access" : "Grant free access"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )}

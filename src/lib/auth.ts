@@ -81,13 +81,18 @@ export async function requireActivePlan(): Promise<PlanGate> {
   if (!ctx.user) return { ok: false, status: 401, error: "Unauthorized", ctx };
   if (ctx.isSuperAdmin || !ctx.membership) return { ok: true, status: 200, ctx };
   try {
-    const supabase = await createClient();
-    const { data: org } = await supabase
+    // Read with the service-role client (identity already verified above) so an
+    // RLS edge case can't make a definitively-canceled org "fail open" into free
+    // paid-quota access. select("*") is resilient to the comped column not yet
+    // existing in older DBs.
+    const db = createServiceRoleClient();
+    const { data: org } = await db
       .from("organizations")
-      .select("plan_status, trial_ends_at")
+      .select("*")
       .eq("id", ctx.membership.org_id)
       .single();
-    if (!org) return { ok: true, status: 200, ctx }; // unreadable → don't hard-block
+    if (!org) return { ok: true, status: 200, ctx }; // truly unreadable → don't hard-block
+    if (org.comped) return { ok: true, status: 200, ctx }; // complimentary free access (set by a super-admin)
     const status = String(org.plan_status || "");
     const trialOk = status === "trial" && (!org.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
     if (status === "active" || trialOk) return { ok: true, status: 200, ctx };

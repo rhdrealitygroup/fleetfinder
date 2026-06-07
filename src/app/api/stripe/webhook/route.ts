@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
   const db = createServiceRoleClient();
 
-  async function syncSubscription(sub: Stripe.Subscription, isDeleted = false, trustLive = false) {
+  async function syncSubscription(sub: Stripe.Subscription, isDeleted = false) {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const orgId = (sub.metadata?.org_id as string) || null;
 
@@ -39,15 +39,13 @@ export async function POST(req: Request) {
         : { data: null as any };
     if (!org) return;
 
-    // Out-of-order guard: Stripe doesn't guarantee delivery order. A late
-    // (non-deleted) event must not resurrect a subscription we've already
-    // recorded as canceled. A genuine re-subscribe has a new subscription id,
-    // so we only skip when the id matches the one we already canceled.
-    // `trustLive` (checkout.session.completed) just re-fetched the subscription,
-    // so its status IS current truth — skip the guard when it's still live, so a
-    // real completed checkout can't be stranded as canceled by event ordering.
+    // Out-of-order guard: Stripe doesn't guarantee delivery order. Skip only a
+    // STALE, non-active event that would resurrect a sub we've recorded as
+    // canceled. A live-active status (a real un-cancel, or a re-fetched completed
+    // checkout) is always allowed through, so a paying customer is never stranded
+    // as canceled. A genuine re-subscribe also has a new id (so it never matches).
     const liveActive = sub.status === "active" || sub.status === "trialing";
-    if (!isDeleted && !(trustLive && liveActive)
+    if (!isDeleted && !liveActive
         && org.plan_status === "canceled" && org.stripe_subscription_id === sub.id) return;
 
     const status = isDeleted ? "canceled"
@@ -94,7 +92,7 @@ export async function POST(req: Request) {
       const s = event.data.object as Stripe.Checkout.Session;
       if (s.subscription && typeof s.subscription === "string") {
         const sub = await stripe.subscriptions.retrieve(s.subscription);
-        await syncSubscription(sub, false, true); // trustLive: freshly retrieved
+        await syncSubscription(sub, false); // freshly retrieved → live status
       }
       break;
     }
