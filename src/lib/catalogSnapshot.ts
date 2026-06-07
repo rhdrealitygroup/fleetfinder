@@ -6,9 +6,12 @@ import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTim
 // Snapshot one model's catalog (trims, sub-variants, colors, options) for the
 // nightly dump. Self-contained (used by the cron) — cheap facets + a small VIN
 // decode sample. Not the live UI path; this is the persistent moat snapshot.
-export async function snapshotModel(make: string, model: string) {
+export async function snapshotModel(make: string, model: string, deadline = 0) {
   const apiKey = mcKey();
   if (!apiKey) return null;
+  // Out of the cron's shared budget before we even start → skip (retried next run)
+  // rather than risk a mid-model hard-kill past maxDuration.
+  if (deadline && Date.now() > deadline) return null;
   const mcModel = model ? await resolveModel(make, model) : "";
 
   const base = (extra: Record<string, string | number>) => {
@@ -36,12 +39,19 @@ export async function snapshotModel(make: string, model: string) {
   // No facet data at all → treat as a transient miss, don't overwrite good data.
   if (!trims.length && !versions.length && !colors.length) return null;
 
+  // Out of budget after the facets call → return the facet data (the main value)
+  // and skip the heavier VIN-decode sample rather than risk a hard-kill.
+  if (deadline && Date.now() > deadline) {
+    return { trims, versions, colors, interiorColors, options: [], found: num(fd.num_found) };
+  }
+
   // Options: union named build-sheet options from a small VIN sample.
   const vRes = await fetchWithTimeout(base({ rows: 6, fields: "vin" }).toString()).catch(() => null);
   const vd: any = vRes && vRes.ok ? await vRes.json() : { listings: [] };
   const vins: string[] = (vd.listings || []).map((l: any) => String(l.vin || "").toUpperCase()).filter((v: string) => v.length === 17).slice(0, 6);
   const map = new Map<string, { name: string; msrp: number; count: number }>();
   for (const v of vins) {
+    if (deadline && Date.now() > deadline) break; // stop decoding if we're out of budget
     for (const o of await decodeVinOptionDetails(v)) {
       const k = o.name.toLowerCase();
       const cur = map.get(k);

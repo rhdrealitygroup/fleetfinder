@@ -859,10 +859,15 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
 
   useEffect(() => {
     if (!v.vin || v.vin.length !== 17) return;
+    // Guard against an out-of-order resolve overwriting the now-current VIN's
+    // equipment when the panel switches vehicles mid-request (matches the
+    // cancelled-flag pattern used by the other fetch effects in this file).
+    let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDecoding(true);
     fetch("/api/decode-vin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vin: v.vin }) })
-      .then((r) => r.json()).then((d) => !d.error && setDecode(d)).catch(() => {}).finally(() => setDecoding(false));
+      .then((r) => r.json()).then((d) => { if (!cancelled && !d.error) setDecode(d); }).catch(() => {}).finally(() => { if (!cancelled) setDecoding(false); });
+    return () => { cancelled = true; };
   }, [v.vin]);
 
   const packages: any[] = Array.isArray(decode?.packages) ? decode.packages : [];

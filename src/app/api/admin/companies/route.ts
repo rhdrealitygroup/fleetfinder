@@ -23,6 +23,10 @@ export async function PATCH(req: Request) {
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
 
   const COMP_COUPON = "lotcompass_comp_100";
+  // Every status that can still collect money (now or on resume) — matches
+  // checkout/webhook. Reconcile coupons/prices for all of these, not just the
+  // active trio, or an unpaid/paused sub keeps a stale comp coupon on resume.
+  const LIVE_STATUSES = ["active", "trialing", "past_due", "unpaid", "paused"];
   // Reduce a Stripe discount object to the update-shape, preserving promo codes.
   const asDiscountInput = (d: any) => {
     if (!d || typeof d === "string") return null;
@@ -43,7 +47,7 @@ export async function PATCH(req: Request) {
       try {
         const stripe = getStripe();
         const sub: any = await stripe.subscriptions.retrieve(org.stripe_subscription_id, { expand: ["discounts"] });
-        if (["active", "trialing", "past_due"].includes(sub.status)) {
+        if (LIVE_STATUSES.includes(sub.status)) {
           // Keep any real promo/coupon the customer already has; only add/remove
           // OUR comp coupon (clearing all discounts would wipe a paid promo).
           const others = (sub.discounts || [])
@@ -103,10 +107,11 @@ export async function PATCH(req: Request) {
     try {
       const stripe = getStripe();
       const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id);
-      if (["active", "trialing", "past_due"].includes(sub.status)) {
+      if (LIVE_STATUSES.includes(sub.status)) {
         const seat = seatPriceId();
         const baseItem = sub.items.data.find((i: any) => i.price?.id !== seat) || sub.items.data[0];
         if (baseItem) {
+          const oldCustomPriceId = org.stripe_custom_price_id as string | null;
           let newPriceId = basePriceId(); // clearing the override → standard price
           if (patch.monthly_price_override != null) {
             const cents = Math.round(patch.monthly_price_override * 100);
@@ -124,6 +129,11 @@ export async function PATCH(req: Request) {
               items: [{ id: baseItem.id, price: newPriceId }],
               proration_behavior: "create_prorations",
             });
+            // Archive the prior custom price so orphaned active prices don't pile
+            // up in Stripe on each override change (billing already repointed).
+            if (oldCustomPriceId && oldCustomPriceId !== newPriceId) {
+              await stripe.prices.update(oldCustomPriceId, { active: false }).catch(() => {});
+            }
           }
         }
       }

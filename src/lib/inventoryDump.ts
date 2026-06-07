@@ -19,10 +19,13 @@ const DB_PAGE = 1000; // PostgREST silently caps an un-ranged select at ~1000 ro
 // below would treat any rows missing from a truncated read as "unselected" and
 // delete their inventory — so a silent 1000-row cap once `dealers` grows past it
 // would wipe still-selected dealers across the whole platform.
-async function readAll(db: any, table: string, columns: string): Promise<any[] | null> {
+async function readAll(db: any, table: string, columns: string, orderCol: string): Promise<any[] | null> {
   const all: any[] = [];
   for (let from = 0; ; from += DB_PAGE) {
-    const { data, error } = await db.from(table).select(columns).range(from, from + DB_PAGE - 1);
+    // ORDER BY a UNIQUE column is mandatory: without a stable order, OFFSET pages
+    // can skip or duplicate rows as the table mutates between paged reads — and a
+    // skipped still-selected dealer would be GC'd as "stale", wiping its inventory.
+    const { data, error } = await db.from(table).select(columns).order(orderCol, { ascending: true }).range(from, from + DB_PAGE - 1);
     if (error || data == null) return null;
     all.push(...data);
     if (data.length < DB_PAGE) break;
@@ -37,11 +40,11 @@ export async function syncTrackedDealers() {
   // added by the on-select path AFTER this snapshot won't appear here, so it can
   // never become a GC candidate this run — closing a race that could delete a
   // just-added dealer's freshly-dumped inventory.
-  const trackedBefore = await readAll(db, "tracked_dealers", "dealer_id");
+  const trackedBefore = await readAll(db, "tracked_dealers", "dealer_id", "dealer_id");
 
   // Page through ALL dealer rows. A truncated read would make the GC treat
   // still-selected dealers as stale and wipe their inventory, so abort on error.
-  const rows = await readAll(db, "dealers", "dealer_key,name,city,state,selected");
+  const rows = await readAll(db, "dealers", "dealer_key,name,city,state,selected", "id");
   if (rows == null) return 0;
   const selected = rows.filter((d: any) => d.dealer_key && d.selected !== false);
   const seen = new Map<string, any>();
@@ -201,7 +204,15 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
     .lt("decode_attempts", MAX_DECODE_ATTEMPTS)
     .order("decode_attempts", { ascending: true })
     .limit(limit);
-  const list = (rows || []).filter((r: any) => r.vin);
+  // Dedupe by VIN: with the (dealer_id, vin) PK a shared VIN has one row per
+  // dealer, but the update below fans out to all of them via .eq("vin") — so one
+  // unique VIN per loop iteration keeps the per-run budget spent on fresh VINs.
+  const seenV = new Set<string>();
+  const list = (rows || []).filter((r: any) => {
+    if (!r.vin || seenV.has(r.vin)) return false;
+    seenV.add(r.vin);
+    return true;
+  });
   if (!list.length) return 0;
   // Import lazily to avoid a heavy module on the hot path.
   const { decodeVinOptionNames } = await import("@/lib/marketcheck");

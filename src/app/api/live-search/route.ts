@@ -303,21 +303,18 @@ export async function POST(req: Request) {
 
   if (optionScanLimited) note += " (option filter scanned the first 240 closest matches)";
   const narrowed = !!variant || maxMonthly > 0 || !!optionQuery || optionNames.length > 0;
-  const payload = { results, total: narrowed ? results.length : (total || results.length), provider };
+  // Include `truncated` and `note` IN the cached payload so a cache-hit re-run
+  // shows the same "showing first N" banner / note as the fresh response (the
+  // hit path just spreads the stored payload).
+  // When narrowed, results.length is the full narrowed count, so comparing it to
+  // the pre-narrow num_found would falsely flag truncation — only on un-narrowed.
+  const truncated = !narrowed && (total || 0) > results.length;
+  const payload = { results, total: narrowed ? results.length : (total || results.length), provider, truncated, note: note || undefined };
   // Never persist a rate-limited/partial response — it would pin an empty result.
   // Cache empty result sets only briefly: a genuine "nothing in stock" can flip
   // to results as soon as a dealer lists one, and a near-miss transient empty
   // shouldn't be served as the answer for a full hour.
   if (!rateLimited) cacheSet(ckey, payload, results.length === 0 ? 2 * 60_000 : HOUR);
 
-  return NextResponse.json({
-    ...payload,
-    cached: false,
-    query: summarize(body),
-    note: note || undefined,
-    // When the set was narrowed client-side, results.length is the full narrowed
-    // count — comparing it to the pre-narrow num_found would falsely flag "showing
-    // first N". Only report truncation on un-narrowed searches.
-    truncated: !narrowed && (total || 0) > results.length,
-  });
+  return NextResponse.json({ ...payload, cached: false, query: summarize(body) });
 }

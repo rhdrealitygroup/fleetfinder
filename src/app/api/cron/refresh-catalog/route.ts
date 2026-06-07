@@ -43,7 +43,8 @@ export async function GET(req: Request) {
   for (const { make, model } of batch) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → next run continues the rotation
     try {
-      const snap = await snapshotModel(make, model);
+      // Pass the shared deadline so a single slow model can't page past 60s.
+      const snap = await snapshotModel(make, model, startedAt + BUDGET_MS);
       if (!snap) continue;
       const k = (kind: string) => `${make}::${model}::${kind}`.toLowerCase();
       await db.from("vehicle_catalog").upsert([
