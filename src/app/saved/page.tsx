@@ -39,10 +39,10 @@ export default function SavedPage() {
           <section key={group.name} className="mb-8">
             <h2 className="font-heading text-sm font-bold uppercase tracking-wide text-muted-foreground mb-3">{group.name} <span className="opacity-60">· {group.vehicles.length}</span></h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {group.vehicles.map((v: any) => {
+          {group.vehicles.map((v: any, i: number) => {
             const hue = makeHue(v.make);
             return (
-              <div key={v.id || v.vin || `${v.dealer_name}-${v.price}`} className="rounded-xl border border-border bg-card p-3 flex flex-col">
+              <div key={v.id || v.vin || `${v.dealer_name}-${v.price}-${i}`} className="rounded-xl border border-border bg-card p-3 flex flex-col">
                 <div className="relative h-32 rounded-lg overflow-hidden flex items-center justify-center mb-3 border border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 40% 22%), hsl(${hue} 30% 12%))` }}>
                   {v.image_url ? <img src={v.image_url} alt="" className="w-full h-full object-cover" /> : <span className="font-heading font-semibold tracking-[0.18em] text-lg uppercase text-white/70">{v.make}</span>}
                 </div>

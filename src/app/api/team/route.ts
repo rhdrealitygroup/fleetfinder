@@ -18,14 +18,18 @@ export async function POST(req: Request) {
   const db = createServiceRoleClient();
 
   // Seat limit: don't let an org exceed its paid agent_limit (billing integrity).
-  const { data: org } = await db.from("organizations").select("agent_limit").eq("id", membership.org_id).single();
-  const { count: seatCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
-  // agent_limit is TOTAL seats and already includes the owner (the webhook sets
-  // it to 1 + paid-seat-quantity). Do NOT add another +1 here, or every org gets
-  // one free agent beyond what it pays for.
-  const limit = org?.agent_limit ?? 1;
-  if ((seatCount ?? 0) >= limit) {
-    return NextResponse.json({ error: `Seat limit reached (${limit}). Add seats in Billing to invite more agents.` }, { status: 402 });
+  // Comped orgs are complimentary and never run checkout (so agent_limit stays at
+  // the default 1) — exempt them, or the free grant couldn't add a single agent.
+  const { data: org } = await db.from("organizations").select("agent_limit, comped").eq("id", membership.org_id).single();
+  if (!org?.comped) {
+    const { count: seatCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
+    // agent_limit is TOTAL seats and already includes the owner (the webhook sets
+    // it to 1 + paid-seat-quantity). Do NOT add another +1 here, or every org gets
+    // one free agent beyond what it pays for.
+    const limit = org?.agent_limit ?? 1;
+    if ((seatCount ?? 0) >= limit) {
+      return NextResponse.json({ error: `Seat limit reached (${limit}). Add seats in Billing to invite more agents.` }, { status: 402 });
+    }
   }
 
   // Invite (or fetch) the auth user.

@@ -701,8 +701,8 @@ function SearchPageInner() {
           {/* Results grid */}
           {!searching && sorted.length > 0 && (
             <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-              {sorted.map((v) => (
-                <VehicleCard key={v.vin || `${v.dealer_name}-${v.price}`} v={v}
+              {sorted.map((v, i) => (
+                <VehicleCard key={v.vin || `${v.dealer_name}-${v.price}-${i}`} v={v}
                   saved={hasSaved(v.vin, "Saved")} compareOn={compare.has(v.vin)}
                   onOpen={() => setOpen(v)} onSave={() => toggleSaved(v)} onCompare={() => toggleCompare(v.vin)} />
               ))}
