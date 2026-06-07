@@ -33,9 +33,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Any member (including agents) can ADD a dealer to the company list.
   const ctx = await resolveOrg();
   if ("error" in ctx) return NextResponse.json({ error: ctx.error }, { status: ctx.status });
-  if (!["owner", "admin"].includes(ctx.role || "")) return NextResponse.json({ error: "Only an owner or admin can change the company dealer list" }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const d = body.dealer || {};
   const id = String(d.id || "").trim();
