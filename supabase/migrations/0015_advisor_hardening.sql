@@ -10,7 +10,14 @@
 revoke execute on function public.handle_new_user() from anon, authenticated;
 revoke execute on function public.enforce_seat_limit() from anon, authenticated;
 revoke execute on function public.sync_profile_email() from anon, authenticated;
-revoke execute on function public.rls_auto_enable() from anon, authenticated;
+-- rls_auto_enable exists in the live DB (Supabase-managed) but is not defined by
+-- these migrations, so guard the revoke — otherwise a fresh `db reset` rebuild
+-- would error here and roll back the whole file.
+do $$ begin
+  if exists (select 1 from pg_proc where proname = 'rls_auto_enable' and pronamespace = 'public'::regnamespace) then
+    execute 'revoke execute on function public.rls_auto_enable() from anon, authenticated';
+  end if;
+end $$;
 
 -- Performance advisor (unindexed foreign keys): add covering indexes so FK
 -- lookups / cascading deletes don't seq-scan.

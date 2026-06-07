@@ -29,12 +29,16 @@ function mapDealer(x: any) {
 // freshly synced with a partial list (which would hide the rest for a full
 // ~2-week rotation). Collected dealers are still upserted — we just retry the
 // state next run instead of advancing its cursor.
-async function pullState(state: string, apiKey: string) {
+async function pullState(state: string, apiKey: string, deadline = 0) {
   const out = new Map<string, any>();
   let complete = true;
   for (const type of ["franchise", "independent"]) {
+    if (deadline && Date.now() > deadline) { complete = false; break; }
     // start + rows must stay within the tier's 1500 offset cap, so stop at 1450.
     for (let start = 0; start + 50 <= 1500; start += 50) {
+      // Respect the cron's shared budget so a single slow state can't page past
+      // maxDuration and get the whole function hard-killed mid-pull.
+      if (deadline && Date.now() > deadline) { complete = false; break; }
       const u = new URL(`${MC_HOST}/dealers/car`);
       u.searchParams.set("api_key", apiKey);
       u.searchParams.set("state", state);
@@ -85,7 +89,7 @@ export async function GET(req: Request) {
   const refreshed: { state: string; n: number; complete: boolean }[] = [];
   for (const st of batch) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → next run picks up the rest
-    const { dealers, complete } = await pullState(st, apiKey);
+    const { dealers, complete } = await pullState(st, apiKey, startedAt + BUDGET_MS);
     if (dealers.length) {
       // Upsert without `makes` → existing make tags are preserved on update.
       await db.from("dealer_catalog").upsert(dealers, { onConflict: "id" });

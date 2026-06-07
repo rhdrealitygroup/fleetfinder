@@ -205,7 +205,13 @@ export async function POST(req: Request) {
         // A 429 returns empty rather than throwing, so fall back to Auto.dev when
         // available — otherwise the UI shows a rate-limit as "no inventory" and
         // sends the agent chasing filters that are actually fine.
-        if (autoKey) {
+        // BUT NOT when the search is scoped to the org's dealers: Auto.dev can't
+        // filter by dealer_id, so it would return nationwide inventory the agent
+        // doesn't work with — and (rateLimited=false) cache it under the
+        // dealer-scoped key. For a dealer-scoped search, keep rateLimited=true
+        // (so nothing is cached) and just surface the rate-limit note.
+        const dealerScoped = Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0;
+        if (autoKey && !dealerScoped) {
           try {
             const r2 = await searchAutoDev();
             results = r2.results; total = r2.total; provider = "auto.dev"; rateLimited = r2.rateLimited;

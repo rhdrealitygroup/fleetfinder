@@ -212,7 +212,7 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
   // far fewer than `limit` distinct VINs. The .eq("vin") update fans out to every
   // dealer's copy, so one iteration per unique VIN is enough.
   const { data: rows } = await db.from("inventory")
-    .select("vin,decode_attempts")
+    .select("vin,dealer_id,decode_attempts")
     .eq("options_decoded", false)
     .lt("decode_attempts", MAX_DECODE_ATTEMPTS)
     .order("decode_attempts", { ascending: true })
@@ -238,7 +238,10 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
     } catch {
       // Hard failure → record the attempt so a permanently-failing VIN backs off
       // after MAX_DECODE_ATTEMPTS instead of being retried forever every run.
-      await db.from("inventory").update({ decode_attempts: (row.decode_attempts || 0) + 1 }).eq("vin", row.vin);
+      // Scope to THIS (dealer_id, vin) row, not .eq("vin") — fanning out would
+      // overwrite other dealers' copies and could reset a higher counter.
+      await db.from("inventory").update({ decode_attempts: (row.decode_attempts || 0) + 1 })
+        .eq("dealer_id", row.dealer_id).eq("vin", row.vin);
     }
   }
   return done;
