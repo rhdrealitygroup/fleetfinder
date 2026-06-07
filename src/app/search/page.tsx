@@ -62,6 +62,7 @@ function SearchPageInner() {
   const [total, setTotal] = useState(0);
   const [truncated, setTruncated] = useState(false);
   const [note, setNote] = useState("");
+  const [rateLimited, setRateLimited] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [provider, setProvider] = useState("");
@@ -264,12 +265,13 @@ function SearchPageInner() {
       setTruncated(!!d.truncated);
       setNote(typeof d.note === "string" ? d.note.trim() : "");
       setProvider(d.provider || "");
+      setRateLimited(!!d.rateLimited);
     } catch (e) {
       setError((e as Error).message);
       setResults([]);
       // Clear stale result metadata so a failed search doesn't show the previous
       // search's "N matches" count next to the error banner.
-      setTotal(0); setTruncated(false); setNote(""); setProvider("");
+      setTotal(0); setTruncated(false); setNote(""); setProvider(""); setRateLimited(false);
     } finally {
       setSearching(false);
     }
@@ -326,9 +328,10 @@ function SearchPageInner() {
     }
   }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, scopeDealers, myDealers, searchedAll]);
 
-  // When a search returns nothing, diagnose why.
+  // When a search returns nothing, diagnose why — but NOT when the emptiness is a
+  // rate-limit (diagnose would fire a second MarketCheck call and likely 429 again).
   useEffect(() => {
-    if (results !== null && !searching && sorted.length === 0 && !error && make) runDiagnose();
+    if (results !== null && !searching && sorted.length === 0 && !error && make && !rateLimited) runDiagnose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results, searching]);
 

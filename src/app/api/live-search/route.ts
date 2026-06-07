@@ -109,7 +109,9 @@ export async function POST(req: Request) {
       if (body.make) url.searchParams.set("make", body.make);
       if (mcModel) url.searchParams.set("model", mcModel);
       if (body.trim) url.searchParams.set("trim", body.trim);
-      if (body.year_min || body.year_max) url.searchParams.set("year_range", `${body.year_min || 2020}-${body.year_max || new Date().getFullYear() + 1}`);
+      // Open-ended floor (1900) when only an upper bound is given — defaulting the
+      // floor to 2020 produced an inverted range (e.g. "used up to 2019" → 2020-2019).
+      if (body.year_min || body.year_max) url.searchParams.set("year_range", `${body.year_min || 1900}-${body.year_max || new Date().getFullYear() + 1}`);
       if (body.price_min || body.price_max) url.searchParams.set("price_range", `${body.price_min || 0}-${body.price_max || 999999}`);
       if (body.miles_max) url.searchParams.set("miles_range", `0-${body.miles_max}`);
       if (body.powertrain_type) url.searchParams.set("powertrain_type", body.powertrain_type);
@@ -326,6 +328,11 @@ export async function POST(req: Request) {
   // When narrowed, results.length is the full narrowed count, so comparing it to
   // the pre-narrow num_found would falsely flag truncation — only on un-narrowed.
   const truncated = !narrowed && (total || 0) > results.length;
+  // MarketCheck's dealer_id OR-list is capped at 200, so an org with more selected
+  // dealers only searches the first 200 — say so instead of silently under-reporting.
+  if (provider === "marketcheck" && Array.isArray(body.dealer_ids) && body.dealer_ids.length > 200) {
+    note += ` (searching 200 of ${body.dealer_ids.length} selected dealers — narrow your dealer list for full coverage)`;
+  }
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider, truncated, note: note || undefined };
   // Never persist a rate-limited/partial response — it would pin an empty result.
   // Cache empty result sets only briefly: a genuine "nothing in stock" can flip
@@ -333,5 +340,7 @@ export async function POST(req: Request) {
   // shouldn't be served as the answer for a full hour.
   if (!rateLimited) cacheSet(ckey, payload, results.length === 0 ? 2 * 60_000 : HOUR);
 
-  return NextResponse.json({ ...payload, cached: false, query: summarize(body) });
+  // Surface rateLimited so the client can skip the auto-diagnose retry (which
+  // would fire a second MarketCheck call on an empty-because-rate-limited result).
+  return NextResponse.json({ ...payload, rateLimited: rateLimited || undefined, cached: false, query: summarize(body) });
 }

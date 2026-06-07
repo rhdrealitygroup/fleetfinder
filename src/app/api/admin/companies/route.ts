@@ -228,7 +228,9 @@ export async function DELETE(req: Request) {
     const { count } = await db.from("memberships")
       .select("*", { count: "exact", head: true }).eq("user_id", m.user_id as string);
     if ((count || 0) > 0) continue; // still belongs to another company → keep login
-    await db.from("profiles").delete().eq("id", m.user_id as string);
+    // Delete the auth user FIRST — profiles.id references auth.users(id) ON DELETE
+    // CASCADE (0001), so the profile row goes with it. (Deleting the profile first
+    // and then failing the auth delete would orphan a profile-less login.)
     const { error: delErr } = await db.auth.admin.deleteUser(m.user_id as string);
     if (!delErr) deletedUsers++;
   }

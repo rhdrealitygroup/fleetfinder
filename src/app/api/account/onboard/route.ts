@@ -37,9 +37,14 @@ export async function POST(req: Request) {
   // Mark first-run setup complete on the auth user's metadata. The middleware
   // reads this flag to stop funnelling the user back to /onboarding. (Supabase
   // merges these keys into existing user_metadata rather than replacing it.)
-  await db.auth.admin.updateUserById(user.id, {
+  const { error: metaErr } = await db.auth.admin.updateUserById(user.id, {
     user_metadata: { full_name: fullName, company_name: companyName, onboarded: true },
   });
+  // The middleware gates the whole app on this flag. If the write fails we MUST
+  // NOT report success — otherwise the client navigates to /search and the gate
+  // bounces it straight back to /onboarding on every page (a hard loop). Let the
+  // user retry (org creation above is idempotent).
+  if (metaErr) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }

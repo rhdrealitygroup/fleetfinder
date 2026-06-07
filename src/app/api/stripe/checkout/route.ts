@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       email: user.email || undefined,
       name: org.name,
       metadata: { org_id: org.id },
-    });
+    }, { idempotencyKey: `customer-${org.id}` }); // collapse concurrent first-checkouts into one customer
     customerId = customer.id;
     await createServiceRoleClient().from("organizations").update({ stripe_customer_id: customerId }).eq("id", org.id);
   }

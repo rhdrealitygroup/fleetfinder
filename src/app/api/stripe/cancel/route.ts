@@ -42,8 +42,14 @@ export async function POST(req: Request) {
     const updated: any = await stripe.subscriptions.update(org.stripe_subscription_id as string, {
       cancel_at_period_end: !resume,
     });
-    // Mirror to the DB immediately (the webhook will also confirm this).
-    await db.from("organizations").update({ cancel_at_period_end: !resume }).eq("id", membership.org_id);
+    // Mirror to the DB immediately (the webhook will also confirm this). Bump
+    // last_sub_event_at to now so the webhook's out-of-order guard rejects any
+    // subscription event that predates this user action — otherwise a delayed
+    // earlier 'updated' (cancel_at_period_end=false) could land later and
+    // silently un-cancel the sub.
+    await db.from("organizations")
+      .update({ cancel_at_period_end: !resume, last_sub_event_at: new Date().toISOString() })
+      .eq("id", membership.org_id);
 
     const endTs = updated.trial_end ?? updated.items?.data?.[0]?.current_period_end ?? updated.current_period_end ?? null;
     return NextResponse.json({

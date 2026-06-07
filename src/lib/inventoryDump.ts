@@ -177,7 +177,11 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // existing inventory and let the next clean dump reconcile it. (A dealer that
     // genuinely empties keeps stale rows until it relists — the safe trade-off vs.
     // wiping a still-stocked dealer on a transient blip.)
-    const sweepSafe = !truncated && rows.length > 0 && numFound > 0 && rows.length >= numFound * 0.8;
+    // Use the DEDUPED unique-VIN count, not raw rows.length — MarketCheck offset
+    // paging can return the same VIN on multiple pages when inventory shifts
+    // mid-dump, which would inflate rows.length and let an incomplete pull pass
+    // the 80% coverage gate and wrongly sweep still-in-stock cars.
+    const sweepSafe = !truncated && deduped.length > 0 && numFound > 0 && deduped.length >= numFound * 0.8;
     if (complete) {
       if (sweepSafe) {
         await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
@@ -189,7 +193,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       // refreshes. The sweepSafe guard above still prevents a transient soft-empty
       // from wiping inventory; here we just stop re-selecting it every single run.
       await db.from("tracked_dealers")
-        .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
+        .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : deduped.length })
         .eq("dealer_id", dealerId);
     } else if (deadlineCut && rows.length > 0) {
       // We ran out of wall-clock mid-pull (not a fetch failure). Don't sweep — the
