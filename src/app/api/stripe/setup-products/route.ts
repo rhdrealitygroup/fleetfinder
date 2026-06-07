@@ -12,8 +12,21 @@ export async function POST() {
   if (!stripeConfigured()) {
     return NextResponse.json({ error: "STRIPE_SECRET_KEY not set" }, { status: 500 });
   }
-  const { isSuperAdmin } = await getSessionContext();
+  const { user, isSuperAdmin } = await getSessionContext();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  // Idempotency guard: if both price IDs are already configured, don't mint a
+  // fresh duplicate pair on every call (orphaned prices accumulate in Stripe).
+  if (process.env.STRIPE_PRICE_BASE && process.env.STRIPE_PRICE_SEAT) {
+    return NextResponse.json({
+      ok: true,
+      alreadyConfigured: true,
+      STRIPE_PRICE_BASE: process.env.STRIPE_PRICE_BASE,
+      STRIPE_PRICE_SEAT: process.env.STRIPE_PRICE_SEAT,
+      note: "Prices already configured in env. Nothing created.",
+    });
+  }
 
   const stripe = getStripe();
 

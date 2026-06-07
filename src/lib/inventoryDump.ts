@@ -15,8 +15,11 @@ const MC_MAX_START = 1400; // keep start + rows <= 1500 (tier cap)
 // ── Keep tracked_dealers in sync with the deduped union of org selections ────
 export async function syncTrackedDealers() {
   const db = createServiceRoleClient();
-  const { data: rows } = await db.from("dealers").select("dealer_key,name,city,state,selected");
-  const selected = (rows || []).filter((d: any) => d.dealer_key && d.selected !== false);
+  const { data: rows, error } = await db.from("dealers").select("dealer_key,name,city,state,selected");
+  // Abort on a failed/transient read — a null `rows` here would otherwise make
+  // the GC below treat EVERY dealer as unselected and wipe all inventory.
+  if (error || rows == null) return 0;
+  const selected = rows.filter((d: any) => d.dealer_key && d.selected !== false);
   const seen = new Map<string, any>();
   for (const d of selected) if (!seen.has(d.dealer_key)) seen.set(d.dealer_key, d);
 
@@ -43,57 +46,73 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
   if (!apiKey || !dealerId) return 0;
   const db = createServiceRoleClient();
 
-  // Stamp every in-stock VIN this run with `runStart`; sold cars keep their older
-  // updated_at and get swept below. Using a timestamp (not a NOT-IN VIN list)
-  // avoids URL-length limits and malformed-VIN parsing issues.
   const runStart = new Date().toISOString();
-  const rows: any[] = [];
-  let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
-  for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
-    const u = new URL(`${MC_HOST}/search/car/active`);
-    u.searchParams.set("api_key", apiKey);
-    u.searchParams.set("dealer_id", dealerId);
-    u.searchParams.set("rows", String(MC_PAGE));
-    u.searchParams.set("start", String(start));
-    const r = await fetch(u.toString());
-    if (!r.ok) { complete = false; break; }
-    const d = await r.json();
-    const list: any[] = d.listings || [];
-    for (const l of list) {
-      const v = mcListing(l);
-      if (!v.vin || v.vin.length !== 17) continue;
-      rows.push({
-        vin: v.vin, dealer_id: dealerId,
-        make: v.make || null, model: v.model || null, trim: v.trim || null, year: v.year || null,
-        price: v.price || null, msrp: v.msrp || null, miles: v.mileage || null,
-        exterior_color: v.exterior_color || null,
-        car_type: l.inventory_type || (v.mileage > 100 ? "used" : "new"),
-        payload: v, updated_at: runStart,
-      });
+
+  // Per-dealer lock: register the dealer, then claim it. If another dump is
+  // already in progress (lock set within the last 3 min), skip — two concurrent
+  // dumps of the same dealer could otherwise clobber updated_at and sweep
+  // still-in-stock cars.
+  await db.from("tracked_dealers").upsert(
+    { dealer_id: dealerId, name: meta?.name || null, city: meta?.city || null, state: meta?.state || null },
+    { onConflict: "dealer_id", ignoreDuplicates: true },
+  );
+  const lockCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+  const claim = await db.from("tracked_dealers")
+    .update({ dump_started_at: runStart })
+    .eq("dealer_id", dealerId)
+    .or(`dump_started_at.is.null,dump_started_at.lt.${lockCutoff}`)
+    .select("dealer_id");
+  if (!claim.data || claim.data.length === 0) return 0; // another dump holds the lock
+
+  try {
+    // Stamp every in-stock VIN this run with `runStart`; sold cars keep their
+    // older updated_at and get swept below (timestamp mark-and-sweep — no
+    // NOT-IN VIN list, so no URL-length/malformed-VIN issues).
+    const rows: any[] = [];
+    let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
+    for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
+      const u = new URL(`${MC_HOST}/search/car/active`);
+      u.searchParams.set("api_key", apiKey);
+      u.searchParams.set("dealer_id", dealerId);
+      u.searchParams.set("rows", String(MC_PAGE));
+      u.searchParams.set("start", String(start));
+      const r = await fetch(u.toString());
+      if (!r.ok) { complete = false; break; }
+      const d = await r.json();
+      const list: any[] = d.listings || [];
+      for (const l of list) {
+        const v = mcListing(l);
+        if (!v.vin || v.vin.length !== 17) continue;
+        const it = String(l.inventory_type || "").toLowerCase();
+        const carType = it.includes("used") || it.includes("certified") || it.includes("cpo") ? "used"
+          : it.includes("new") ? "new" : (v.mileage > 200 ? "used" : "new");
+        rows.push({
+          vin: v.vin, dealer_id: dealerId,
+          make: v.make || null, model: v.model || null, trim: v.trim || null, year: v.year || null,
+          price: v.price || null, msrp: v.msrp || null, miles: v.mileage || null,
+          exterior_color: v.exterior_color || null,
+          car_type: carType,
+          payload: v, updated_at: runStart,
+        });
+      }
+      if (list.length < MC_PAGE) break;
     }
-    if (list.length < MC_PAGE) break;
-  }
 
-  // Upsert listing fields only — omit options/options_decoded so already-decoded
-  // VINs keep their cached options and new VINs default to undecoded.
-  if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "vin" });
+    // Upsert listing fields only — omit options/options_decoded so already-decoded
+    // VINs keep their cached options and new VINs default to undecoded.
+    if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "vin" });
 
-  // Sweep sold cars — ONLY when the pull completed cleanly. A transient fetch
-  // failure must never be read as "0 cars in stock" and wipe the dealer.
-  if (complete) {
-    await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
-    await db.from("tracked_dealers").upsert(
-      { dealer_id: dealerId, name: meta?.name || null, city: meta?.city || null, state: meta?.state || null, last_dumped_at: runStart, listing_count: rows.length },
-      { onConflict: "dealer_id" },
-    );
-  } else {
-    // Register the dealer but don't advance last_dumped_at, so it's retried soon.
-    await db.from("tracked_dealers").upsert(
-      { dealer_id: dealerId, name: meta?.name || null, city: meta?.city || null, state: meta?.state || null },
-      { onConflict: "dealer_id", ignoreDuplicates: true },
-    );
+    // Sweep sold cars ONLY on a clean pull (a transient failure must not read as
+    // "0 in stock" and wipe the dealer).
+    if (complete) {
+      await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
+      await db.from("tracked_dealers").update({ last_dumped_at: runStart, listing_count: rows.length }).eq("dealer_id", dealerId);
+    }
+    return rows.length;
+  } finally {
+    // Always release the lock.
+    await db.from("tracked_dealers").update({ dump_started_at: null }).eq("dealer_id", dealerId);
   }
-  return rows.length;
 }
 
 // ── Decode options for VINs not yet decoded (the heavy step; batched) ─────────

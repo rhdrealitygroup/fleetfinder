@@ -79,7 +79,18 @@ export type PlanGate = { ok: boolean; status: number; error?: string; ctx: Sessi
 export async function requireActivePlan(): Promise<PlanGate> {
   const ctx = await getSessionContext();
   if (!ctx.user) return { ok: false, status: 401, error: "Unauthorized", ctx };
-  if (ctx.isSuperAdmin || !ctx.membership) return { ok: true, status: 200, ctx };
+  if (ctx.isSuperAdmin) return { ok: true, status: 200, ctx };
+
+  // Determine the org. A signed-in user with NO membership (signed up but never
+  // onboarded) must NOT get unlimited free paid access — provision their trial
+  // org so a real trial clock starts and is then enforced below.
+  let orgId = ctx.membership?.org_id;
+  if (!orgId) {
+    const { ensureOrgForUser } = await import("@/lib/account");
+    const ensured = await ensureOrgForUser();
+    if (!ensured) return { ok: true, status: 200, ctx }; // couldn't provision → don't hard-block
+    orgId = ensured.org_id;
+  }
   try {
     // Read with the service-role client (identity already verified above) so an
     // RLS edge case can't make a definitively-canceled org "fail open" into free
@@ -89,7 +100,7 @@ export async function requireActivePlan(): Promise<PlanGate> {
     const { data: org } = await db
       .from("organizations")
       .select("*")
-      .eq("id", ctx.membership.org_id)
+      .eq("id", orgId)
       .single();
     if (!org) return { ok: true, status: 200, ctx }; // truly unreadable → don't hard-block
     if (org.comped) return { ok: true, status: 200, ctx }; // complimentary free access (set by a super-admin)

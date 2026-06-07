@@ -24,7 +24,7 @@ export async function GET(req: Request) {
 
   const due = await stalestDealers(dealerBatch);
   const refreshed: { dealer: string; n: number }[] = [];
-  for (const d of due as any[]) {
+  for (const d of due as Array<{ dealer_id: string; name?: string; city?: string; state?: string }>) {
     try {
       const n = await dumpDealerListings(d.dealer_id, { name: d.name, city: d.city, state: d.state });
       refreshed.push({ dealer: d.dealer_id, n });

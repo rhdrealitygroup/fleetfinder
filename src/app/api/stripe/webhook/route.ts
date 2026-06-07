@@ -26,12 +26,12 @@ export async function POST(req: Request) {
 
   const db = createServiceRoleClient();
 
-  async function syncSubscription(sub: Stripe.Subscription, isDeleted = false) {
+  async function syncSubscription(sub: Stripe.Subscription, isDeleted = false, eventCreated = 0) {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const orgId = (sub.metadata?.org_id as string) || null;
 
     // Locate the org row first (by metadata, else by Stripe customer id).
-    const sel = "id, plan_status, stripe_subscription_id";
+    const sel = "id, plan_status, stripe_subscription_id, last_sub_event_at";
     const { data: org } = orgId
       ? await db.from("organizations").select(sel).eq("id", orgId).maybeSingle()
       : typeof sub.customer === "string"
@@ -39,14 +39,11 @@ export async function POST(req: Request) {
         : { data: null as any };
     if (!org) return;
 
-    // Out-of-order guard: Stripe doesn't guarantee delivery order. Skip only a
-    // STALE, non-active event that would resurrect a sub we've recorded as
-    // canceled. A live-active status (a real un-cancel, or a re-fetched completed
-    // checkout) is always allowed through, so a paying customer is never stranded
-    // as canceled. A genuine re-subscribe also has a new id (so it never matches).
-    const liveActive = sub.status === "active" || sub.status === "trialing";
-    if (!isDeleted && !liveActive
-        && org.plan_status === "canceled" && org.stripe_subscription_id === sub.id) return;
+    // Out-of-order guard by EVENT TIME: Stripe doesn't guarantee delivery order.
+    // Reject any event older than the last one we applied to this org — this
+    // stops a stale `active`/`updated` event from un-canceling a canceled sub
+    // (which a status-only guard couldn't catch).
+    if (eventCreated && org.last_sub_event_at && eventCreated * 1000 < Date.parse(org.last_sub_event_at)) return;
 
     const status = isDeleted ? "canceled"
       : sub.status === "trialing" ? "trial"
@@ -76,6 +73,7 @@ export async function POST(req: Request) {
     if (typeof sub.trial_end === "number") patch.trial_ends_at = new Date(sub.trial_end * 1000).toISOString();
     const periodEnd = (sub.items?.data?.[0] as any)?.current_period_end ?? (sub as any).current_period_end;
     if (typeof periodEnd === "number") patch.current_period_end = new Date(periodEnd * 1000).toISOString();
+    if (eventCreated) patch.last_sub_event_at = new Date(eventCreated * 1000).toISOString();
 
     await db.from("organizations").update(patch).eq("id", org.id);
   }
@@ -83,16 +81,16 @@ export async function POST(req: Request) {
   switch (event.type) {
     case "customer.subscription.created":
     case "customer.subscription.updated":
-      await syncSubscription(event.data.object as Stripe.Subscription, false);
+      await syncSubscription(event.data.object as Stripe.Subscription, false, event.created);
       break;
     case "customer.subscription.deleted":
-      await syncSubscription(event.data.object as Stripe.Subscription, true);
+      await syncSubscription(event.data.object as Stripe.Subscription, true, event.created);
       break;
     case "checkout.session.completed": {
       const s = event.data.object as Stripe.Checkout.Session;
       if (s.subscription && typeof s.subscription === "string") {
         const sub = await stripe.subscriptions.retrieve(s.subscription);
-        await syncSubscription(sub, false); // freshly retrieved → live status
+        await syncSubscription(sub, false, event.created); // freshly retrieved → live status
       }
       break;
     }

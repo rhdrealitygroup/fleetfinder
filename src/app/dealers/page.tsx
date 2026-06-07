@@ -58,12 +58,17 @@ export default function DealersPage() {
   }
 
   async function actOnRequest(id: string, action: "approve" | "dismiss") {
+    const prevRequests = requests;
     setRequests((prev) => prev.filter((r) => r.id !== id));
     try {
-      await fetch("/api/dealers/removal-requests", {
+      const r = await fetch("/api/dealers/removal-requests", {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }),
       });
-    } catch { /* ignore */ }
+      if (!r.ok) { setRequests(prevRequests); return; } // failed → restore the row so it can be retried
+      // Approve removes the dealer for the whole org — refresh selections so it
+      // disappears from everyone's list without a manual reload.
+      if (action === "approve") loadRequests();
+    } catch { setRequests(prevRequests); }
   }
 
   const load = useCallback(async (pageNum: number, replace: boolean) => {
@@ -174,12 +179,16 @@ export default function DealersPage() {
         <div className="space-y-1.5">
           {shown.map((d) => {
             const on = selectedIds.has(d.id);
+            // A pending removal request only matters while the dealer is still
+            // selected. Once it's actually removed (on === false), reset to the
+            // normal "add" state instead of leaving the clock stuck + disabled.
+            const pendingRemoval = on && requestedKeys.has(d.id);
             return (
               <div key={d.id} className={`flex items-center gap-3 p-3 rounded-xl border transition ${on ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}>
-                <button onClick={() => requestedKeys.has(d.id) ? undefined : toggle(d)} disabled={requestedKeys.has(d.id)}
-                  title={on ? (isManager ? "Remove" : requestedKeys.has(d.id) ? "Removal requested" : "Request removal") : "Add to my dealers"}
+                <button onClick={() => pendingRemoval ? undefined : toggle(d)} disabled={pendingRemoval}
+                  title={on ? (isManager ? "Remove" : pendingRemoval ? "Removal requested" : "Request removal") : "Add to my dealers"}
                   className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center transition ${on ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}>
-                  {requestedKeys.has(d.id) ? <Clock className="w-3.5 h-3.5" /> : on ? <Check className="w-4 h-4" /> : null}
+                  {pendingRemoval ? <Clock className="w-3.5 h-3.5" /> : on ? <Check className="w-4 h-4" /> : null}
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

@@ -44,7 +44,17 @@ export async function POST(req: Request) {
     fUrl.searchParams.set("rows", "0");
     fUrl.searchParams.set("facets", "exterior_color|0|60,trim|0|40,high_value_features|0|80");
     const fRes = await fetch(fUrl.toString());
-    const fData = fRes.ok ? await fRes.json() : {};
+    // Distinguish "the data source is unavailable" from "nothing is in stock" —
+    // a 429/5xx must NOT be reported to the agent as "no matches" (it'd send
+    // them chasing constraints that are actually fine).
+    if (!fRes.ok) {
+      const detail = await fRes.text().catch(() => "");
+      const msg = fRes.status === 429
+        ? "The inventory service is rate-limited right now — try again in a moment."
+        : `The inventory service is temporarily unavailable (${fRes.status}).`;
+      return NextResponse.json({ error: msg, unavailable: true, status: fRes.status, detail: detail.slice(0, 150) }, { status: 503 });
+    }
+    const fData = await fRes.json();
     const poolTotal = num(fData.num_found);
     const colorFacet: any[] = fData.facets?.exterior_color || [];
     const trimFacet: any[] = fData.facets?.trim || [];

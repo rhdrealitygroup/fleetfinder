@@ -277,7 +277,10 @@ export async function POST(req: Request) {
   const narrowed = !!variant || maxMonthly > 0 || !!optionQuery || optionNames.length > 0;
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider };
   // Never persist a rate-limited/partial response — it would pin an empty result.
-  if (!rateLimited) cacheSet(ckey, payload, HOUR);
+  // Cache empty result sets only briefly: a genuine "nothing in stock" can flip
+  // to results as soon as a dealer lists one, and a near-miss transient empty
+  // shouldn't be served as the answer for a full hour.
+  if (!rateLimited) cacheSet(ckey, payload, results.length === 0 ? 2 * 60_000 : HOUR);
 
   return NextResponse.json({
     ...payload,
