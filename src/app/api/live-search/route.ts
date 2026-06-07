@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
   MAX_RESULTS, PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
-  resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, type UnifiedVehicle,
+  resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, estMonthlyCard, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
@@ -239,7 +239,14 @@ export async function POST(req: Request) {
   // at or under the agent's target (e.g. "show me anything under $700/mo").
   const maxMonthly = Number(body.max_monthly) || 0;
   if (maxMonthly > 0) {
-    results = results.filter((r) => r.est_monthly > 0 && r.est_monthly <= maxMonthly);
+    // est_monthly is only populated for new cars with a real MSRP, so filtering
+    // on it alone would drop EVERY used car (and any new car without MSRP). Fall
+    // back to a price-based estimate for the cutoff so a "Used + under $X/mo"
+    // search still returns its in-budget inventory.
+    results = results.filter((r) => {
+      const est = r.est_monthly > 0 ? r.est_monthly : estMonthlyCard(r.price, r.msrp || r.price);
+      return est > 0 && est <= maxMonthly;
+    });
   }
 
   // Package / option filter — the listing has no package data, so we decode each
@@ -291,6 +298,9 @@ export async function POST(req: Request) {
     cached: false,
     query: summarize(body),
     note: note || undefined,
-    truncated: (total || 0) > results.length,
+    // When the set was narrowed client-side, results.length is the full narrowed
+    // count — comparing it to the pre-narrow num_found would falsely flag "showing
+    // first N". Only report truncation on un-narrowed searches.
+    truncated: !narrowed && (total || 0) > results.length,
   });
 }

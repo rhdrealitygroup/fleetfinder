@@ -22,6 +22,10 @@ export async function POST(req: Request) {
   const { data: org } = await supabase.from("organizations").select("*").eq("id", membership.org_id).single();
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
 
+  // Comped orgs get free access (auth.ts grants it) — starting a paid checkout
+  // would charge them for something they were given for free. Block it.
+  if (org.comped) return NextResponse.json({ error: "This account has complimentary access — no subscription needed.", comped: true }, { status: 409 });
+
   const stripe = getStripe();
   const origin = new URL(req.url).origin;
 

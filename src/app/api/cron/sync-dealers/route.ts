@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { MC_HOST, mcKey } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, fetchWithTimeout } from "@/lib/marketcheck";
 
 export const maxDuration = 60;
 
@@ -41,7 +41,11 @@ async function pullState(state: string, apiKey: string) {
       u.searchParams.set("dealer_type", type);
       u.searchParams.set("rows", "50");
       u.searchParams.set("start", String(start));
-      const r = await fetch(u.toString());
+      // Timeout → treat as a partial pull (don't advance the cursor) instead of
+      // hanging the whole 60s function on one stuck upstream request.
+      let r: Response;
+      try { r = await fetchWithTimeout(u.toString()); }
+      catch { complete = false; break; }
       if (!r.ok) { complete = false; break; }
       const d = await r.json();
       const ds: any[] = d.dealers || [];

@@ -81,6 +81,8 @@ export default async function BillingPage() {
                 </div>
               ) : !isOwner ? (
                 <p className="text-sm text-muted-foreground">Only the company owner can manage billing.</p>
+              ) : comped ? (
+                <p className="text-sm text-muted-foreground">Complimentary access — there&apos;s nothing to pay. Reach out if anything changes.</p>
               ) : (
                 <BillingActions hasSubscription={hasSub} baseMonthly={baseMonthly} />
               )}

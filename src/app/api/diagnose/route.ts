@@ -23,7 +23,10 @@ export async function POST(req: Request) {
   const mcModel = model ? await resolveModel(make, model) : "";
   const optionNames: string[] = (Array.isArray(b.option_names) ? b.option_names : []).map((s: any) => String(s).toLowerCase()).filter(Boolean);
   const wantColors: string[] = String(b.exterior_color || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const wantInterior: string[] = String(b.interior_color || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const wantTrim = String(b.trim || "").trim();
+  const wantVariant = String(b.variant || "").trim();
+  const maxMonthly = Number(b.max_monthly) || 0;
 
   // ── Base pool: hard constraints only (no trim/color/options) ───────────────
   function withHard(url: URL) {
@@ -42,7 +45,7 @@ export async function POST(req: Request) {
     const fUrl = new URL(`${MC_HOST}/search/car/active`);
     withHard(fUrl);
     fUrl.searchParams.set("rows", "0");
-    fUrl.searchParams.set("facets", "exterior_color|0|60,trim|0|40,high_value_features|0|80");
+    fUrl.searchParams.set("facets", "exterior_color|0|60,interior_color|0|60,trim|0|40,high_value_features|0|80");
     const fRes = await fetch(fUrl.toString());
     // Distinguish "the data source is unavailable" from "nothing is in stock" —
     // a 429/5xx must NOT be reported to the agent as "no matches" (it'd send
@@ -57,6 +60,7 @@ export async function POST(req: Request) {
     const fData = await fRes.json();
     const poolTotal = num(fData.num_found);
     const colorFacet: any[] = fData.facets?.exterior_color || [];
+    const interiorFacet: any[] = fData.facets?.interior_color || [];
     const trimFacet: any[] = fData.facets?.trim || [];
     const featFacet: string[] = (fData.facets?.high_value_features || []).map((x: any) => String(x.item || "").toLowerCase());
 
@@ -81,6 +85,17 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── Interior color ──
+    if (wantInterior.length) {
+      const have = interiorFacet.map((c) => String(c.item || "").toLowerCase());
+      const ok = wantInterior.some((w) => have.some((h) => phraseMatchEither(h, w)));
+      if (!ok) {
+        const top = interiorFacet.slice(0, 4).map((c) => c.item).filter(Boolean);
+        reasons.push(`That interior color isn't in stock. Available: ${top.join(", ") || "—"}.`);
+        fixes.push({ label: "Any interior color", action: "drop_interior_color" });
+      }
+    }
+
     // ── Trim ──
     let trimOk = true;
     if (wantTrim) {
@@ -97,6 +112,18 @@ export async function POST(req: Request) {
     }));
     const missing = optionStatus.filter((o) => !o.available);
     if (missing.length) reasons.push(`${optionStatus.length - missing.length} of ${optionStatus.length} options in stock; not found: ${missing.map((m) => m.name).join(", ")}.`);
+
+    // ── Payment cap & variant: these narrow the results CLIENT-SIDE in
+    // live-search, so a perfectly healthy pool can still return zero. Surface
+    // them explicitly so the agent isn't sent chasing color/trim that are fine.
+    if (maxMonthly > 0) {
+      reasons.push(`${poolTotal} match your specs, but a $${maxMonthly}/mo cap may exclude them — raising or clearing it should help.`);
+      fixes.push({ label: "Clear monthly cap", action: "drop_max_monthly" });
+    }
+    if (wantVariant) {
+      reasons.push(`The "${wantVariant}" configuration may not be in stock even though the model is.`);
+      fixes.push({ label: `Any configuration`, action: "drop_variant" });
+    }
 
     // ── Closest match: query the "wants" minus options, decode top candidates ──
     let closest: any = null;

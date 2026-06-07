@@ -22,16 +22,27 @@ export async function GET(req: Request) {
   const dealerBatch = Math.max(1, Number(url.searchParams.get("dealers")) || 6);
   const decodeBatch = Math.max(0, Number(url.searchParams.get("decode")) || 60);
 
+  // Wall-clock budget so the run always finishes within maxDuration (60s). A
+  // hard platform kill mid-dump would skip the lock-release finally and leave a
+  // dealer locked for ~3 min; stopping early avoids that and keeps each run clean.
+  const startedAt = Date.now();
+  const BUDGET_MS = 45_000;
+
   const due = await stalestDealers(dealerBatch);
   const refreshed: { dealer: string; n: number }[] = [];
   for (const d of due as Array<{ dealer_id: string; name?: string; city?: string; state?: string }>) {
+    if (Date.now() - startedAt > BUDGET_MS) break; // out of time → rest rolls to next run
     try {
       const n = await dumpDealerListings(d.dealer_id, { name: d.name, city: d.city, state: d.state });
       refreshed.push({ dealer: d.dealer_id, n });
     } catch { /* skip, retried next run */ }
   }
 
-  const decoded = decodeBatch > 0 ? await decodeUndecoded(decodeBatch) : 0;
+  // Only decode if there's budget left, and trim the batch to the remaining time.
+  const remaining = BUDGET_MS - (Date.now() - startedAt);
+  const decoded = decodeBatch > 0 && remaining > 8_000
+    ? await decodeUndecoded(Math.min(decodeBatch, Math.floor(remaining / 600)))
+    : 0;
 
   return NextResponse.json({ ok: true, tracked, refreshed: refreshed.length, listings: refreshed, decoded });
 }

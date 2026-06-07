@@ -55,7 +55,10 @@ export async function PATCH(req: Request) {
             catch { await stripe.coupons.create({ id: COMP_COUPON, percent_off: 100, duration: "forever", name: "LotCompass complimentary" }); }
             await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: [...others, { coupon: COMP_COUPON }] });
           } else {
-            await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: others });
+            // In this Stripe API version an EMPTY ARRAY leaves discounts unchanged;
+            // only "" actually clears them. Use "" when no real promo remains, else
+            // re-set the preserved promos.
+            await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: others.length ? others : "" });
           }
         }
         // Stripe reconciled (or status not billable → nothing to charge): safe to persist.

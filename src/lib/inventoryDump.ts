@@ -33,6 +33,12 @@ async function readAll(db: any, table: string, columns: string): Promise<any[] |
 // ── Keep tracked_dealers in sync with the deduped union of org selections ────
 export async function syncTrackedDealers() {
   const db = createServiceRoleClient();
+  // Snapshot tracked_dealers FIRST (before reading the dealers union). Any dealer
+  // added by the on-select path AFTER this snapshot won't appear here, so it can
+  // never become a GC candidate this run — closing a race that could delete a
+  // just-added dealer's freshly-dumped inventory.
+  const trackedBefore = await readAll(db, "tracked_dealers", "dealer_id");
+
   // Page through ALL dealer rows. A truncated read would make the GC treat
   // still-selected dealers as stale and wipe their inventory, so abort on error.
   const rows = await readAll(db, "dealers", "dealer_key,name,city,state,selected");
@@ -48,12 +54,11 @@ export async function syncTrackedDealers() {
       { onConflict: "dealer_id", ignoreDuplicates: true }, // don't reset last_dumped_at
     );
   }
-  // Garbage-collect dealers no org selects anymore (and their inventory). Page
-  // the tracked read too, and SKIP the GC entirely on a read error/partial set
-  // (returning would risk deleting from an incomplete view).
-  const tracked = await readAll(db, "tracked_dealers", "dealer_id");
-  if (tracked == null) return ids.length;
-  const stale = tracked.map((t: any) => t.dealer_id).filter((id: string) => !seen.has(id));
+  // Garbage-collect dealers no org selects anymore (and their inventory), using
+  // the EARLIER snapshot. SKIP the GC entirely if that read failed/was partial
+  // (deleting from an incomplete view could wipe still-selected dealers).
+  if (trackedBefore == null) return ids.length;
+  const stale = trackedBefore.map((t: any) => t.dealer_id).filter((id: string) => !seen.has(id));
   if (stale.length) {
     await db.from("inventory").delete().in("dealer_id", stale);
     await db.from("tracked_dealers").delete().in("dealer_id", stale);
@@ -137,15 +142,26 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     const FETCH_CAP = MC_MAX_START + MC_PAGE; // 1500
     const truncated = numFound > FETCH_CAP;
 
-    // Sweep sold cars ONLY on a clean, complete (non-truncated) pull (a transient
-    // failure must not read as "0 in stock" and wipe the dealer).
+    // POSITIVE-CONFIRMATION before the destructive sweep. MarketCheck can return
+    // a soft 200 (empty body, num_found 0, or far fewer listings than claimed) on
+    // transient backend/dealer_id hiccups — indistinguishable from a real "all
+    // sold". We only sweep when we actually retrieved listings AND collected ~all
+    // of the claimed count (allowing for invalid-VIN skips). Otherwise we keep the
+    // existing inventory and let the next clean dump reconcile it. (A dealer that
+    // genuinely empties keeps stale rows until it relists — the safe trade-off vs.
+    // wiping a still-stocked dealer on a transient blip.)
+    const sweepSafe = !truncated && rows.length > 0 && numFound > 0 && rows.length >= numFound * 0.8;
     if (complete) {
-      if (!truncated) {
+      if (sweepSafe) {
         await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
       }
-      await db.from("tracked_dealers")
-        .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
-        .eq("dealer_id", dealerId);
+      // Only advance the freshness clock when we actually saw stock; an empty/soft
+      // pull should be retried on the next rotation, not marked fresh.
+      if (rows.length > 0) {
+        await db.from("tracked_dealers")
+          .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
+          .eq("dealer_id", dealerId);
+      }
     }
     return rows.length;
   } finally {

@@ -284,7 +284,7 @@ export type UnifiedVehicle = {
   features: string[];
 };
 
-function estMonthlyCard(price: number, msrp: number) {
+export function estMonthlyCard(price: number, msrp: number) {
   const residual = (msrp * 58) / 100;
   return Math.round((price - residual) / 36 + (price + residual) * 0.0015);
 }

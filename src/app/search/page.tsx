@@ -289,11 +289,13 @@ function SearchPageInner() {
       const r = await fetch("/api/diagnose", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          car_type: carType, make, model, trim,
+          car_type: carType, make, model, trim, variant: variant || undefined,
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
+          interior_color: (intColors.find((c) => c.name === intColor)?.variants || []).join(",") || undefined,
           option_names: features.size ? [...features] : undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
+          max_monthly: Number(maxMonthly) || undefined,
           zip: zip.trim() || undefined, radius,
           dealer_ids: useDealers ? myDealers.map((d) => d.id) : undefined,
         }),
@@ -304,7 +306,7 @@ function SearchPageInner() {
     } finally {
       setDiagnosing(false);
     }
-  }, [make, model, trim, color, colors, features, yearIdx, priceIdx, zip, radius, carType, scopeDealers, myDealers, searchedAll]);
+  }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, scopeDealers, myDealers, searchedAll]);
 
   // When a search returns nothing, diagnose why.
   useEffect(() => {
@@ -320,6 +322,9 @@ function SearchPageInner() {
       setFeatures((prev) => { const n = new Set(prev); n.delete(v); return n; });
       runSearch({ dropOption: v });
     }
+    else if (fix.action === "drop_max_monthly") { setMaxMonthly(""); setTimeout(() => runSearch(), 0); }
+    else if (fix.action === "drop_variant") { setVariant(""); setTimeout(() => runSearch(), 0); }
+    else if (fix.action === "drop_interior_color") { setIntColor(""); setTimeout(() => runSearch(), 0); }
   }
 
   function exportCsv() {
