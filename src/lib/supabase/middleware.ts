@@ -26,13 +26,9 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const path = request.nextUrl.pathname;
-
-  // Static design previews are public + ungated (shareable mockups). Skip all
-  // auth/onboarding logic so they open without a session.
-  if (path.startsWith("/previews")) return response;
-
   const { data: { user } } = await supabase.auth.getUser();
+
+  const path = request.nextUrl.pathname;
 
   // The whole app requires sign-in. Public = marketing home + auth routes +
   // the Stripe webhook (server-to-server, no session). Everything else is gated.
