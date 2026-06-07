@@ -27,6 +27,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [removed, setRemoved] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteErr, setDeleteErr] = useState<Record<string, string>>({});
+  const [confirmId, setConfirmId] = useState<string | null>(null); // org armed for delete
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
@@ -57,10 +58,11 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
     } finally { setSavingPrice(null); }
   }
 
-  // Permanently delete a company (and orphaned member logins). Double-confirm
-  // because it's irreversible.
-  async function deleteCompany(id: string, name: string, seats: number) {
-    if (!window.confirm(`Permanently delete "${name}"?\n\nThis removes the company, its ${seats} member account${seats === 1 ? "" : "s"}, saved cars, customers, and dealer settings. This cannot be undone.`)) return;
+  // Permanently delete a company (and orphaned member logins). Uses an in-UI
+  // two-step confirm (arm → confirm) rather than window.confirm(), which some
+  // browsers silently suppress (returning false) so the click did nothing.
+  async function deleteCompany(id: string) {
+    setConfirmId(null);
     setDeleting(id);
     setDeleteErr((m) => ({ ...m, [id]: "" }));
     try {
@@ -161,14 +163,30 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                     </div>
                     <div className="mt-3 pt-3 border-t border-destructive/30 flex items-center justify-between gap-3">
                       <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
-                        <Trash2 className="w-3.5 h-3.5 text-destructive" /> Permanently delete this company &amp; its member accounts
+                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        {confirmId === o.id
+                          ? `Delete "${o.name}" and its ${people.length} account${people.length === 1 ? "" : "s"}? This can't be undone.`
+                          : "Permanently delete this company & its member accounts"}
                       </span>
                       <div className="flex items-center gap-2">
                         {deleteErr[o.id] && <span className="text-[11px] text-destructive">{deleteErr[o.id]}</span>}
-                        <button onClick={() => deleteCompany(o.id, o.name, people.length)} disabled={deleting === o.id}
-                          className="text-xs font-medium px-2.5 py-1 rounded-md border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 transition disabled:opacity-50">
-                          {deleting === o.id ? "Deleting…" : "Delete company"}
-                        </button>
+                        {confirmId === o.id ? (
+                          <>
+                            <button onClick={() => setConfirmId(null)} disabled={deleting === o.id}
+                              className="text-xs font-medium px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
+                              Cancel
+                            </button>
+                            <button onClick={() => deleteCompany(o.id)} disabled={deleting === o.id}
+                              className="text-xs font-semibold px-2.5 py-1 rounded-md border border-destructive bg-destructive text-white hover:bg-destructive/90 transition disabled:opacity-50">
+                              {deleting === o.id ? "Deleting…" : "Yes, delete"}
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => { setDeleteErr((m) => ({ ...m, [o.id]: "" })); setConfirmId(o.id); }} disabled={deleting === o.id}
+                            className="text-xs font-medium px-2.5 py-1 rounded-md border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 transition disabled:opacity-50">
+                            Delete company
+                          </button>
+                        )}
                       </div>
                     </div>
                   </td>
