@@ -51,8 +51,8 @@ export async function POST(req: Request) {
     // Re-selecting a previously deselected dealer.
     await db.from("dealers").update({ selected: true }).eq("org_id", ctx.org).eq("dealer_key", id);
   }
-  // Dump this dealer's inventory right away so scoped + /usedcar search have it
-  // immediately (options get decoded by the cron shortly after). Best-effort.
+  // Dump this dealer's inventory right away so scoped search has it immediately
+  // (options get decoded by the cron shortly after). Best-effort.
   try { await dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }); } catch { /* cron will catch up */ }
   return NextResponse.json({ ok: true });
 }
