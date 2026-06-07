@@ -37,8 +37,9 @@ export default async function HomePage() {
             Every dealer.<br /><span className="italic text-stone-500">One search.</span>
           </h1>
           <p className="text-lg text-stone-600 leading-relaxed max-w-md mb-8">
-            Live inventory across every brand your customer might cross-shop —
-            filtered by trim, color, and the options that actually close the deal.
+            Search live inventory across every brand and dealer — nationwide, or
+            near your customer&apos;s ZIP. Filter by trim, color, interior, packages,
+            and target monthly payment to find the exact car that closes the deal.
           </p>
           <div className="flex flex-wrap gap-3 mb-10">
             <Link href="/search" className="px-6 py-3 rounded-full bg-[#b85c1e] text-white font-medium hover:bg-[#a44f17] transition">Try a live search →</Link>
@@ -79,13 +80,15 @@ export default async function HomePage() {
       <section id="features" className="px-6 py-20 border-t border-stone-200">
         <div className="max-w-6xl mx-auto">
           <div className="text-xs uppercase tracking-[0.2em] text-[#b85c1e] mb-3">What&apos;s inside</div>
-          <h2 className="text-3xl md:text-4xl mb-12 max-w-2xl" style={serif}>Four tools. Built for how you actually work.</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <h2 className="text-3xl md:text-4xl mb-12 max-w-2xl" style={serif}>Built for how you actually work.</h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
-              { t: "Live Search", b: "Live inventory from every dealer within 100 miles — filtered by trim, color, packages, distance to your customer." },
-              { t: "Lease Calculator", b: "Real money-factor math. Exact monthly payment in 15 seconds, with your profit shown." },
+              { t: "Live Search", b: "Live inventory across every brand and dealer — nationwide or near a ZIP. Filter by trim, color, interior, packages, body, drivetrain, and monthly payment." },
+              { t: "Lease Calculator", b: "Real money-factor math. Exact monthly payment in seconds, with your profit shown." },
               { t: "VIN Decode", b: "Paste a VIN, get the factory build sheet — every package, every option, original MSRP." },
-              { t: "Customer Profiles", b: "Save a customer's needs for 7 days. Walk back in with a personalized shortlist." },
+              { t: "Why-No-Match", b: "When a search comes up empty, it tells you exactly why — and the one-tap change that brings the cars back." },
+              { t: "Customer Profiles", b: "Save a customer's needs, star the cars that fit, and build side-by-side compare lists to walk back in with." },
+              { t: "Your Dealer Network", b: "Pick the dealers you work with once — your whole team's searches scope to them automatically." },
             ].map((f) => (
               <div key={f.t} className="rounded-2xl border border-stone-200 bg-white p-6">
                 <h3 className="text-lg font-semibold mb-2" style={serif}>{f.t}</h3>
