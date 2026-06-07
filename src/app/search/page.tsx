@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Search, SlidersHorizontal, ArrowUpDown, Star, Building2, X, Check,
@@ -284,14 +284,18 @@ function SearchPageInner() {
       // Treat unknown (0) as +Infinity so "no estimate" cars sort to the BOTTOM
       // for low→high, instead of masquerading as the cheapest. Same for unknown
       // days_listed on "recently added".
-      case "monthly_asc": return arr.sort((a, b) => (a.est_monthly || Infinity) - (b.est_monthly || Infinity));
+      // Compare via </> (not subtraction) so two unknowns (Infinity) don't yield
+      // Infinity - Infinity = NaN, which makes Array.sort order unstable.
+      case "monthly_asc": return arr.sort((a, b) => { const x = a.est_monthly || Infinity, y = b.est_monthly || Infinity; return x === y ? 0 : x < y ? -1 : 1; });
       case "monthly_desc": return arr.sort((a, b) => b.est_monthly - a.est_monthly);
-      case "recent": return arr.sort((a, b) => (a.days_listed || Infinity) - (b.days_listed || Infinity));
+      case "recent": return arr.sort((a, b) => { const x = a.days_listed || Infinity, y = b.days_listed || Infinity; return x === y ? 0 : x < y ? -1 : 1; });
       default: return arr; // distance — API already sorts
     }
   }, [results, sort]);
 
+  const diagSeq = useRef(0);
   const runDiagnose = useCallback(async () => {
+    const seq = ++diagSeq.current; // only the latest diagnose may write state
     setDiagnosing(true);
     try {
       const yr = YEAR_RANGES[yearIdx], pr = PRICE_RANGES[priceIdx];
@@ -310,11 +314,12 @@ function SearchPageInner() {
           dealer_ids: useDealers ? myDealers.map((d) => d.id) : undefined,
         }),
       });
-      setDiagnosis(await r.json());
+      const d = await r.json();
+      if (seq === diagSeq.current) setDiagnosis(d); // drop stale out-of-order responses
     } catch {
       /* ignore */
     } finally {
-      setDiagnosing(false);
+      if (seq === diagSeq.current) setDiagnosing(false);
     }
   }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, scopeDealers, myDealers, searchedAll]);
 

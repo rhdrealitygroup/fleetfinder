@@ -34,8 +34,12 @@ export async function POST(req: Request) {
   if (invite?.data?.user) {
     userId = invite.data.user.id;
   } else {
-    // Already exists — look them up via the profiles table by email.
-    const { data: prof } = await db.from("profiles").select("id").eq("email", email).limit(1);
+    // Already exists — look them up via the profiles table by email. profiles.email
+    // is now locked (migration 0014: clients can't write it; kept in sync with
+    // auth.users), so it's authoritative. Still reject an ambiguous match rather
+    // than nondeterministically picking one row.
+    const { data: prof } = await db.from("profiles").select("id").eq("email", email);
+    if (prof && prof.length > 1) return NextResponse.json({ error: "That email is ambiguous — contact support." }, { status: 409 });
     userId = prof?.[0]?.id || null;
     // Consent guard: never force-join a user who already belongs to another org.
     if (userId) {

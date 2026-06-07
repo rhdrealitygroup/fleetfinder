@@ -19,7 +19,7 @@ export async function PATCH(req: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const db = createServiceRoleClient();
-  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id,monthly_price_override,stripe_custom_price_id,comped").eq("id", id).maybeSingle();
+  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id,stripe_customer_id,monthly_price_override,stripe_custom_price_id,comped").eq("id", id).maybeSingle();
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
 
   const COMP_COUPON = "lotcompass_comp_100";
@@ -43,11 +43,23 @@ export async function PATCH(req: Request) {
   // Stripe side succeeds (or there's nothing to bill). ──────────────────────
   const compChanged = typeof b.comped === "boolean" && b.comped !== !!org.comped;
   if (compChanged) {
-    if (org.stripe_subscription_id && stripeConfigured()) {
+    if (stripeConfigured() && (org.stripe_subscription_id || org.stripe_customer_id)) {
       try {
         const stripe = getStripe();
-        const sub: any = await stripe.subscriptions.retrieve(org.stripe_subscription_id, { expand: ["discounts"] });
-        if (LIVE_STATUSES.includes(sub.status)) {
+        // Resolve the live subscription. The DB stripe_subscription_id is written
+        // only by the webhook, so it can lag a fresh checkout — fall back to
+        // listing the customer's subscriptions so a comp during that window still
+        // attaches the coupon (otherwise the customer keeps getting charged).
+        let subId = org.stripe_subscription_id as string | null;
+        let sub: any = null;
+        if (subId) {
+          sub = await stripe.subscriptions.retrieve(subId, { expand: ["discounts"] });
+        } else if (org.stripe_customer_id) {
+          const subs = await stripe.subscriptions.list({ customer: org.stripe_customer_id as string, status: "all", limit: 10, expand: ["data.discounts"] });
+          sub = subs.data.find((s: any) => LIVE_STATUSES.includes(s.status)) || null;
+          subId = sub?.id || null;
+        }
+        if (sub && subId && LIVE_STATUSES.includes(sub.status)) {
           // Keep any real promo/coupon the customer already has; only add/remove
           // OUR comp coupon (clearing all discounts would wipe a paid promo).
           const others = (sub.discounts || [])
@@ -57,15 +69,15 @@ export async function PATCH(req: Request) {
           if (b.comped) {
             try { await stripe.coupons.retrieve(COMP_COUPON); }
             catch { await stripe.coupons.create({ id: COMP_COUPON, percent_off: 100, duration: "forever", name: "LotCompass complimentary" }); }
-            await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: [...others, { coupon: COMP_COUPON }] });
+            await stripe.subscriptions.update(subId, { discounts: [...others, { coupon: COMP_COUPON }] });
           } else {
             // In this Stripe API version an EMPTY ARRAY leaves discounts unchanged;
             // only "" actually clears them. Use "" when no real promo remains, else
             // re-set the preserved promos.
-            await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: others.length ? others : "" });
+            await stripe.subscriptions.update(subId, { discounts: others.length ? others : "" });
           }
         }
-        // Stripe reconciled (or status not billable → nothing to charge): safe to persist.
+        // Stripe reconciled (or no live sub → nothing to charge): safe to persist.
         patch.comped = b.comped;
       } catch (e) {
         // Do NOT persist comped — return an error so the admin retries, rather
@@ -73,7 +85,7 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ error: `Couldn't update Stripe billing — comp not changed: ${(e as Error).message}` }, { status: 502 });
       }
     } else {
-      // No live subscription / Stripe not configured → nothing to reconcile.
+      // No Stripe customer/subscription at all / Stripe not configured → nothing to reconcile.
       patch.comped = b.comped;
     }
   }
@@ -115,12 +127,17 @@ export async function PATCH(req: Request) {
           let newPriceId = basePriceId(); // clearing the override → standard price
           if (patch.monthly_price_override != null) {
             const cents = Math.round(patch.monthly_price_override * 100);
-            const p = await stripe.prices.create({
+            const priceBody = {
               unit_amount: cents,
-              currency: "usd",
-              recurring: { interval: "month" },
+              currency: "usd" as const,
+              recurring: { interval: "month" as const },
               product_data: { name: `LotCompass — ${org.name || "company"} (custom)` },
-            }, { idempotencyKey: `custom-price-${id}-${cents}` }); // dedupe concurrent saves
+            };
+            let p = await stripe.prices.create(priceBody, { idempotencyKey: `custom-price-${id}-${cents}` }); // dedupe concurrent saves
+            // If the idempotency key replays a now-archived price (same amount
+            // re-applied within 24h after a change), mint a fresh active one —
+            // repointing the sub to an inactive price would fail.
+            if (!p.active) p = await stripe.prices.create(priceBody);
             newPriceId = p.id;
             await db.from("organizations").update({ stripe_custom_price_id: newPriceId }).eq("id", id);
           }

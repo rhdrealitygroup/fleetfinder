@@ -145,7 +145,11 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // VINs keep their cached options and new VINs default to undecoded.
     // Conflict on (dealer_id, vin): each dealer owns its own copy of a shared VIN
     // so one dealer's dump can't reassign/sweep another dealer's in-stock car.
-    if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "dealer_id,vin" });
+    // Dedupe by (dealer_id, vin) first — MarketCheck's offset paging can return
+    // the same VIN twice when inventory shifts mid-dump, and Postgres rejects an
+    // ON CONFLICT statement that touches the same target row twice (error 21000).
+    const deduped = [...new Map(rows.map((r) => [`${r.dealer_id}|${r.vin}`, r])).values()];
+    if (deduped.length) await db.from("inventory").upsert(deduped, { onConflict: "dealer_id,vin" });
 
     // A dealer with more active listings than the tier's offset cap (1500) lets
     // us page through is TRUNCATED — we only stamped the first 1500 this run, so
@@ -198,21 +202,23 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
   // Skip VINs that have already failed too many times, and try the
   // least-attempted first, so a handful of permanently-undecodable VINs can't
   // starve the per-run decode budget by being retried ahead of fresh VINs.
+  // Over-fetch (limit*5) then dedupe to `limit` UNIQUE VINs. With the
+  // (dealer_id, vin) PK a shared VIN has one row per dealer; without over-fetching,
+  // a few popular shared VINs could fill the whole window and the run would decode
+  // far fewer than `limit` distinct VINs. The .eq("vin") update fans out to every
+  // dealer's copy, so one iteration per unique VIN is enough.
   const { data: rows } = await db.from("inventory")
     .select("vin,decode_attempts")
     .eq("options_decoded", false)
     .lt("decode_attempts", MAX_DECODE_ATTEMPTS)
     .order("decode_attempts", { ascending: true })
-    .limit(limit);
-  // Dedupe by VIN: with the (dealer_id, vin) PK a shared VIN has one row per
-  // dealer, but the update below fans out to all of them via .eq("vin") — so one
-  // unique VIN per loop iteration keeps the per-run budget spent on fresh VINs.
+    .limit(limit * 5);
   const seenV = new Set<string>();
   const list = (rows || []).filter((r: any) => {
     if (!r.vin || seenV.has(r.vin)) return false;
     seenV.add(r.vin);
     return true;
-  });
+  }).slice(0, limit);
   if (!list.length) return 0;
   // Import lazily to avoid a heavy module on the hot path.
   const { decodeVinOptionNames } = await import("@/lib/marketcheck");

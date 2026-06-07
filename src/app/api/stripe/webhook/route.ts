@@ -84,6 +84,9 @@ export async function POST(req: Request) {
     // Persist trial end + current billing period end so the UI can show a real
     // date and the server gate can enforce trial expiry.
     if (typeof sub.trial_end === "number") patch.trial_ends_at = new Date(sub.trial_end * 1000).toISOString();
+    // Mark the trial as consumed the first time we see a trial/live sub, so a
+    // cancel -> resubscribe loop can't keep minting fresh 14-day Stripe trials.
+    if (sub.status === "trialing" || sub.trial_end || sub.status === "active") patch.trial_used = true;
     const periodEnd = (sub.items?.data?.[0] as any)?.current_period_end ?? (sub as any).current_period_end;
     if (typeof periodEnd === "number") patch.current_period_end = new Date(periodEnd * 1000).toISOString();
     if (eventCreated) patch.last_sub_event_at = new Date(eventCreated * 1000).toISOString();

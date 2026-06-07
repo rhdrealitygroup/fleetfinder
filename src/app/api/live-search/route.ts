@@ -109,7 +109,7 @@ export async function POST(req: Request) {
       if (body.make) url.searchParams.set("make", body.make);
       if (mcModel) url.searchParams.set("model", mcModel);
       if (body.trim) url.searchParams.set("trim", body.trim);
-      if (body.year_min || body.year_max) url.searchParams.set("year_range", `${body.year_min || 2020}-${body.year_max || 2027}`);
+      if (body.year_min || body.year_max) url.searchParams.set("year_range", `${body.year_min || 2020}-${body.year_max || new Date().getFullYear() + 1}`);
       if (body.price_min || body.price_max) url.searchParams.set("price_range", `${body.price_min || 0}-${body.price_max || 999999}`);
       if (body.miles_max) url.searchParams.set("miles_range", `0-${body.miles_max}`);
       if (body.powertrain_type) url.searchParams.set("powertrain_type", body.powertrain_type);
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
       if (body.make) url.searchParams.set("vehicle.make", body.make);
       if (body.model) url.searchParams.set("vehicle.model", body.model);
       if (body.trim) url.searchParams.set("vehicle.trim", body.trim);
-      if (body.year_min || body.year_max) url.searchParams.set("vehicle.year", `${body.year_min || 2020}-${body.year_max || 2027}`);
+      if (body.year_min || body.year_max) url.searchParams.set("vehicle.year", `${body.year_min || 2020}-${body.year_max || new Date().getFullYear() + 1}`);
       if (body.price_min || body.price_max) url.searchParams.set("retailListing.price", `${body.price_min || 0}-${body.price_max || 999999}`);
       if (body.miles_max) url.searchParams.set("retailListing.miles", `0-${body.miles_max}`);
       if (body.body_type) url.searchParams.set("vehicle.bodyStyle", body.body_type);

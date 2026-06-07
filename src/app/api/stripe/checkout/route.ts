@@ -82,12 +82,14 @@ export async function POST(req: Request) {
     let customPriceId = org.stripe_custom_price_id as string | null;
     if (!customPriceId) {
       const cents = Math.round(org.monthly_price_override * 100);
-      const p = await stripe.prices.create({
+      const priceBody = {
         unit_amount: cents,
-        currency: "usd",
-        recurring: { interval: "month" },
+        currency: "usd" as const,
+        recurring: { interval: "month" as const },
         product_data: { name: `LotCompass — ${org.name} (custom)` },
-      }, { idempotencyKey: `custom-price-${org.id}-${cents}` }); // dedupe concurrent first-checkout submits
+      };
+      let p = await stripe.prices.create(priceBody, { idempotencyKey: `custom-price-${org.id}-${cents}` }); // dedupe concurrent first-checkout submits
+      if (!p.active) p = await stripe.prices.create(priceBody); // idempotency replayed an archived price → mint fresh
       customPriceId = p.id;
       await createServiceRoleClient().from("organizations").update({ stripe_custom_price_id: customPriceId }).eq("id", org.id);
     }
@@ -101,7 +103,12 @@ export async function POST(req: Request) {
     mode: "subscription",
     customer: customerId,
     line_items,
-    subscription_data: { trial_period_days: PRICING.trialDays, metadata: { org_id: org.id } },
+    // Grant the 14-day trial only to orgs that have never trialed — otherwise a
+    // cancel -> resubscribe loop would hand out unlimited free 14-day windows.
+    subscription_data: {
+      ...(org.trial_used ? {} : { trial_period_days: PRICING.trialDays }),
+      metadata: { org_id: org.id },
+    },
     success_url: `${origin}/billing?checkout=success`,
     cancel_url: `${origin}/billing?checkout=cancelled`,
     allow_promotion_codes: true,
