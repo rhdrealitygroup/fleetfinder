@@ -40,6 +40,13 @@ const LINKS = [
 export function AppNav() {
   const pathname = usePathname();
   const initials = useUserInitials();
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me").then((r) => r.json()).then((d) => { if (!cancelled) setIsSuperAdmin(!!d?.isSuperAdmin); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const links = isSuperAdmin ? [...LINKS, { href: "/admin", label: "Admin" }] : LINKS;
   return (
     <header className="border-b border-border px-5 py-3 flex items-center justify-between sticky top-0 bg-background/90 backdrop-blur z-30">
       <div className="flex items-center gap-2">
@@ -48,7 +55,7 @@ export function AppNav() {
           <span className="font-heading font-bold tracking-tight text-lg">LotCompass</span>
         </Link>
         <nav className="hidden md:flex items-center gap-1 ml-6 text-sm">
-          {LINKS.map((l) => {
+          {links.map((l) => {
             const active = pathname === l.href || pathname.startsWith(l.href + "/");
             return (
               <Link
