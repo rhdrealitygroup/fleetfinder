@@ -65,6 +65,11 @@ export async function POST(req: Request) {
   });
   if (error) {
     if (error.code === "23505") return NextResponse.json({ error: "That person is already on the team" }, { status: 409 });
+    // Seat-limit trigger fires as a check_violation (23514) if a concurrent invite
+    // raced past the pre-check — return the same 402 the UI already handles.
+    if (error.code === "23514" || /seat limit reached/i.test(error.message || "")) {
+      return NextResponse.json({ error: "Seat limit reached. Add seats in Billing to invite more agents." }, { status: 402 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ ok: true });

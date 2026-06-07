@@ -28,10 +28,13 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteErr, setDeleteErr] = useState<Record<string, string>>({});
   const [confirmId, setConfirmId] = useState<string | null>(null); // org armed for delete
+  const [compSaving, setCompSaving] = useState<string | null>(null); // org with an in-flight comp toggle
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
+    if (compSaving === id) return; // ignore double-clicks → no conflicting PATCHes
     const next = !comped[id];
+    setCompSaving(id);
     setComped((c) => ({ ...c, [id]: next }));
     try {
       const r = await fetch("/api/admin/companies", {
@@ -39,6 +42,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
       });
       if (!r.ok) setComped((c) => ({ ...c, [id]: !next })); // revert on failure
     } catch { setComped((c) => ({ ...c, [id]: !next })); }
+    finally { setCompSaving(null); }
   }
 
   // Set a custom monthly price for an org (blank = standard pricing).
@@ -139,9 +143,9 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                       <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
                         <Gift className="w-3.5 h-3.5" /> Complimentary access — full app, no Stripe payment
                       </span>
-                      <button onClick={() => toggleComp(o.id)}
-                        className={`text-xs font-medium px-2.5 py-1 rounded-md border transition ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                        {comped[o.id] ? "Revoke free access" : "Grant free access"}
+                      <button onClick={() => toggleComp(o.id)} disabled={compSaving === o.id}
+                        className={`text-xs font-medium px-2.5 py-1 rounded-md border transition disabled:opacity-50 ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        {compSaving === o.id ? "Saving…" : comped[o.id] ? "Revoke free access" : "Grant free access"}
                       </button>
                     </div>
                     <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-3">

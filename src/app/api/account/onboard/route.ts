@@ -28,14 +28,19 @@ export async function POST(req: Request) {
   const db = createServiceRoleClient();
   const [first, ...rest] = fullName.split(" ");
   // Always set the caller's own name (covers the case where the org already
-  // existed — e.g. auto-provisioned — so ensureOrgForUser didn't set it).
-  await db.from("memberships").update({ first_name: first || null, last_name: rest.join(" ") || null })
+  // existed — e.g. auto-provisioned — so ensureOrgForUser didn't set it). Check
+  // the result: don't mark onboarding complete on a failed write, or the user
+  // ends up "set up" with a missing name / un-renamed company.
+  const { error: memErr } = await db.from("memberships").update({ first_name: first || null, last_name: rest.join(" ") || null })
     .eq("org_id", ensured.org_id).eq("user_id", user.id);
+  if (memErr) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
+  // profiles is a best-effort mirror (auth metadata is the source of truth for name).
   await db.from("profiles").update({ full_name: fullName }).eq("id", user.id);
   // Only the OWNER may (re)name the company — an invited agent must not rename
   // their company's org.
   if (ensured.role === "owner" && companyName) {
-    await db.from("organizations").update({ name: companyName }).eq("id", ensured.org_id);
+    const { error: orgErr } = await db.from("organizations").update({ name: companyName }).eq("id", ensured.org_id);
+    if (orgErr) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
   }
 
   // Mark first-run setup complete on the auth user's metadata. The middleware

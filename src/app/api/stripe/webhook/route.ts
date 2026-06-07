@@ -101,7 +101,23 @@ export async function POST(req: Request) {
     if (typeof periodEnd === "number") patch.current_period_end = new Date(periodEnd * 1000).toISOString();
     if (eventCreated) patch.last_sub_event_at = new Date(eventCreated * 1000).toISOString();
 
-    await db.from("organizations").update(patch).eq("id", org.id);
+    // When ADOPTING the pointer for an org that had no sub when we read it, make
+    // the claim ATOMIC: only win if the pointer is still null (or already this
+    // sub). If two checkout sessions complete concurrently, both created-events
+    // read null and would each adopt → two live, billed subs. The conditional
+    // update lets exactly one win; the loser cancels its duplicate sub.
+    if (!isDeleted && !org.stripe_subscription_id) {
+      const { data: claimed } = await db.from("organizations")
+        .update(patch).eq("id", org.id)
+        .or(`stripe_subscription_id.is.null,stripe_subscription_id.eq.${sub.id}`)
+        .select("id");
+      if (!claimed || claimed.length === 0) {
+        try { await stripe.subscriptions.cancel(sub.id); } catch { /* already gone */ }
+        return;
+      }
+    } else {
+      await db.from("organizations").update(patch).eq("id", org.id);
+    }
 
     // Durable comp reconciliation: if the org is comped, ensure the 100%-off
     // coupon is on this subscription. The admin toggle only reconciles at toggle

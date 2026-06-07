@@ -309,6 +309,7 @@ function SearchPageInner() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant: variant || undefined,
+          body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
           interior_color: (intColors.find((c) => c.name === intColor)?.variants || []).join(",") || undefined,
           option_names: features.size ? [...features] : undefined,

@@ -202,8 +202,23 @@ export async function DELETE(req: Request) {
   // Stop billing first — cancel any live subscription so a deleted company never
   // keeps getting charged. Best-effort; a Stripe hiccup shouldn't block deletion.
   if (org.stripe_subscription_id && stripeConfigured()) {
-    try { await getStripe().subscriptions.cancel(org.stripe_subscription_id as string); }
-    catch { /* may already be canceled / gone */ }
+    try {
+      const stripe = getStripe();
+      const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id as string);
+      // Only a LIVE sub needs canceling. If the cancel of a live sub fails, ABORT
+      // the delete — otherwise we'd remove the org (and the only record of who to
+      // bill) while Stripe keeps charging the customer forever.
+      if (["active", "trialing", "past_due", "unpaid", "paused"].includes(sub.status)) {
+        await stripe.subscriptions.cancel(org.stripe_subscription_id as string);
+      }
+    } catch (e: any) {
+      // A 'no such subscription' / already-canceled error is safe to ignore;
+      // anything else means we couldn't guarantee billing stopped → don't delete.
+      const code = e?.code || e?.raw?.code;
+      if (code !== "resource_missing") {
+        return NextResponse.json({ error: `Couldn't cancel the company's subscription — deletion aborted so billing can't continue. Try again.` }, { status: 502 });
+      }
+    }
   }
 
   // Delete the org → cascades all org-scoped rows + memberships.

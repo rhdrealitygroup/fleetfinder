@@ -85,13 +85,13 @@ export function BillingActions({
                 className="px-4 py-2.5 rounded-lg border border-destructive bg-destructive text-white text-sm font-semibold hover:bg-destructive/90 transition flex items-center gap-2 disabled:opacity-60">
                 {loading === "cancel" && <Loader2 className="w-4 h-4 animate-spin" />} {trialing ? "Yes, end trial" : "Yes, cancel"}
               </button>
-              <button onClick={() => setConfirmCancel(false)} disabled={!!loading}
+              <button onClick={() => { setError(""); setConfirmCancel(false); }} disabled={!!loading}
                 className="px-3 py-2.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition disabled:opacity-60">
                 Keep it
               </button>
             </>
           ) : (
-            <button onClick={() => setConfirmCancel(true)} disabled={!!loading}
+            <button onClick={() => { setError(""); setConfirmCancel(true); }} disabled={!!loading}
               className="px-4 py-2.5 rounded-lg border border-destructive/40 text-destructive text-sm font-medium hover:bg-destructive/10 transition disabled:opacity-60">
               {trialing ? "Cancel before trial ends" : "Cancel subscription"}
             </button>

@@ -191,9 +191,9 @@ export default function DealersPage() {
             const pendingRemoval = on && requestedKeys.has(d.id);
             return (
               <div key={d.id} className={`flex items-center gap-3 p-3 rounded-xl border transition ${on ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}>
-                <button onClick={() => pendingRemoval ? undefined : toggle(d)} disabled={pendingRemoval}
-                  title={on ? (isManager ? "Remove" : pendingRemoval ? "Removal requested" : "Request removal") : "Add to my dealers"}
-                  className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center transition ${on ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}>
+                <button onClick={() => pendingRemoval ? undefined : toggle(d)} disabled={pendingRemoval || (on && role === null)}
+                  title={on ? (role === null ? "Loading…" : isManager ? "Remove" : pendingRemoval ? "Removal requested" : "Request removal") : "Add to my dealers"}
+                  className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center transition disabled:opacity-60 ${on ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}>
                   {pendingRemoval ? <Clock className="w-3.5 h-3.5" /> : on ? <Check className="w-4 h-4" /> : null}
                 </button>
                 <div className="flex-1 min-w-0">

@@ -104,8 +104,14 @@ export async function POST(req: Request) {
     basePrice = customPriceId;
   }
 
+  // If this org owes for agents (seats) but the seat price isn't configured, FAIL
+  // rather than silently creating a base-only subscription — that would convert
+  // trial-added agents to a paid plan completely unbilled.
+  if (seats > 0 && !seatPriceId()) {
+    return NextResponse.json({ error: "Seat billing isn't configured yet — contact support before subscribing." }, { status: 503 });
+  }
   const line_items = [{ price: basePrice, quantity: 1 }];
-  if (seats > 0 && seatPriceId()) line_items.push({ price: seatPriceId(), quantity: seats });
+  if (seats > 0) line_items.push({ price: seatPriceId()!, quantity: seats });
 
   // Trial: continue the org's EXISTING app trial (set at org creation) rather
   // than granting a fresh 14 days on top — otherwise a new org gets ~14 app-trial

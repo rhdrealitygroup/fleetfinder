@@ -34,7 +34,12 @@ export async function POST(req: Request) {
     url.searchParams.set("car_type", b.car_type || "new");
     url.searchParams.set("make", make);
     if (mcModel) url.searchParams.set("model", mcModel);
-    if (b.year_min || b.year_max) url.searchParams.set("year_range", `${b.year_min || 2020}-${b.year_max || new Date().getFullYear() + 1}`);
+    // Apply body_type/drivetrain as HARD filters too (live-search does) — otherwise
+    // a search that returned 0 purely because of body style or drivetrain would be
+    // diagnosed against a pool that ignores them and wrongly report "specs are fine".
+    if (b.body_type) url.searchParams.set("body_type", String(b.body_type));
+    if (b.drivetrain) url.searchParams.set("drivetrain", String(b.drivetrain));
+    if (b.year_min || b.year_max) url.searchParams.set("year_range", `${b.year_min || 1900}-${b.year_max || new Date().getFullYear() + 1}`);
     if (b.price_min || b.price_max) url.searchParams.set("price_range", `${b.price_min || 0}-${b.price_max || 999999}`);
     const zip = String(b.zip || "").trim();
     if (zip) { url.searchParams.set("zip", zip); url.searchParams.set("radius", String(Math.min(500, Number(b.radius) || 100))); }
