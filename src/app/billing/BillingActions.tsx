@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 
 // Client island: start checkout (with optional extra seats) or open the
 // Stripe customer portal.
-export function BillingActions({ hasSubscription }: { hasSubscription: boolean }) {
+export function BillingActions({ hasSubscription, baseMonthly = 100 }: { hasSubscription: boolean; baseMonthly?: number }) {
   const [seats, setSeats] = useState(0);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
@@ -46,7 +46,7 @@ export function BillingActions({ hasSubscription }: { hasSubscription: boolean }
         <span className="text-muted-foreground">× $15/mo</span>
       </label>
       <div className="text-sm text-muted-foreground">
-        Total: <span className="text-foreground font-semibold tnum">${100 + seats * 15}/mo</span> after the 14-day trial
+        Total: <span className="text-foreground font-semibold tnum">${baseMonthly + seats * 15}/mo</span> after the 14-day trial
       </div>
       <button onClick={() => go("/api/stripe/checkout", { seats })} disabled={!!loading}
         className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center gap-2 disabled:opacity-60">

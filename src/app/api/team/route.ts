@@ -20,7 +20,10 @@ export async function POST(req: Request) {
   // Seat limit: don't let an org exceed its paid agent_limit (billing integrity).
   const { data: org } = await db.from("organizations").select("agent_limit").eq("id", membership.org_id).single();
   const { count: seatCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
-  const limit = (org?.agent_limit ?? 1) + 1; // owner seat + agent_limit additional seats
+  // agent_limit is TOTAL seats and already includes the owner (the webhook sets
+  // it to 1 + paid-seat-quantity). Do NOT add another +1 here, or every org gets
+  // one free agent beyond what it pays for.
+  const limit = org?.agent_limit ?? 1;
   if ((seatCount ?? 0) >= limit) {
     return NextResponse.json({ error: `Seat limit reached (${limit}). Add seats in Billing to invite more agents.` }, { status: 402 });
   }

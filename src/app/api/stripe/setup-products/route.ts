@@ -39,20 +39,21 @@ export async function POST() {
         description: "Cross-brand lease inventory search for leasing agents.",
       });
 
-  const base = await stripe.prices.create({
-    product: product.id,
-    currency: "usd",
-    unit_amount: PRICING.basePriceUsd * 100,
-    recurring: { interval: "month" },
-    nickname: "Company base",
-  });
-  const seat = await stripe.prices.create({
-    product: product.id,
-    currency: "usd",
-    unit_amount: PRICING.seatPriceUsd * 100,
-    recurring: { interval: "month" },
-    nickname: "Additional agent seat",
-  });
+  // Reuse an existing matching recurring price on this product rather than
+  // minting a duplicate on every call (env may be half-set on a first deploy).
+  const existingPrices = await stripe.prices.list({ product: product.id, active: true, limit: 100 }).catch(() => null);
+  const findPrice = (cents: number) =>
+    existingPrices?.data?.find((p) => p.unit_amount === cents && p.currency === "usd" && p.recurring?.interval === "month");
+  async function findOrCreate(cents: number, nickname: string) {
+    const hit = findPrice(cents);
+    if (hit) return hit;
+    return stripe.prices.create({
+      product: product.id, currency: "usd", unit_amount: cents,
+      recurring: { interval: "month" }, nickname,
+    });
+  }
+  const base = await findOrCreate(PRICING.basePriceUsd * 100, "Company base");
+  const seat = await findOrCreate(PRICING.seatPriceUsd * 100, "Additional agent seat");
 
   return NextResponse.json({
     ok: true,

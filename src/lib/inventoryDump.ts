@@ -1,5 +1,5 @@
 import "server-only";
-import { MC_HOST, mcKey, mcListing } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, mcListing, num } from "@/lib/marketcheck";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -70,6 +70,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // NOT-IN VIN list, so no URL-length/malformed-VIN issues).
     const rows: any[] = [];
     let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
+    let numFound = 0;
     for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
       const u = new URL(`${MC_HOST}/search/car/active`);
       u.searchParams.set("api_key", apiKey);
@@ -79,6 +80,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       const r = await fetch(u.toString());
       if (!r.ok) { complete = false; break; }
       const d = await r.json();
+      if (start === 0) numFound = num(d.num_found) || 0;
       const list: any[] = d.listings || [];
       for (const l of list) {
         const v = mcListing(l);
@@ -102,16 +104,31 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // VINs keep their cached options and new VINs default to undecoded.
     if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "vin" });
 
-    // Sweep sold cars ONLY on a clean pull (a transient failure must not read as
-    // "0 in stock" and wipe the dealer).
+    // A dealer with more active listings than the tier's offset cap (1500) lets
+    // us page through is TRUNCATED — we only stamped the first 1500 this run, so
+    // the un-fetched tail must NOT be swept as "sold" or we'd delete in-stock
+    // cars every run. We still refresh what we saw and advance last_dumped_at so
+    // the dealer keeps rotating (it just never gets a destructive sweep).
+    const FETCH_CAP = MC_MAX_START + MC_PAGE; // 1500
+    const truncated = numFound > FETCH_CAP;
+
+    // Sweep sold cars ONLY on a clean, complete (non-truncated) pull (a transient
+    // failure must not read as "0 in stock" and wipe the dealer).
     if (complete) {
-      await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
-      await db.from("tracked_dealers").update({ last_dumped_at: runStart, listing_count: rows.length }).eq("dealer_id", dealerId);
+      if (!truncated) {
+        await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
+      }
+      await db.from("tracked_dealers")
+        .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : rows.length })
+        .eq("dealer_id", dealerId);
     }
     return rows.length;
   } finally {
-    // Always release the lock.
-    await db.from("tracked_dealers").update({ dump_started_at: null }).eq("dealer_id", dealerId);
+    // Release the lock ONLY if we still hold it — if this dump ran past the lock
+    // cutoff and another dump claimed the dealer, don't clear the new holder's
+    // lock (that's what re-opened the concurrent-sweep race).
+    await db.from("tracked_dealers").update({ dump_started_at: null })
+      .eq("dealer_id", dealerId).eq("dump_started_at", runStart);
   }
 }
 

@@ -281,6 +281,13 @@ export function mcListing(l: any): UnifiedVehicle {
   const dealer = l.dealer || {};
   const price = num(l.price || l.msrp);
   const msrp = num(l.msrp || l.price);
+  // A real MSRP is required for a meaningful lease estimate: the residual is a %
+  // of MSRP, not of the (discounted/used) selling price. When msrp falls back to
+  // price (used cars, listings with no MSRP) the estimate is garbage — and it
+  // drives the "under $X/mo" filter — so emit 0 (the UI hides 0) instead.
+  const realMsrp = num(l.msrp);
+  const isNew = String(l.inventory_type || "").toLowerCase().includes("new");
+  const estMonthly = realMsrp > 0 && realMsrp >= price && isNew ? estMonthlyCard(price, realMsrp) : 0;
   const features = Array.isArray(l.high_value_features)
     ? l.high_value_features.map(normalizeFeature).filter(Boolean)
     : [];
@@ -291,7 +298,7 @@ export function mcListing(l: any): UnifiedVehicle {
     model: titleCase(build.model),
     trim: prettyTrim(titleCase(build.trim)),
     version: String(build.version || ""),
-    price, msrp, est_monthly: estMonthlyCard(price, msrp),
+    price, msrp, est_monthly: estMonthly,
     body_type: titleCase(build.body_type),
     fuel_type: titleCase(build.fuel_type),
     drivetrain: build.drivetrain || "",
@@ -324,7 +331,13 @@ export function adListing(l: any): UnifiedVehicle {
   const v = l.vehicle || {};
   const r = l.retailListing || {};
   const price = num(r.price);
-  const msrp = price;
+  const realMsrp = num(v.msrp || r.msrp);
+  const msrp = realMsrp || price;
+  // Auto.dev rarely exposes a true MSRP → only estimate when one is present and
+  // the car is new (residual is a % of MSRP). Otherwise emit 0 (UI hides it)
+  // rather than a misleading number that feeds the payment filter.
+  const isNew = r.used === false || String(r.condition || v.condition || "").toLowerCase() === "new";
+  const estMonthly = realMsrp > 0 && realMsrp >= price && isNew ? estMonthlyCard(price, realMsrp) : 0;
   const rawFeats = Array.isArray(v.features) ? v.features
     : Array.isArray(r.features) ? r.features
     : Array.isArray(v.high_value_features) ? v.high_value_features : [];
@@ -336,7 +349,7 @@ export function adListing(l: any): UnifiedVehicle {
     model: titleCase(v.model),
     trim: titleCase(v.trim),
     version: String(v.version || v.trim || ""),
-    price, msrp, est_monthly: estMonthlyCard(price, msrp),
+    price, msrp, est_monthly: estMonthly,
     body_type: titleCase(v.bodyStyle),
     fuel_type: titleCase(v.fuel),
     drivetrain: v.drivetrain || "",

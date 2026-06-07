@@ -15,6 +15,10 @@ export function cacheGet<T>(key: string): T | null {
     store.delete(key);
     return null;
   }
+  // Touch recency: re-insert so a frequently-READ key moves to newest and isn't
+  // evicted as "oldest" by the soft cap (Map preserves insertion order).
+  store.delete(key);
+  store.set(key, e);
   return e.value as T;
 }
 
@@ -25,7 +29,10 @@ export function cacheSet(key: string, value: unknown, ttlMs: number) {
   store.set(key, { value, expires: Date.now() + ttlMs });
   // Soft cap to keep memory bounded: drop an already-expired entry first, and
   // only fall back to evicting the oldest live entry if nothing has expired.
-  if (store.size > 500) {
+  // Entries are tiny (decoded VIN option names) and one option-filtered search
+  // can insert ~240 of them, so 500 thrashed the 30-day VIN cache — 8k gives
+  // real headroom while staying bounded.
+  if (store.size > 8000) {
     const now = Date.now();
     let victim: string | undefined;
     for (const [k, e] of store) {

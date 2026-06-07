@@ -25,6 +25,22 @@ export async function POST(req: Request) {
   const stripe = getStripe();
   const origin = new URL(req.url).origin;
 
+  // Guard against creating a SECOND live subscription. The UI hides the button
+  // when already subscribed, but this endpoint is directly POST-able and a stale
+  // page (webhook not yet applied) could re-submit — Stripe would happily bill
+  // the customer twice. If a usable sub already exists, send them to the portal.
+  if (org.stripe_subscription_id) {
+    try {
+      const existing = await stripe.subscriptions.retrieve(org.stripe_subscription_id as string);
+      if (["active", "trialing", "past_due", "paused", "unpaid"].includes(existing.status)) {
+        return NextResponse.json(
+          { error: "You already have a subscription. Manage seats from the billing portal.", alreadySubscribed: true },
+          { status: 409 },
+        );
+      }
+    } catch { /* sub id stale / deleted in Stripe → allow a fresh checkout */ }
+  }
+
   // Ensure a Stripe customer exists for this org.
   let customerId = org.stripe_customer_id as string | null;
   if (!customerId) {

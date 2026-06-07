@@ -19,7 +19,7 @@ export async function PATCH(req: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const db = createServiceRoleClient();
-  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id,monthly_price_override").eq("id", id).maybeSingle();
+  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id,monthly_price_override,comped").eq("id", id).maybeSingle();
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
 
   const patch: Record<string, any> = {};
@@ -79,6 +79,29 @@ export async function PATCH(req: Request) {
       }
     } catch (e) {
       return NextResponse.json({ ok: true, id, warning: `Saved, but updating the live subscription failed: ${(e as Error).message}` });
+    }
+  }
+
+  // Comp toggle → reflect it in Stripe. Marking an org "comped" must actually
+  // stop charges; otherwise a paying customer keeps getting billed for something
+  // we told them is free. We apply a 100%-off forever coupon (rather than
+  // canceling) so the subscription — and the org — stays visible, just at $0.
+  if (typeof b.comped === "boolean" && b.comped !== !!org.comped && org.stripe_subscription_id && stripeConfigured()) {
+    try {
+      const stripe = getStripe();
+      const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id);
+      if (["active", "trialing", "past_due"].includes(sub.status)) {
+        if (b.comped) {
+          const couponId = "lotcompass_comp_100";
+          try { await stripe.coupons.retrieve(couponId); }
+          catch { await stripe.coupons.create({ id: couponId, percent_off: 100, duration: "forever", name: "LotCompass complimentary" }); }
+          await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: [{ coupon: couponId }] });
+        } else {
+          await stripe.subscriptions.update(org.stripe_subscription_id, { discounts: [] });
+        }
+      }
+    } catch (e) {
+      return NextResponse.json({ ok: true, id, warning: `Saved, but updating Stripe billing failed: ${(e as Error).message}` });
     }
   }
   return NextResponse.json({ ok: true, id });

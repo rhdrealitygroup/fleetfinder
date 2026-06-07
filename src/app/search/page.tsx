@@ -61,6 +61,7 @@ function SearchPageInner() {
   const [results, setResults] = useState<Vehicle[] | null>(null);
   const [total, setTotal] = useState(0);
   const [truncated, setTruncated] = useState(false);
+  const [note, setNote] = useState("");
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [provider, setProvider] = useState("");
@@ -254,6 +255,7 @@ function SearchPageInner() {
       setResults(d.results || []);
       setTotal(d.total || 0);
       setTruncated(!!d.truncated);
+      setNote(typeof d.note === "string" ? d.note.trim() : "");
       setProvider(d.provider || "");
     } catch (e) {
       setError((e as Error).message);
@@ -547,6 +549,7 @@ function SearchPageInner() {
                 )}
                 {searchedAll && myDealers.length > 0 && <span className="ml-1">· all dealers</span>}
                 {truncated && <span className="ml-2 text-xs text-warning">· showing first {sorted.length}</span>}
+                {note && <span className="ml-2 text-xs text-warning">{note}</span>}
               </div>
               <div className="flex items-center gap-2">
                 {sorted.length > 0 && (

@@ -4,7 +4,7 @@
 //   DELETE { id }             → remove one
 // Stored in public.dealers (dealer_key = MarketCheck dealer id).
 
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getSessionContext } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
@@ -62,7 +62,12 @@ export async function POST(req: Request) {
       { onConflict: "dealer_id", ignoreDuplicates: true },
     );
   } catch { /* cron's syncTrackedDealers will register it */ }
-  void dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }).catch(() => {});
+  // Run the dump AFTER the response flushes via `after()` — a bare fire-and-forget
+  // promise can be frozen/killed by the platform once the response is sent (and
+  // could leave the per-dealer lock dangling). `after` keeps it alive.
+  after(async () => {
+    try { await dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }); } catch { /* cron backfills */ }
+  });
   return NextResponse.json({ ok: true });
 }
 
