@@ -47,12 +47,14 @@ export default function DealersPage() {
 
   async function requestRemoval(d: Dealer) {
     setRequestedKeys((s) => new Set(s).add(d.id));
+    const rollback = () => setRequestedKeys((s) => { const n = new Set(s); n.delete(d.id); return n; });
     try {
-      await fetch("/api/dealers/removal-requests", {
+      const r = await fetch("/api/dealers/removal-requests", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dealer_key: d.id, name: d.name }),
       });
-    } catch { /* ignore */ }
+      if (!r.ok) rollback(); // failed → let them retry
+    } catch { rollback(); }
   }
 
   async function actOnRequest(id: string, action: "approve" | "dismiss") {
@@ -95,7 +97,9 @@ export default function DealersPage() {
 
   const toggle = (d: Dealer) => {
     if (!selectedIds.has(d.id)) { add({ id: d.id, name: d.name, city: d.city, state: d.state }); return; }
-    // Selected: owners/admins remove directly; agents request removal.
+    // Selected dealer: owners/admins remove directly; agents request removal.
+    // Wait until the role has loaded so an owner isn't mis-routed into "request".
+    if (role === null) return;
     if (isManager) remove(d.id);
     else requestRemoval(d);
   };

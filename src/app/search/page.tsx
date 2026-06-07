@@ -841,8 +841,8 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
       .then((r) => r.json()).then((d) => !d.error && setDecode(d)).catch(() => {}).finally(() => setDecoding(false));
   }, [v.vin]);
 
-  const packages: any[] = decode?.packages || [];
-  const options: any[] = decode?.options || [];
+  const packages: any[] = Array.isArray(decode?.packages) ? decode.packages : [];
+  const options: any[] = Array.isArray(decode?.options) ? decode.options : [];
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">

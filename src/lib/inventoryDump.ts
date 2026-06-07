@@ -43,7 +43,12 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
   if (!apiKey || !dealerId) return 0;
   const db = createServiceRoleClient();
 
+  // Stamp every in-stock VIN this run with `runStart`; sold cars keep their older
+  // updated_at and get swept below. Using a timestamp (not a NOT-IN VIN list)
+  // avoids URL-length limits and malformed-VIN parsing issues.
+  const runStart = new Date().toISOString();
   const rows: any[] = [];
+  let complete = true; // false if any page fetch failed → don't sweep (avoid wiping on a transient 429)
   for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
     const u = new URL(`${MC_HOST}/search/car/active`);
     u.searchParams.set("api_key", apiKey);
@@ -51,7 +56,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     u.searchParams.set("rows", String(MC_PAGE));
     u.searchParams.set("start", String(start));
     const r = await fetch(u.toString());
-    if (!r.ok) break;
+    if (!r.ok) { complete = false; break; }
     const d = await r.json();
     const list: any[] = d.listings || [];
     for (const l of list) {
@@ -63,7 +68,7 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
         price: v.price || null, msrp: v.msrp || null, miles: v.mileage || null,
         exterior_color: v.exterior_color || null,
         car_type: l.inventory_type || (v.mileage > 100 ? "used" : "new"),
-        payload: v, updated_at: new Date().toISOString(),
+        payload: v, updated_at: runStart,
       });
     }
     if (list.length < MC_PAGE) break;
@@ -73,18 +78,21 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
   // VINs keep their cached options and new VINs default to undecoded.
   if (rows.length) await db.from("inventory").upsert(rows, { onConflict: "vin" });
 
-  // Drop sold cars: anything we have for this dealer that's no longer in stock.
-  const vins = rows.map((r) => r.vin);
-  if (vins.length) {
-    await db.from("inventory").delete().eq("dealer_id", dealerId).not("vin", "in", `(${vins.join(",")})`);
+  // Sweep sold cars — ONLY when the pull completed cleanly. A transient fetch
+  // failure must never be read as "0 cars in stock" and wipe the dealer.
+  if (complete) {
+    await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);
+    await db.from("tracked_dealers").upsert(
+      { dealer_id: dealerId, name: meta?.name || null, city: meta?.city || null, state: meta?.state || null, last_dumped_at: runStart, listing_count: rows.length },
+      { onConflict: "dealer_id" },
+    );
   } else {
-    await db.from("inventory").delete().eq("dealer_id", dealerId);
+    // Register the dealer but don't advance last_dumped_at, so it's retried soon.
+    await db.from("tracked_dealers").upsert(
+      { dealer_id: dealerId, name: meta?.name || null, city: meta?.city || null, state: meta?.state || null },
+      { onConflict: "dealer_id", ignoreDuplicates: true },
+    );
   }
-
-  await db.from("tracked_dealers").upsert(
-    { dealer_id: dealerId, name: meta?.name || null, city: meta?.city || null, state: meta?.state || null, last_dumped_at: new Date().toISOString(), listing_count: rows.length },
-    { onConflict: "dealer_id" },
-  );
   return rows.length;
 }
 

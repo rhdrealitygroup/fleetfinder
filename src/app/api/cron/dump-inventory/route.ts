@@ -17,8 +17,10 @@ export async function GET(req: Request) {
 
   const tracked = await syncTrackedDealers();
 
-  const dealerBatch = Math.max(1, Number(url.searchParams.get("dealers")) || 12);
-  const decodeBatch = Math.max(0, Number(url.searchParams.get("decode")) || 80);
+  // Batches sized to finish within maxDuration (60s) of sequential MarketCheck
+  // calls; the rolling cron covers the rest of the fleet across runs.
+  const dealerBatch = Math.max(1, Number(url.searchParams.get("dealers")) || 6);
+  const decodeBatch = Math.max(0, Number(url.searchParams.get("decode")) || 60);
 
   const due = await stalestDealers(dealerBatch);
   const refreshed: { dealer: string; n: number }[] = [];

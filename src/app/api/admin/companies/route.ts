@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { getStripe, stripeConfigured, basePriceId, seatPriceId } from "@/lib/stripe";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -34,7 +35,41 @@ export async function PATCH(req: Request) {
   if (!Object.keys(patch).length) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 
   const db = createServiceRoleClient();
+  const { data: org } = await db.from("organizations").select("id,name,stripe_subscription_id").eq("id", id).maybeSingle();
   const { error } = await db.from("organizations").update(patch).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 502 });
-  return NextResponse.json({ ok: true, id, ...patch });
+
+  // If the custom price changed AND the org already has a live subscription,
+  // push the new base price to Stripe — otherwise the change would only apply at
+  // the next checkout (which an existing subscriber never runs → silent mischarge).
+  if ("monthly_price_override" in patch && org?.stripe_subscription_id && stripeConfigured()) {
+    try {
+      const stripe = getStripe();
+      const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id);
+      const seat = seatPriceId();
+      const baseItem = sub.items.data.find((i: any) => i.price?.id !== seat) || sub.items.data[0];
+      if (baseItem) {
+        let newPriceId = basePriceId(); // clearing the override → standard price
+        if (patch.monthly_price_override != null) {
+          const p = await stripe.prices.create({
+            unit_amount: Math.round(patch.monthly_price_override * 100),
+            currency: "usd",
+            recurring: { interval: "month" },
+            product_data: { name: `LotCompass — ${org.name || "company"} (custom)` },
+          });
+          newPriceId = p.id;
+          await db.from("organizations").update({ stripe_custom_price_id: newPriceId }).eq("id", id);
+        }
+        if (newPriceId) {
+          await stripe.subscriptions.update(org.stripe_subscription_id, {
+            items: [{ id: baseItem.id, price: newPriceId }],
+            proration_behavior: "none",
+          });
+        }
+      }
+    } catch (e) {
+      return NextResponse.json({ ok: true, id, warning: `Saved, but updating the live subscription failed: ${(e as Error).message}` });
+    }
+  }
+  return NextResponse.json({ ok: true, id });
 }

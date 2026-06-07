@@ -29,8 +29,11 @@ export function TeamManager({ initialMembers, canManage, agentLimit }: { initial
 
   async function remove(id: string) {
     setMembers((m) => m.filter((x) => x.id !== id)); // optimistic
-    await fetch("/api/team", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membership_id: id }) });
-    router.refresh();
+    try {
+      const r = await fetch("/api/team", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membership_id: id }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); }
+    } catch { setError("Couldn't remove that member."); }
+    router.refresh(); // re-syncs (restores the row if the delete failed)
   }
 
   return (

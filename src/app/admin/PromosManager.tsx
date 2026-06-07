@@ -60,7 +60,7 @@ export function PromosManager() {
       const d = await r.json();
       if (!r.ok) { setErr(d.error || "Failed to create promo"); return; }
       setForm({ code: "", kind: "percent", value: "", duration: "once", durationMonths: "3", maxRedemptions: "", expiresInDays: "" });
-      setPromos((prev) => [d.promo, ...prev]);
+      if (d.promo) setPromos((prev) => [d.promo, ...prev]);
     } catch { setErr("Failed to create promo"); }
     finally { setCreating(false); }
   }

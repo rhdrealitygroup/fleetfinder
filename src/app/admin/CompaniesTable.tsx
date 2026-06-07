@@ -23,6 +23,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [price, setPrice] = useState<Record<string, string>>(() =>
     Object.fromEntries(orgs.map((o) => [o.id, o.monthly_price_override != null ? String(o.monthly_price_override) : ""])));
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
+  const [priceMsg, setPriceMsg] = useState<Record<string, string>>({});
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
@@ -39,14 +40,18 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   // Set a custom monthly price for an org (blank = standard pricing).
   async function savePrice(id: string) {
     setSavingPrice(id);
-    const raw = price[id]?.trim();
+    setPriceMsg((m) => ({ ...m, [id]: "" }));
+    const raw = (price[id] ?? "").trim();
     try {
-      await fetch("/api/admin/companies", {
+      const r = await fetch("/api/admin/companies", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, monthlyPriceOverride: raw === "" ? null : Number(raw) }),
       });
-    } catch { /* ignore */ }
-    finally { setSavingPrice(null); }
+      const d = await r.json().catch(() => ({}));
+      setPriceMsg((m) => ({ ...m, [id]: !r.ok ? (d.error || "Save failed") : d.warning ? d.warning : "Saved ✓" }));
+    } catch {
+      setPriceMsg((m) => ({ ...m, [id]: "Save failed — try again" }));
+    } finally { setSavingPrice(null); }
   }
 
   if (!orgs.length) {
@@ -128,6 +133,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                           className="text-xs font-medium px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
                           {savingPrice === o.id ? "Saving…" : "Save"}
                         </button>
+                        {priceMsg[o.id] && <span className={`text-[11px] ${priceMsg[o.id].startsWith("Saved") ? "text-positive" : "text-destructive"}`}>{priceMsg[o.id]}</span>}
                       </div>
                     </div>
                   </td>

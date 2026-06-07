@@ -161,7 +161,7 @@ function Num({ label, value, onChange, prefix, suffix, step }: { label: string; 
       <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{label}</span>
       <div className="mt-1 flex items-center rounded-lg border border-border bg-background focus-within:ring-2 focus-within:ring-ring/50">
         {prefix && <span className="pl-3 text-muted-foreground text-sm">{prefix}</span>}
-        <input type="number" step={step || 1} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))}
+        <input type="number" step={step || 1} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value) || 0)}
           className="w-full bg-transparent px-3 py-2 text-sm focus:outline-none tnum" />
         {suffix && <span className="pr-3 text-muted-foreground text-sm">{suffix}</span>}
       </div>

@@ -10,6 +10,8 @@ import { ensureOrgForUser } from "@/lib/account";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { dumpDealerListings } from "@/lib/inventoryDump";
 
+export const maxDuration = 60;
+
 async function resolveOrg() {
   const { user, membership } = await getSessionContext();
   if (!user) return { error: "Unauthorized" as const, status: 401 };
@@ -51,9 +53,16 @@ export async function POST(req: Request) {
     // Re-selecting a previously deselected dealer.
     await db.from("dealers").update({ selected: true }).eq("org_id", ctx.org).eq("dealer_key", id);
   }
-  // Dump this dealer's inventory right away so scoped search has it immediately
-  // (options get decoded by the cron shortly after). Best-effort.
-  try { await dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }); } catch { /* cron will catch up */ }
+  // Register the dealer for the dump pipeline now (fast), then kick an immediate
+  // best-effort dump WITHOUT blocking the response — a slow/large dealer must not
+  // hang the "add dealer" click. The 6h cron backfills if this gets cut short.
+  try {
+    await db.from("tracked_dealers").upsert(
+      { dealer_id: id, name: d.name || null, city: d.city || null, state: d.state || null },
+      { onConflict: "dealer_id", ignoreDuplicates: true },
+    );
+  } catch { /* cron's syncTrackedDealers will register it */ }
+  void dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }).catch(() => {});
   return NextResponse.json({ ok: true });
 }
 

@@ -55,8 +55,9 @@ export async function PATCH(req: Request) {
   const action = b.action;
   if (!id || !["approve", "dismiss"].includes(action)) return NextResponse.json({ error: "id and action (approve|dismiss) required" }, { status: 400 });
   const db = createServiceRoleClient();
-  const { data: r } = await db.from("dealer_removal_requests").select("dealer_key").eq("id", id).eq("org_id", c.org).maybeSingle();
-  if (!r) return NextResponse.json({ error: "Request not found" }, { status: 404 });
+  // Only act on a still-pending request (avoids re-removing a re-added dealer via a stale request).
+  const { data: r } = await db.from("dealer_removal_requests").select("dealer_key").eq("id", id).eq("org_id", c.org).eq("status", "pending").maybeSingle();
+  if (!r) return NextResponse.json({ error: "Request not found or already handled" }, { status: 404 });
   if (action === "approve") {
     await db.from("dealers").update({ selected: false }).eq("org_id", c.org).eq("dealer_key", r.dealer_key);
     await db.from("dealer_removal_requests").update({ status: "approved" }).eq("id", id);
