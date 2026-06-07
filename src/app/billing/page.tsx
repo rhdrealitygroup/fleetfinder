@@ -39,6 +39,10 @@ export default async function BillingPage() {
   const hasSub = !!org?.stripe_subscription_id;
   const trialEnds = org?.trial_ends_at ? new Date(org.trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const isOwner = membership?.role === "owner";
+  const comped = !!org?.comped;
+  const baseMonthly = org?.monthly_price_override != null ? org.monthly_price_override : 100;
+  const monthly = baseMonthly + Math.max(0, (org?.agent_limit || 1) - 1) * 15;
+  const customPrice = org?.monthly_price_override != null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -56,14 +60,20 @@ export default async function BillingPage() {
         {org && (
           <>
             <div className="grid sm:grid-cols-3 gap-4 mb-8">
-              <Stat label="Plan status" value={label.t} valueClass={label.c} />
+              <Stat label="Plan status" value={comped ? "Complimentary" : label.t} valueClass={comped ? "text-primary" : label.c} />
               <Stat label="Agents" value={`${agentCount || 1} / ${org.agent_limit}`} />
-              <Stat label={status === "trial" ? "Trial ends" : "Monthly"} value={status === "trial" && trialEnds ? trialEnds : `$${100 + Math.max(0, (org.agent_limit - 1)) * 15}`} />
+              <Stat label={comped ? "Monthly" : status === "trial" ? "Trial ends" : "Monthly"} value={comped ? "Free" : status === "trial" && trialEnds ? trialEnds : `$${monthly}`} />
             </div>
 
             <div className="rounded-xl border border-border bg-card p-6">
               <h2 className="font-semibold mb-1">{hasSub ? "Manage your subscription" : "Activate your subscription"}</h2>
-              <p className="text-sm text-muted-foreground mb-4">$100/mo per company + $15/mo per additional agent. Cancel anytime.</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                {comped
+                  ? "Complimentary access — no charge on this account."
+                  : customPrice
+                    ? `Custom plan: $${baseMonthly}/mo per company + $15/mo per additional agent. Cancel anytime.`
+                    : "$100/mo per company + $15/mo per additional agent. Cancel anytime."}
+              </p>
 
               {!stripeConfigured() ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/10 text-sm p-3 text-warning-foreground">

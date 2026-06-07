@@ -1,11 +1,12 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { ChevronRight, Users, Gift } from "lucide-react";
+import { ChevronRight, Users, Gift, DollarSign } from "lucide-react";
 
 export type Org = {
   id: string; name: string; plan_status: string; agent_limit: number;
   trial_ends_at: string | null; created_at: string; comped?: boolean;
+  monthly_price_override?: number | null;
 };
 export type Member = { email: string | null; role: string };
 
@@ -19,6 +20,10 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [open, setOpen] = useState<string | null>(null);
   const [comped, setComped] = useState<Record<string, boolean>>(() => Object.fromEntries(orgs.map((o) => [o.id, !!o.comped])));
 
+  const [price, setPrice] = useState<Record<string, string>>(() =>
+    Object.fromEntries(orgs.map((o) => [o.id, o.monthly_price_override != null ? String(o.monthly_price_override) : ""])));
+  const [savingPrice, setSavingPrice] = useState<string | null>(null);
+
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
     const next = !comped[id];
@@ -29,6 +34,19 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
       });
       if (!r.ok) setComped((c) => ({ ...c, [id]: !next })); // revert on failure
     } catch { setComped((c) => ({ ...c, [id]: !next })); }
+  }
+
+  // Set a custom monthly price for an org (blank = standard pricing).
+  async function savePrice(id: string) {
+    setSavingPrice(id);
+    const raw = price[id]?.trim();
+    try {
+      await fetch("/api/admin/companies", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, monthlyPriceOverride: raw === "" ? null : Number(raw) }),
+      });
+    } catch { /* ignore */ }
+    finally { setSavingPrice(null); }
   }
 
   if (!orgs.length) {
@@ -95,6 +113,22 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                         className={`text-xs font-medium px-2.5 py-1 rounded-md border transition ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
                         {comped[o.id] ? "Revoke free access" : "Grant free access"}
                       </button>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-3">
+                      <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5" /> Custom monthly price (blank = standard $100 + seats)
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">$</span>
+                        <input value={price[o.id] ?? ""} onChange={(e) => setPrice((p) => ({ ...p, [o.id]: e.target.value.replace(/[^0-9]/g, "") }))}
+                          placeholder="std" inputMode="numeric"
+                          className="w-20 rounded-md border border-border bg-card px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50" />
+                        <span className="text-xs text-muted-foreground">/mo</span>
+                        <button onClick={() => savePrice(o.id)} disabled={savingPrice === o.id}
+                          className="text-xs font-medium px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50">
+                          {savingPrice === o.id ? "Saving…" : "Save"}
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>

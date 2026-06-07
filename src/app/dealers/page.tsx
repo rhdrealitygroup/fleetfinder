@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppNav } from "@/components/AppNav";
-import { Building2, Search, Check, Phone, ExternalLink, Star } from "lucide-react";
+import { Building2, Search, Check, Phone, ExternalLink, Star, Clock, X } from "lucide-react";
 import { useOrgDealers } from "@/lib/useOrgDealers";
+
+type RemReq = { id: string; dealer_key: string; dealer_name: string | null; requested_by_email: string | null; created_at: string };
 
 type Dealer = {
   id: string; name: string; street: string; city: string; state: string; zip: string;
@@ -28,6 +30,39 @@ export default function DealersPage() {
 
   const { items: selected, add, remove, ready } = useOrgDealers();
   const selectedIds = useMemo(() => new Set(selected.map((d) => d.id)), [selected]);
+
+  const [role, setRole] = useState<string | null>(null);
+  const isManager = role === "owner" || role === "admin";
+  const [requests, setRequests] = useState<RemReq[]>([]);
+  const [requestedKeys, setRequestedKeys] = useState<Set<string>>(new Set());
+
+  const loadRequests = useCallback(async () => {
+    try { const r = await fetch("/api/dealers/removal-requests"); const d = await r.json(); setRequests(Array.isArray(d.requests) ? d.requests : []); } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/me").then((r) => r.json()).then((d) => setRole(d?.role || null)).catch(() => {});
+    loadRequests();
+  }, [loadRequests]);
+
+  async function requestRemoval(d: Dealer) {
+    setRequestedKeys((s) => new Set(s).add(d.id));
+    try {
+      await fetch("/api/dealers/removal-requests", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealer_key: d.id, name: d.name }),
+      });
+    } catch { /* ignore */ }
+  }
+
+  async function actOnRequest(id: string, action: "approve" | "dismiss") {
+    setRequests((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await fetch("/api/dealers/removal-requests", {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }),
+      });
+    } catch { /* ignore */ }
+  }
 
   const load = useCallback(async (pageNum: number, replace: boolean) => {
     setLoading(true);
@@ -59,8 +94,10 @@ export default function DealersPage() {
   }, [load]);
 
   const toggle = (d: Dealer) => {
-    if (selectedIds.has(d.id)) remove(d.id);
-    else add({ id: d.id, name: d.name, city: d.city, state: d.state });
+    if (!selectedIds.has(d.id)) { add({ id: d.id, name: d.name, city: d.city, state: d.state }); return; }
+    // Selected: owners/admins remove directly; agents request removal.
+    if (isManager) remove(d.id);
+    else requestRemoval(d);
   };
 
   const shown: Dealer[] = onlySelected
@@ -107,6 +144,24 @@ export default function DealersPage() {
           </button>
         </div>
 
+        {/* Removal requests (owner/admin only) */}
+        {isManager && requests.length > 0 && (
+          <div className="rounded-xl border border-warning/40 bg-warning/10 p-4 mb-4">
+            <div className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Clock className="w-4 h-4 text-warning" /> Dealer removal requests ({requests.length})</div>
+            <ul className="space-y-2">
+              {requests.map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate">{r.dealer_name || r.dealer_key}<span className="text-xs text-muted-foreground"> · requested by {r.requested_by_email || "an agent"}</span></span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => actOnRequest(r.id, "approve")} className="text-xs font-medium px-2.5 py-1 rounded-md bg-destructive/15 text-destructive hover:bg-destructive/25">Remove</button>
+                    <button onClick={() => actOnRequest(r.id, "dismiss")} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {!onlySelected && (
           <div className="text-xs text-muted-foreground mb-2">{total.toLocaleString()} match{total === 1 ? "" : "es"}</div>
         )}
@@ -117,9 +172,10 @@ export default function DealersPage() {
             const on = selectedIds.has(d.id);
             return (
               <div key={d.id} className={`flex items-center gap-3 p-3 rounded-xl border transition ${on ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}>
-                <button onClick={() => toggle(d)} title={on ? "Remove" : "Add to my dealers"}
+                <button onClick={() => requestedKeys.has(d.id) ? undefined : toggle(d)} disabled={requestedKeys.has(d.id)}
+                  title={on ? (isManager ? "Remove" : requestedKeys.has(d.id) ? "Removal requested" : "Request removal") : "Add to my dealers"}
                   className={`w-6 h-6 shrink-0 rounded-md border flex items-center justify-center transition ${on ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}>
-                  {on && <Check className="w-4 h-4" />}
+                  {requestedKeys.has(d.id) ? <Clock className="w-3.5 h-3.5" /> : on ? <Check className="w-4 h-4" /> : null}
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

@@ -37,7 +37,24 @@ export async function POST(req: Request) {
     await createServiceRoleClient().from("organizations").update({ stripe_customer_id: customerId }).eq("id", org.id);
   }
 
-  const line_items = [{ price: basePriceId(), quantity: 1 }];
+  // Base price: a per-org custom monthly price overrides the standard one.
+  let basePrice = basePriceId();
+  if (org.monthly_price_override && org.monthly_price_override > 0) {
+    let customPriceId = org.stripe_custom_price_id as string | null;
+    if (!customPriceId) {
+      const p = await stripe.prices.create({
+        unit_amount: Math.round(org.monthly_price_override * 100),
+        currency: "usd",
+        recurring: { interval: "month" },
+        product_data: { name: `LotCompass — ${org.name} (custom)` },
+      });
+      customPriceId = p.id;
+      await createServiceRoleClient().from("organizations").update({ stripe_custom_price_id: customPriceId }).eq("id", org.id);
+    }
+    basePrice = customPriceId;
+  }
+
+  const line_items = [{ price: basePrice, quantity: 1 }];
   if (seats > 0 && seatPriceId()) line_items.push({ price: seatPriceId(), quantity: seats });
 
   const session = await stripe.checkout.sessions.create({
