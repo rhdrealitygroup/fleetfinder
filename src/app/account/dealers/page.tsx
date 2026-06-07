@@ -36,7 +36,12 @@ export default function DealersPage() {
   const [requestedKeys, setRequestedKeys] = useState<Set<string>>(new Set());
 
   const loadRequests = useCallback(async () => {
-    try { const r = await fetch("/api/dealers/removal-requests"); const d = await r.json(); setRequests(Array.isArray(d.requests) ? d.requests : []); } catch { /* ignore */ }
+    try {
+      const r = await fetch("/api/dealers/removal-requests"); const d = await r.json();
+      setRequests(Array.isArray(d.requests) ? d.requests : []);
+      // Restore the caller's own pending "removal requested" state across reloads.
+      if (Array.isArray(d.mine)) setRequestedKeys(new Set(d.mine));
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {

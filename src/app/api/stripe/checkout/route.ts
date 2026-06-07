@@ -17,7 +17,9 @@ export async function POST(req: Request) {
   if (membership.role !== "owner") return NextResponse.json({ error: "Only the owner can manage billing" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const requestedSeats = Math.max(0, Number(body.seats) || 0);
+  // Clamp the client-supplied seat count — this endpoint is directly POST-able, so
+  // an unbounded value would let someone bill themselves arbitrarily.
+  const requestedSeats = Math.min(1000, Math.max(0, Math.floor(Number(body.seats) || 0)));
 
   const supabase = await createClient();
   const { data: org } = await supabase.from("organizations").select("*").eq("id", membership.org_id).single();
@@ -25,11 +27,15 @@ export async function POST(req: Request) {
 
   // A trial org can add agents before subscribing, so bill for at least the
   // agents already on the team (members minus the owner). Otherwise those agents
-  // would convert to a paid plan unbilled.
-  const { count: memberCount } = await createServiceRoleClient()
+  // would convert to a paid plan unbilled. A FAILED count must NOT silently floor
+  // to 0 (that would underbill) — treat it as a transient error and let them retry.
+  const { count: memberCount, error: countErr } = await createServiceRoleClient()
     .from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
-  const currentAgents = Math.max(0, (memberCount ?? 1) - 1);
-  const seats = Math.max(requestedSeats, currentAgents);
+  if (countErr || memberCount == null) {
+    return NextResponse.json({ error: "Couldn't verify your team size — please try again." }, { status: 503 });
+  }
+  const currentAgents = Math.max(0, memberCount - 1);
+  const seats = Math.min(1000, Math.max(requestedSeats, currentAgents));
 
   // Comped orgs get free access (auth.ts grants it) — starting a paid checkout
   // would charge them for something they were given for free. Block it.

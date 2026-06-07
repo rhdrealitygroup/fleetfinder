@@ -184,13 +184,18 @@ export async function DELETE(req: Request) {
   const b = await req.json().catch(() => ({}));
   const id = String(b.id || "").trim();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-  // Never let an admin delete the company they themselves belong to (would nuke
-  // their own login / lock them out mid-action).
-  if (ctx.membership?.org_id === id) {
-    return NextResponse.json({ error: "You can't delete your own company." }, { status: 400 });
-  }
 
   const db = createServiceRoleClient();
+  // Never let an admin delete ANY company they belong to (not just their primary
+  // one — getSessionContext only returns the earliest membership, so checking that
+  // alone would let a super-admin delete a second org they're a member of and nuke
+  // their own login). Check every membership for this user.
+  {
+    const { data: mine } = await db.from("memberships").select("org_id").eq("user_id", ctx.user.id);
+    if ((mine || []).some((m) => m.org_id === id)) {
+      return NextResponse.json({ error: "You can't delete a company you belong to." }, { status: 400 });
+    }
+  }
   const { data: org } = await db.from("organizations")
     .select("id,name,stripe_subscription_id,stripe_customer_id").eq("id", id).maybeSingle();
   if (!org) return NextResponse.json({ error: "Company not found" }, { status: 404 });

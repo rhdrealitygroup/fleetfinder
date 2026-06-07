@@ -33,13 +33,18 @@ async function pullState(state: string, apiKey: string, deadline = 0) {
   const out = new Map<string, any>();
   let complete = true;
   let rateLimited = false;
+  // Reserve margin for one in-flight fetch (12s timeout) + the trailing DB write,
+  // so the LAST request started before the budget can't run past maxDuration's
+  // hard kill. Stop ~13s before the deadline rather than right at it.
+  const FETCH_MARGIN_MS = 13_000;
+  const overBudget = () => deadline > 0 && Date.now() > deadline - FETCH_MARGIN_MS;
   for (const type of ["franchise", "independent"]) {
-    if (rateLimited || (deadline && Date.now() > deadline)) { complete = false; break; }
+    if (rateLimited || overBudget()) { complete = false; break; }
     // start + rows must stay within the tier's 1500 offset cap, so stop at 1450.
     for (let start = 0; start + 50 <= 1500; start += 50) {
       // Respect the cron's shared budget so a single slow state can't page past
       // maxDuration and get the whole function hard-killed mid-pull.
-      if (deadline && Date.now() > deadline) { complete = false; break; }
+      if (overBudget()) { complete = false; break; }
       const u = new URL(`${MC_HOST}/dealers/car`);
       u.searchParams.set("api_key", apiKey);
       u.searchParams.set("state", state);

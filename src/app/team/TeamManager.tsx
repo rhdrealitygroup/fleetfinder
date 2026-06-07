@@ -34,6 +34,7 @@ export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSe
   }
 
   async function remove(id: string) {
+    setError("");
     const prev = members;
     setMembers((m) => m.filter((x) => x.id !== id)); // optimistic
     try {

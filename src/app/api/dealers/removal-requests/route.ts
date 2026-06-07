@@ -18,13 +18,18 @@ async function ctx() {
 
 export async function GET() {
   const c = await ctx();
-  if ("error" in c) return NextResponse.json({ error: c.error, requests: [] }, { status: c.status });
-  if (!["owner", "admin"].includes(c.role)) return NextResponse.json({ requests: [] }); // agents don't see the queue
+  if ("error" in c) return NextResponse.json({ error: c.error, requests: [], mine: [] }, { status: c.status });
   const db = createServiceRoleClient();
+  // The caller's OWN pending request keys — so the dealers UI can restore the
+  // "removal requested" (clock/disabled) state on reload, for agents and managers.
+  const { data: mineRows } = await db.from("dealer_removal_requests")
+    .select("dealer_key").eq("org_id", c.org).eq("requested_by", c.user.id).eq("status", "pending");
+  const mine = (mineRows || []).map((r) => r.dealer_key);
+  if (!["owner", "admin"].includes(c.role)) return NextResponse.json({ requests: [], mine }); // agents don't see the full queue
   const { data } = await db.from("dealer_removal_requests")
     .select("id,dealer_key,dealer_name,requested_by_email,created_at")
     .eq("org_id", c.org).eq("status", "pending").order("created_at", { ascending: true });
-  return NextResponse.json({ requests: data || [] });
+  return NextResponse.json({ requests: data || [], mine });
 }
 
 export async function POST(req: Request) {

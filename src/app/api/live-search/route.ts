@@ -199,6 +199,10 @@ export async function POST(req: Request) {
   // (on the Basic tier) handles unbounded nationwide queries. Auto.dev is the
   // fallback, used only if MarketCheck is unavailable or rate-limited.
   const preferMarketCheck = !!marketKey;
+  // Filters Auto.dev cannot honor (no API param + no client-side post-filter):
+  // dealer scope and interior color. We must not serve/cache an unfiltered Auto.dev
+  // result for these — it'd silently ignore the filter.
+  const autoDevCantHonor = (Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0) || !!body.interior_color;
   try {
     if (preferMarketCheck) {
       const r = await searchMarketCheck();
@@ -207,13 +211,12 @@ export async function POST(req: Request) {
         // A 429 returns empty rather than throwing, so fall back to Auto.dev when
         // available — otherwise the UI shows a rate-limit as "no inventory" and
         // sends the agent chasing filters that are actually fine.
-        // BUT NOT when the search is scoped to the org's dealers: Auto.dev can't
-        // filter by dealer_id, so it would return nationwide inventory the agent
-        // doesn't work with — and (rateLimited=false) cache it under the
-        // dealer-scoped key. For a dealer-scoped search, keep rateLimited=true
+        // BUT NOT when the search needs a filter Auto.dev can't honor: dealer_id
+        // (no dealer filter) or interior_color (no interior filter + no client-side
+        // post-filter). Falling back there would return inventory that ignores the
+        // filter and cache it under the filter-specific key. Keep rateLimited=true
         // (so nothing is cached) and just surface the rate-limit note.
-        const dealerScoped = Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0;
-        if (autoKey && !dealerScoped) {
+        if (autoKey && !autoDevCantHonor) {
           try {
             const r2 = await searchAutoDev();
             results = r2.results; total = r2.total; provider = "auto.dev"; rateLimited = r2.rateLimited;
@@ -224,23 +227,17 @@ export async function POST(req: Request) {
         }
       }
     } else if (autoKey) {
-      // Auto.dev has no dealer_id filter. If the search is scoped to the org's
-      // dealers and MarketCheck isn't available to honor that scope, running
-      // Auto.dev would return nationwide inventory from dealers the org doesn't
-      // work with (and cache it under the dealer-scoped key). Return nothing with
-      // a clear note instead, and don't cache it (rateLimited gates caching).
-      const dealerScoped = Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0;
-      if (dealerScoped && !marketKey) {
+      // Auto.dev-only deployment (no MarketCheck key). Auto.dev can't filter by
+      // dealer_id or interior_color and we have no post-filter for them, so for
+      // such a search return nothing with a clear note rather than silently
+      // serving (and caching) an unfiltered set.
+      if (autoDevCantHonor) {
         results = []; total = 0; provider = "auto.dev"; rateLimited = true;
-        note = " (dealer-scoped search needs MarketCheck — not available in this configuration)";
+        note = " (this filter needs MarketCheck — not available in this configuration)";
       } else {
         const r = await searchAutoDev();
-        results = r.results; total = r.total; provider = "auto.dev";
-        if (r.rateLimited && marketKey) {
-          note = " (auto.dev quota reached, used marketcheck)";
-          const r2 = await searchMarketCheck();
-          results = r2.results; total = r2.total; provider = "marketcheck";
-        }
+        results = r.results; total = r.total; provider = "auto.dev"; rateLimited = r.rateLimited;
+        if (r.rateLimited) note = " (inventory service rate-limited — try again shortly)";
       }
     } else if (marketKey) {
       const r = await searchMarketCheck();

@@ -51,13 +51,13 @@ export async function POST(req: Request) {
     const { data: prof } = await db.from("profiles").select("id").eq("email", email);
     if (prof && prof.length > 1) return NextResponse.json({ error: "That email is ambiguous — contact support." }, { status: 409 });
     userId = prof?.[0]?.id || null;
-    // Consent guard: never force-join a user who already belongs to another org.
-    if (userId) {
-      const { data: other } = await db.from("memberships").select("id").eq("user_id", userId).neq("org_id", membership.org_id).limit(1);
-      if (other?.length) return NextResponse.json({ error: "That person already belongs to another company." }, { status: 409 });
-    }
   }
   if (!userId) return NextResponse.json({ error: "Could not invite that email" }, { status: 400 });
+  // Consent guard for ALL resolution paths — inviteUserByEmail can return an
+  // already-registered user, so checking only the lookup branch let an existing
+  // member of another company be force-joined. Never do that.
+  const { data: other } = await db.from("memberships").select("id").eq("user_id", userId).neq("org_id", membership.org_id).limit(1);
+  if (other?.length) return NextResponse.json({ error: "That person already belongs to another company." }, { status: 409 });
 
   const { error } = await db.from("memberships").insert({
     org_id: membership.org_id, user_id: userId, role: "agent",
