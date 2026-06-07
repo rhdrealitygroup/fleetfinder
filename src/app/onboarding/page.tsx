@@ -1,28 +1,43 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
-import { getSessionContext } from "@/lib/auth";
-import { ensureOrgForUser } from "@/lib/account";
-import { CheckCircle2 } from "lucide-react";
+import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { OnboardingForm } from "./OnboardingForm";
 
-// Landed here after email confirmation. Creates the user's organization +
-// owner membership if they don't have one yet, then routes into the app.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+// First-run setup. Collects the user's name + company and creates/names their
+// org via /api/account/onboard. Pre-fills from signup metadata or an existing
+// (auto-provisioned) org so the user just confirms.
 export default async function OnboardingPage() {
-  const { user } = await getSessionContext();
-  if (user) await ensureOrgForUser();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login?next=/onboarding");
+
+  let fullName = (user.user_metadata?.full_name as string) || "";
+  let company = (user.user_metadata?.company_name as string) || "";
+
+  // If an org/membership already exists (e.g. auto-provisioned), prefer its real
+  // values — but ignore the auto-generated "<name>'s company" placeholder.
+  const db = createServiceRoleClient();
+  const { data: mems } = await db
+    .from("memberships").select("org_id, first_name, last_name")
+    .eq("user_id", user.id).order("created_at", { ascending: true }).limit(1);
+  if (mems && mems[0]) {
+    const nm = [mems[0].first_name, mems[0].last_name].filter(Boolean).join(" ");
+    if (!fullName && nm) fullName = nm;
+    const { data: org } = await db.from("organizations").select("name").eq("id", mems[0].org_id).maybeSingle();
+    if (!company && org?.name && !/'s company$/.test(org.name as string)) company = org.name as string;
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppNav />
-      <main className="max-w-lg mx-auto p-5 pt-16 text-center">
-        <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-positive" />
-        <h1 className="font-heading text-2xl font-bold mb-1">You&apos;re in{user?.email ? `, ${user.email}` : ""}</h1>
-        <p className="text-sm text-muted-foreground mb-8">
-          Your 14-day trial is active. Live Search and the Lease Calculator are ready to use now —
-          company billing and adding agents come next.
+      <main className="max-w-md mx-auto p-5 pt-16">
+        <h1 className="font-heading text-2xl font-bold mb-1">Set up your account</h1>
+        <p className="text-sm text-muted-foreground mb-6">
+          Your <span className="text-foreground font-medium">14-day free trial</span> starts now — no card required. Just confirm a couple details.
         </p>
-        <div className="flex justify-center gap-3">
-          <Link href="/search" className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">Start searching</Link>
-          <Link href="/calculator" className="px-5 py-2.5 rounded-lg border border-border hover:bg-white/5 text-sm font-medium transition">Open calculator</Link>
-        </div>
+        <OnboardingForm initialFullName={fullName} initialCompany={company} />
       </main>
     </div>
   );
