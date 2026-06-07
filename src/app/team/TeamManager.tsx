@@ -6,14 +6,15 @@ import { Loader2, UserPlus, Trash2, ShieldCheck } from "lucide-react";
 
 type Member = { id: string; role: string; first_name: string | null; last_name: string | null; email: string | null };
 
-export function TeamManager({ initialMembers, canManage, agentLimit }: { initialMembers: Member[]; canManage: boolean; agentLimit: number }) {
+export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSeats = false, trialing = false }: { initialMembers: Member[]; canManage: boolean; agentLimit: number; unlimitedSeats?: boolean; trialing?: boolean }) {
   const router = useRouter();
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const overLimit = members.length >= agentLimit;
+  // Trial/comped orgs have no seat cap — never show the "at your limit" gate.
+  const overLimit = !unlimitedSeats && members.length >= agentLimit;
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -65,6 +66,7 @@ export function TeamManager({ initialMembers, canManage, agentLimit }: { initial
         <form onSubmit={add} className="rounded-xl border border-border bg-card p-5">
           <div className="text-sm font-semibold mb-1 flex items-center gap-2"><UserPlus className="w-4 h-4" /> Add an agent</div>
           <p className="text-xs text-muted-foreground mb-3">They&apos;ll get an email invite. Each agent beyond the first is $15/mo.</p>
+          {trialing && <div className="text-xs text-muted-foreground mb-3">Add as many agents as you like during your free trial — they&apos;re only billed ($15/mo each) when you start a subscription.</div>}
           {overLimit && <div className="text-xs text-warning mb-3">You&apos;re at your seat limit ({agentLimit}). Adding another will require an extra seat on your plan — manage it in Billing.</div>}
           <div className="flex gap-2">
             <input type="email" required placeholder="agent@email.com" value={email} onChange={(e) => setEmail(e.target.value)}
