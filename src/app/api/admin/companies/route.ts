@@ -3,7 +3,7 @@
 //   PATCH { id, monthlyPriceOverride }   → custom $/mo (null clears → standard)
 
 import { NextResponse } from "next/server";
-import { getSessionContext } from "@/lib/auth";
+import { getSessionContext, isSuperAdminEmail } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getStripe, stripeConfigured, basePriceId, seatPriceId } from "@/lib/stripe";
 
@@ -170,4 +170,58 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: true, id });
+}
+
+// DELETE { id } → permanently remove a company: cancels its Stripe subscription
+// (so billing stops), deletes the org (cascades memberships, customers, dealers,
+// saved_vehicles, removal requests), and deletes each member's auth login if that
+// member no longer belongs to any other company. Super-admin only.
+export async function DELETE(req: Request) {
+  const ctx = await getSessionContext();
+  if (!ctx.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!ctx.isSuperAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const b = await req.json().catch(() => ({}));
+  const id = String(b.id || "").trim();
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  // Never let an admin delete the company they themselves belong to (would nuke
+  // their own login / lock them out mid-action).
+  if (ctx.membership?.org_id === id) {
+    return NextResponse.json({ error: "You can't delete your own company." }, { status: 400 });
+  }
+
+  const db = createServiceRoleClient();
+  const { data: org } = await db.from("organizations")
+    .select("id,name,stripe_subscription_id,stripe_customer_id").eq("id", id).maybeSingle();
+  if (!org) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+
+  // Capture members BEFORE deleting the org (the delete cascades memberships away).
+  const { data: members } = await db.from("memberships").select("user_id,email").eq("org_id", id);
+  const roster = (members || []).filter((m) => m.user_id);
+
+  // Stop billing first — cancel any live subscription so a deleted company never
+  // keeps getting charged. Best-effort; a Stripe hiccup shouldn't block deletion.
+  if (org.stripe_subscription_id && stripeConfigured()) {
+    try { await getStripe().subscriptions.cancel(org.stripe_subscription_id as string); }
+    catch { /* may already be canceled / gone */ }
+  }
+
+  // Delete the org → cascades all org-scoped rows + memberships.
+  const { error } = await db.from("organizations").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+
+  // Delete the auth login for members who are now orphaned (no other company) —
+  // so the email is freed up to sign up fresh. Never delete a super-admin login.
+  let deletedUsers = 0;
+  for (const m of roster) {
+    if (isSuperAdminEmail(m.email)) continue;
+    const { count } = await db.from("memberships")
+      .select("*", { count: "exact", head: true }).eq("user_id", m.user_id as string);
+    if ((count || 0) > 0) continue; // still belongs to another company → keep login
+    await db.from("profiles").delete().eq("id", m.user_id as string);
+    const { error: delErr } = await db.auth.admin.deleteUser(m.user_id as string);
+    if (!delErr) deletedUsers++;
+  }
+
+  return NextResponse.json({ ok: true, id, name: org.name, deletedUsers });
 }

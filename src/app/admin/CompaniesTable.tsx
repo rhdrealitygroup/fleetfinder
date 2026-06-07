@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { ChevronRight, Users, Gift, DollarSign } from "lucide-react";
+import { ChevronRight, Users, Gift, DollarSign, Trash2 } from "lucide-react";
 
 export type Org = {
   id: string; name: string; plan_status: string; agent_limit: number;
@@ -24,6 +24,9 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
     Object.fromEntries(orgs.map((o) => [o.id, o.monthly_price_override != null ? String(o.monthly_price_override) : ""])));
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
   const [priceMsg, setPriceMsg] = useState<Record<string, string>>({});
+  const [removed, setRemoved] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteErr, setDeleteErr] = useState<Record<string, string>>({});
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
@@ -54,7 +57,27 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
     } finally { setSavingPrice(null); }
   }
 
-  if (!orgs.length) {
+  // Permanently delete a company (and orphaned member logins). Double-confirm
+  // because it's irreversible.
+  async function deleteCompany(id: string, name: string, seats: number) {
+    if (!window.confirm(`Permanently delete "${name}"?\n\nThis removes the company, its ${seats} member account${seats === 1 ? "" : "s"}, saved cars, customers, and dealer settings. This cannot be undone.`)) return;
+    setDeleting(id);
+    setDeleteErr((m) => ({ ...m, [id]: "" }));
+    try {
+      const r = await fetch("/api/admin/companies", {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setDeleteErr((m) => ({ ...m, [id]: d.error || "Delete failed" })); return; }
+      setRemoved((s) => new Set(s).add(id));
+      if (open === id) setOpen(null);
+    } catch {
+      setDeleteErr((m) => ({ ...m, [id]: "Delete failed — try again" }));
+    } finally { setDeleting(null); }
+  }
+
+  const visibleOrgs = orgs.filter((o) => !removed.has(o.id));
+  if (!visibleOrgs.length) {
     return <div className="p-6 text-sm text-muted-foreground">No companies yet. They appear here as accounts sign up.</div>;
   }
   return (
@@ -68,7 +91,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
         </tr>
       </thead>
       <tbody>
-        {orgs.map((o) => {
+        {visibleOrgs.map((o) => {
           const people = membersByOrg[o.id] || [];
           const isOpen = open === o.id;
           return (
@@ -134,6 +157,18 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                           {savingPrice === o.id ? "Saving…" : "Save"}
                         </button>
                         {priceMsg[o.id] && <span className={`text-[11px] ${priceMsg[o.id].startsWith("Saved") ? "text-positive" : "text-destructive"}`}>{priceMsg[o.id]}</span>}
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-destructive/30 flex items-center justify-between gap-3">
+                      <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+                        <Trash2 className="w-3.5 h-3.5 text-destructive" /> Permanently delete this company &amp; its member accounts
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {deleteErr[o.id] && <span className="text-[11px] text-destructive">{deleteErr[o.id]}</span>}
+                        <button onClick={() => deleteCompany(o.id, o.name, people.length)} disabled={deleting === o.id}
+                          className="text-xs font-medium px-2.5 py-1 rounded-md border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 transition disabled:opacity-50">
+                          {deleting === o.id ? "Deleting…" : "Delete company"}
+                        </button>
                       </div>
                     </div>
                   </td>
