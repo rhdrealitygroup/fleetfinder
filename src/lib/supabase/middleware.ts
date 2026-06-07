@@ -44,12 +44,36 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirect);
   }
 
-  // Already signed in but on the marketing/auth pages → go straight to the app.
-  if (user && (path === "/" || path === "/login" || path === "/signup")) {
-    const redirect = request.nextUrl.clone();
-    redirect.pathname = "/search";
-    redirect.search = "";
-    return NextResponse.redirect(redirect);
+  if (user) {
+    // Has the user finished first-run setup (name + company)? The flag is set on
+    // the auth user's metadata by /api/account/onboard. getUser() returns current
+    // metadata from the auth server, so this reflects completion immediately
+    // after onboarding.
+    const onboarded = !!(user.user_metadata as Record<string, unknown> | undefined)?.onboarded;
+
+    // Entry points (marketing / auth pages): funnel a signed-in user to setup if
+    // they haven't onboarded, otherwise straight into the app.
+    if (path === "/" || path === "/login" || path === "/signup") {
+      const redirect = request.nextUrl.clone();
+      redirect.pathname = onboarded ? "/search" : "/onboarding";
+      redirect.search = "";
+      return NextResponse.redirect(redirect);
+    }
+
+    // Force first-run setup before any app PAGE is usable. Never touch /api/*
+    // (the onboarding form POSTs to /api/account/onboard and the nav reads
+    // /api/me), /auth/*, or /onboarding itself — that would deadlock setup.
+    if (
+      !onboarded &&
+      path !== "/onboarding" &&
+      !path.startsWith("/api") &&
+      !path.startsWith("/auth")
+    ) {
+      const redirect = request.nextUrl.clone();
+      redirect.pathname = "/onboarding";
+      redirect.search = "";
+      return NextResponse.redirect(redirect);
+    }
   }
 
   return response;

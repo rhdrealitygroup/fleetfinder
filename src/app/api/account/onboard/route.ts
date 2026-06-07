@@ -34,5 +34,12 @@ export async function POST(req: Request) {
     await db.from("organizations").update({ name: companyName }).eq("id", ensured.org_id);
   }
 
+  // Mark first-run setup complete on the auth user's metadata. The middleware
+  // reads this flag to stop funnelling the user back to /onboarding. (Supabase
+  // merges these keys into existing user_metadata rather than replacing it.)
+  await db.auth.admin.updateUserById(user.id, {
+    user_metadata: { full_name: fullName, company_name: companyName, onboarded: true },
+  });
+
   return NextResponse.json({ ok: true });
 }
