@@ -34,7 +34,7 @@ async function readAll(db: any, table: string, columns: string, orderCol: string
 }
 
 // ── Keep tracked_dealers in sync with the deduped union of org selections ────
-export async function syncTrackedDealers() {
+export async function syncTrackedDealers(deadline = 0) {
   const db = createServiceRoleClient();
   // Snapshot tracked_dealers FIRST (before reading the dealers union). Any dealer
   // added by the on-select path AFTER this snapshot won't appear here, so it can
@@ -66,6 +66,7 @@ export async function syncTrackedDealers() {
   // so a large one-time deselection could overflow the URL length limit and fail
   // the whole delete (leaving orphan rows). ~500 ids/chunk stays well under it.
   for (let i = 0; i < stale.length; i += 500) {
+    if (deadline && Date.now() > deadline) break; // out of the run's budget → finish GC next run
     const chunk = stale.slice(i, i + 500);
     await db.from("inventory").delete().in("dealer_id", chunk);
     await db.from("tracked_dealers").delete().in("dealer_id", chunk);
@@ -123,6 +124,10 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       let r: Response;
       try { r = await fetchWithTimeout(u.toString()); }
       catch { complete = false; break; }
+      // On a rate-limit, abort the whole run (not just this dealer) so we don't
+      // hammer MarketCheck with the rest of the batch; the cron catches this and
+      // stops. The lock still releases via finally; nothing is swept.
+      if (r.status === 429) { complete = false; throw new Error("RATE_LIMITED"); }
       if (!r.ok) { complete = false; break; }
       const d = await r.json();
       if (start === 0) numFound = num(d.num_found) || 0;

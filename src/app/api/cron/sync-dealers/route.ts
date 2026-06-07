@@ -32,8 +32,9 @@ function mapDealer(x: any) {
 async function pullState(state: string, apiKey: string, deadline = 0) {
   const out = new Map<string, any>();
   let complete = true;
+  let rateLimited = false;
   for (const type of ["franchise", "independent"]) {
-    if (deadline && Date.now() > deadline) { complete = false; break; }
+    if (rateLimited || (deadline && Date.now() > deadline)) { complete = false; break; }
     // start + rows must stay within the tier's 1500 offset cap, so stop at 1450.
     for (let start = 0; start + 50 <= 1500; start += 50) {
       // Respect the cron's shared budget so a single slow state can't page past
@@ -50,6 +51,9 @@ async function pullState(state: string, apiKey: string, deadline = 0) {
       let r: Response;
       try { r = await fetchWithTimeout(u.toString()); }
       catch { complete = false; break; }
+      // On a rate-limit, stop and signal the caller to end the batch (don't keep
+      // hammering MarketCheck across the remaining states this run).
+      if (r.status === 429) { complete = false; rateLimited = true; break; }
       if (!r.ok) { complete = false; break; }
       const d = await r.json();
       const ds: any[] = d.dealers || [];
@@ -57,7 +61,7 @@ async function pullState(state: string, apiKey: string, deadline = 0) {
       if (ds.length < 50) break;
     }
   }
-  return { dealers: [...out.values()], complete };
+  return { dealers: [...out.values()], complete, rateLimited };
 }
 
 export async function GET(req: Request) {
@@ -89,7 +93,7 @@ export async function GET(req: Request) {
   const refreshed: { state: string; n: number; complete: boolean }[] = [];
   for (const st of batch) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → next run picks up the rest
-    const { dealers, complete } = await pullState(st, apiKey, startedAt + BUDGET_MS);
+    const { dealers, complete, rateLimited } = await pullState(st, apiKey, startedAt + BUDGET_MS);
     if (dealers.length) {
       // Upsert without `makes` → existing make tags are preserved on update.
       await db.from("dealer_catalog").upsert(dealers, { onConflict: "id" });
@@ -100,6 +104,7 @@ export async function GET(req: Request) {
       await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), count: dealers.length });
     }
     refreshed.push({ state: st, n: dealers.length, complete });
+    if (rateLimited) break; // MarketCheck rate-limited → stop the batch; next run retries
   }
   return NextResponse.json({ ok: true, refreshed });
 }

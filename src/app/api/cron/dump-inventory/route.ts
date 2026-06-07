@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   const startedAt = Date.now();
   const BUDGET_MS = 45_000;
 
-  const tracked = await syncTrackedDealers();
+  const tracked = await syncTrackedDealers(startedAt + BUDGET_MS);
 
   // Batches sized to finish within maxDuration (60s) of sequential MarketCheck
   // calls; the rolling cron covers the rest of the fleet across runs.
@@ -38,7 +38,12 @@ export async function GET(req: Request) {
       // Pass the shared run deadline so a dealer started late can't page past 60s.
       const n = await dumpDealerListings(d.dealer_id, { name: d.name, city: d.city, state: d.state }, startedAt + BUDGET_MS);
       refreshed.push({ dealer: d.dealer_id, n });
-    } catch { /* skip, retried next run */ }
+    } catch (e) {
+      // MarketCheck rate-limited us → stop the batch (don't hammer it with the
+      // rest); the next scheduled run retries. Other errors: skip this dealer.
+      if (e instanceof Error && e.message === "RATE_LIMITED") break;
+      /* else skip, retried next run */
+    }
   }
 
   // Only decode if there's budget left. decodeUndecoded honors the wall-clock

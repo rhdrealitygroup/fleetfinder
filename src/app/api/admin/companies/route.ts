@@ -116,6 +116,7 @@ export async function PATCH(req: Request) {
   // new base price to Stripe (otherwise it'd only apply at a checkout the
   // existing subscriber never runs → silent mischarge).
   if (priceChanged && org.stripe_subscription_id && stripeConfigured()) {
+    let createdPriceId: string | null = null; // declared out here so the catch can archive it
     try {
       const stripe = getStripe();
       const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id);
@@ -139,6 +140,7 @@ export async function PATCH(req: Request) {
             // repointing the sub to an inactive price would fail.
             if (!p.active) p = await stripe.prices.create(priceBody);
             newPriceId = p.id;
+            createdPriceId = p.id; // remember the freshly-minted price for cleanup on failure
             await db.from("organizations").update({ stripe_custom_price_id: newPriceId }).eq("id", id);
           }
           if (newPriceId) {
@@ -160,6 +162,9 @@ export async function PATCH(req: Request) {
       await db.from("organizations")
         .update({ monthly_price_override: org.monthly_price_override ?? null, stripe_custom_price_id: org.stripe_custom_price_id ?? null })
         .eq("id", id);
+      // Archive the price we just minted (the sub was never repointed to it) so a
+      // failed change doesn't leak an orphaned active price in Stripe.
+      if (createdPriceId) { try { await getStripe().prices.update(createdPriceId, { active: false }); } catch { /* best-effort */ } }
       return NextResponse.json({ error: `Couldn't update the live subscription — price change reverted: ${(e as Error).message}` }, { status: 502 });
     }
   }
