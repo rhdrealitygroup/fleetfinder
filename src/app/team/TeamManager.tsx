@@ -35,13 +35,15 @@ export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSe
 
   async function remove(id: string) {
     setError("");
-    const prev = members;
     setMembers((m) => m.filter((x) => x.id !== id)); // optimistic
     try {
       const r = await fetch("/api/team", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membership_id: id }) });
-      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); setMembers(prev); return; }
-      router.refresh(); // reconcile from the server on success
-    } catch { setError("Couldn't remove that member."); setMembers(prev); } // explicit rollback — refresh() can't restore useState
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); }
+    } catch { setError("Couldn't remove that member."); }
+    // Always reconcile from the server (the useEffect re-syncs `members` from the
+    // refreshed prop). Don't restore a captured snapshot — it can be stale if
+    // another row changed meanwhile, which would resurrect an already-removed member.
+    router.refresh();
   }
 
   return (

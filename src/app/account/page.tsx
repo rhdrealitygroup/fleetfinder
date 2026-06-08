@@ -29,7 +29,7 @@ export default async function AccountOverviewPage() {
 
   const db = createServiceRoleClient();
   const { data: org } = membership
-    ? await db.from("organizations").select("name, plan_status, comped, trial_ends_at, current_period_end, cancel_at_period_end, agent_limit, monthly_price_override, referral_code").eq("id", membership.org_id).single()
+    ? await db.from("organizations").select("name, plan_status, comped, trial_ends_at, current_period_end, cancel_at_period_end, agent_limit, monthly_price_override, referral_code, stripe_subscription_id").eq("id", membership.org_id).single()
     : { data: null };
   const { count: agentCount } = membership
     ? await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id)
@@ -43,8 +43,12 @@ export default async function AccountOverviewPage() {
   const baseMonthly = org?.monthly_price_override != null ? org.monthly_price_override : 100;
   const monthly = baseMonthly + Math.max(0, (org?.agent_limit || 1) - 1) * 15;
 
+  const subTrialing = status === "trial" && !!org?.stripe_subscription_id; // paid sub in its Stripe trial (card on file)
   let planLine: string;
   if (comped) planLine = "Complimentary access — no charge on this account.";
+  else if (subTrialing) planLine = org?.cancel_at_period_end
+    ? `Free trial through ${trialEnds || "trial end"} — set to cancel, so you won't be charged.`
+    : `Free trial — your card will be charged $${monthly}/mo on ${trialEnds || "trial end"} unless you cancel first.`;
   else if (status === "trial") planLine = trialEnds ? `Your free trial runs through ${trialEnds}. No card on file — you won't be charged.` : "You're on the free trial.";
   else if (status === "active") planLine = org?.cancel_at_period_end ? "Active — set to cancel at the end of the period." : `Active — $${monthly}/mo.`;
   else if (status === "past_due" || status === "unpaid") planLine = "Payment problem — update your card in Billing to keep access.";

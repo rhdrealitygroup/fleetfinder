@@ -7,10 +7,10 @@ import { Loader2 } from "lucide-react";
 // Stripe customer portal.
 export function BillingActions({
   hasSubscription, baseMonthly = 100, defaultSeats = 0,
-  cancelAtPeriodEnd = false, endLabel = "", trialing = false,
+  cancelAtPeriodEnd = false, endLabel = "", trialing = false, trialAvailable = true,
 }: {
   hasSubscription: boolean; baseMonthly?: number; defaultSeats?: number;
-  cancelAtPeriodEnd?: boolean; endLabel?: string; trialing?: boolean;
+  cancelAtPeriodEnd?: boolean; endLabel?: string; trialing?: boolean; trialAvailable?: boolean;
 }) {
   const [seats, setSeats] = useState(defaultSeats);
   const [loading, setLoading] = useState("");
@@ -22,6 +22,7 @@ export function BillingActions({
   async function go(path: string, body?: object) {
     setLoading(path);
     setError("");
+    setNote("");
     try {
       const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
       const d = await res.json();
@@ -38,6 +39,7 @@ export function BillingActions({
   async function setCancel(resume: boolean) {
     setLoading("cancel");
     setError("");
+    setNote("");
     setConfirmCancel(false);
     try {
       const res = await fetch("/api/stripe/cancel", {
@@ -116,14 +118,18 @@ export function BillingActions({
         </p>
       )}
       <div className="text-sm text-muted-foreground">
-        Total: <span className="text-foreground font-semibold tnum">${baseMonthly + seats * 15}/mo</span> after the 14-day trial
+        {trialAvailable
+          ? <>Total: <span className="text-foreground font-semibold tnum">${baseMonthly + seats * 15}/mo</span> after the 14-day trial</>
+          : <>Billed today: <span className="text-foreground font-semibold tnum">${baseMonthly + seats * 15}</span>, then monthly</>}
       </div>
       <button onClick={() => go("/api/stripe/checkout", { seats })} disabled={!!loading}
         className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center gap-2 disabled:opacity-60">
-        {loading === "/api/stripe/checkout" && <Loader2 className="w-4 h-4 animate-spin" />} Start subscription
+        {loading === "/api/stripe/checkout" && <Loader2 className="w-4 h-4 animate-spin" />} {trialAvailable ? "Start subscription" : "Subscribe & pay now"}
       </button>
       <p className="text-[11px] text-muted-foreground">
-        No card on file during your trial — you&apos;re never charged unless you start a subscription. If you start one, you can cancel any time before the trial ends and pay nothing.
+        {trialAvailable
+          ? <>No card on file during your trial — you&apos;re never charged unless you start a subscription. If you start one, you can cancel any time before the trial ends and pay nothing.</>
+          : <>You&apos;ve already used your free trial, so checkout charges your card today. You can cancel anytime.</>}
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>

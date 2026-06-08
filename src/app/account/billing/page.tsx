@@ -43,6 +43,11 @@ export default async function BillingPage() {
   const periodEnds = org?.current_period_end ? new Date(org.current_period_end).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
   const subTrialing = hasSub && status === "trial";
   const cancelScheduled = !!org?.cancel_at_period_end;
+  // Will a NEW checkout actually get a free trial? Mirrors checkout/route.ts: only
+  // if the org never used a trial AND its app trial window hasn't passed. A
+  // resubscribe-after-cancel or expired trial gets charged immediately, so the UI
+  // must not promise "pay nothing during your trial".
+  const trialAvailable = !org?.trial_used && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now() + 60_000);
   const isOwner = membership?.role === "owner";
   const comped = !!org?.comped;
   const baseMonthly = org?.monthly_price_override != null ? org.monthly_price_override : 100;
@@ -96,6 +101,7 @@ export default async function BillingPage() {
                 cancelAtPeriodEnd={cancelScheduled}
                 trialing={subTrialing}
                 endLabel={subTrialing ? (trialEnds || "") : (periodEnds || "")}
+                trialAvailable={trialAvailable}
               />
             )}
           </div>

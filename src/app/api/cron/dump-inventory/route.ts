@@ -32,6 +32,7 @@ export async function GET(req: Request) {
 
   const due = await stalestDealers(dealerBatch);
   const refreshed: { dealer: string; n: number }[] = [];
+  let rateLimited = false;
   for (const d of due as Array<{ dealer_id: string; name?: string; city?: string; state?: string }>) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → rest rolls to next run
     try {
@@ -41,16 +42,16 @@ export async function GET(req: Request) {
     } catch (e) {
       // MarketCheck rate-limited us → stop the batch (don't hammer it with the
       // rest); the next scheduled run retries. Other errors: skip this dealer.
-      if (e instanceof Error && e.message === "RATE_LIMITED") break;
+      if (e instanceof Error && e.message === "RATE_LIMITED") { rateLimited = true; break; }
       /* else skip, retried next run */
     }
   }
 
-  // Only decode if there's budget left. decodeUndecoded honors the wall-clock
-  // deadline internally (each decode is a real HTTP call up to the fetch
-  // timeout), so pass the deadline rather than guessing a per-VIN duration.
+  // Only decode if there's budget left AND we weren't just rate-limited — firing
+  // the decode burst right after a 429 would just hammer the same limit (and the
+  // decode endpoint shares the MarketCheck quota). Let the next run handle it.
   const remaining = BUDGET_MS - (Date.now() - startedAt);
-  const decoded = decodeBatch > 0 && remaining > 8_000
+  const decoded = !rateLimited && decodeBatch > 0 && remaining > 8_000
     ? await decodeUndecoded(decodeBatch, startedAt + BUDGET_MS)
     : 0;
 

@@ -112,7 +112,11 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // EARLIER of the two so one dealer can't blow the whole run's 60s. Stopping
     // early marks the pull incomplete → no sweep, and the finally still releases
     // the lock — preventing a dangling lock on a kill.
-    const pageDeadline = deadline ? Math.min(deadline, Date.now() + 45_000) : Date.now() + 45_000;
+    // Reserve margin so the LAST in-flight fetch (12s timeout) plus the trailing
+    // upsert/sweep/lock-release all finish before maxDuration's hard kill (which
+    // would leak the dealer lock). Stop paging ~13s before the budget.
+    const FETCH_MARGIN_MS = 13_000;
+    const pageDeadline = (deadline ? Math.min(deadline, Date.now() + 45_000) : Date.now() + 45_000) - FETCH_MARGIN_MS;
     for (let start = 0; start <= MC_MAX_START; start += MC_PAGE) {
       if (Date.now() > pageDeadline) { complete = false; deadlineCut = true; break; }
       const u = new URL(`${MC_HOST}/search/car/active`);
@@ -254,12 +258,18 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
       const options = await decodeVinOptionNames(row.vin, true);
       await db.from("inventory").update({ options, options_decoded: true }).eq("vin", row.vin);
       done++;
-    } catch {
-      // Hard failure → bump the attempt counter so a permanently-failing VIN backs
-      // off after MAX_DECODE_ATTEMPTS. Atomic per-VIN increment (RPC): fans out to
-      // ALL dealer copies of a shared VIN so they back off together, while each
-      // advances from its own value (a literal .eq("vin") set would reset higher
-      // counters; a single-row update backed off only one copy per run).
+    } catch (e) {
+      // Distinguish a TRANSIENT failure (429/5xx/timeout/network) from a PERMANENT
+      // one (e.g. 404 — VIN not decodable). On transient, do NOT bump the counter
+      // (that would abandon a good VIN after MAX_DECODE_ATTEMPTS) and abort the
+      // batch — the upstream is unhappy, so retry the whole set next run.
+      const msg = (e as Error)?.message || "";
+      const code = Number(msg.match(/decode (\d+)/)?.[1] || 0);
+      const transient = code === 429 || code >= 500 || code === 0; // 0 = timeout/network (no HTTP status)
+      if (transient) break;
+      // Permanent failure → bump so a never-decodable VIN backs off after
+      // MAX_DECODE_ATTEMPTS. Atomic per-VIN increment (RPC) fans out to ALL dealer
+      // copies of a shared VIN so they back off together from their own values.
       await db.rpc("bump_decode_attempts", { p_vin: row.vin });
     }
   }
