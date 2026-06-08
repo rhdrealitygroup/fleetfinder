@@ -17,9 +17,10 @@ const STATUS_LABEL: Record<string, { t: string; c: string }> = {
 // "Free trial" label (which would hide an actual billing problem).
 const labelFor = (s: string) => STATUS_LABEL[s] || { t: s ? s[0].toUpperCase() + s.slice(1) : "Inactive", c: "text-muted-foreground" };
 
-export default async function BillingPage() {
+export default async function BillingPage({ searchParams }: { searchParams: Promise<{ checkout?: string }> }) {
   const ctx = await getSessionContext();
   if (!ctx.user) redirect("/login?next=/account/billing");
+  const checkout = (await searchParams)?.checkout;
 
   let membership = ctx.membership;
   if (!membership) {
@@ -56,6 +57,16 @@ export default async function BillingPage() {
 
   return (
     <div className="space-y-6">
+      {checkout === "success" && (
+        <div className="rounded-lg border border-positive/40 bg-positive/10 p-3 text-sm text-positive">
+          🎉 You&apos;re subscribed — thanks! Your plan is active below.
+        </div>
+      )}
+      {checkout === "cancelled" && (
+        <div className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
+          Checkout cancelled — no charge was made. You can subscribe whenever you&apos;re ready.
+        </div>
+      )}
       <div>
         <h1 className="font-heading text-2xl font-bold mb-1">Billing</h1>
         <p className="text-sm text-muted-foreground">{org?.name || "Your company"}</p>

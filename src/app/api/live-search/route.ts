@@ -319,8 +319,13 @@ export async function POST(req: Request) {
     const withVin = all17.slice(0, DECODE_CAP);
     optionScanLimited = all17.length > DECODE_CAP;
     const kept: UnifiedVehicle[] = [];
-    // Decode in small chunks to avoid hammering MarketCheck.
+    // Each decode is a live NeoVIN call (up to 12s) on a cold cache. Bound the
+    // sequential chunk loop with a wall-clock deadline so a cold/slow run can't
+    // blow maxDuration and 504 (mirrors the diagnose + cron decode loops) — keep
+    // what we've scanned and flag the partial scan instead.
+    const decodeDeadline = Date.now() + 40_000;
     for (let i = 0; i < withVin.length; i += 8) {
+      if (Date.now() > decodeDeadline) { optionScanLimited = true; break; }
       const chunk = withVin.slice(i, i + 8);
       const names = await Promise.all(chunk.map((r) => decodeVinOptionNames(r.vin)));
       chunk.forEach((r, j) => {

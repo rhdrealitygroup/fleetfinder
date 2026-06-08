@@ -116,6 +116,7 @@ export async function POST(req: Request) {
         const rawName = String(t.item || "");
         if (!rawName) continue;
         const key = canonicalTrimKey(rawName);
+        if (!key) continue; // empty canonical key would collapse distinct trims together
         const cnt = num(t.count);
         const existing = byKey.get(key);
         if (existing) {

@@ -17,6 +17,11 @@ export function BillingActions({
   const [error, setError] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [canceled, setCanceled] = useState(cancelAtPeriodEnd);
+  // The trialing flag / end date the banner shows. Seeded from the server-rendered
+  // props, but overwritten by the authoritative cancel response so we never tell an
+  // already-charged active subscriber "you won't be charged".
+  const [trialingView, setTrialingView] = useState(trialing);
+  const [endView, setEndView] = useState(endLabel);
   const [note, setNote] = useState("");
 
   async function go(path: string, body?: object) {
@@ -48,6 +53,9 @@ export function BillingActions({
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Something went wrong");
       setCanceled(!resume);
+      // Trust the authoritative response for the banner copy/date.
+      if (typeof d.trialing === "boolean") setTrialingView(d.trialing);
+      if (d.effectiveEnd) setEndView(new Date(d.effectiveEnd).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }));
       setNote(resume ? "Subscription resumed — it will renew as normal." : "");
     } catch (e) {
       setError((e as Error).message);
@@ -61,9 +69,9 @@ export function BillingActions({
       <div className="space-y-3">
         {canceled ? (
           <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
-            {trialing
-              ? <>Your trial ends{endLabel ? ` ${endLabel}` : ""} and <span className="font-medium">won&apos;t convert to a paid plan</span> — you won&apos;t be charged.</>
-              : <>Your plan is set to cancel{endLabel ? ` on ${endLabel}` : " at the end of the period"} — you keep access until then.</>}
+            {trialingView
+              ? <>Your trial ends{endView ? ` ${endView}` : ""} and <span className="font-medium">won&apos;t convert to a paid plan</span> — you won&apos;t be charged.</>
+              : <>Your plan is set to cancel{endView ? ` on ${endView}` : " at the end of the period"} — you keep access until then.</>}
           </div>
         ) : null}
         {note && <p className="text-sm text-positive">{note}</p>}

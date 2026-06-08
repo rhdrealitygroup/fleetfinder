@@ -35,15 +35,22 @@ export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSe
 
   async function remove(id: string) {
     setError("");
+    const prev = members;
     setMembers((m) => m.filter((x) => x.id !== id)); // optimistic
     try {
       const r = await fetch("/api/team", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membership_id: id }) });
       if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); }
-    } catch { setError("Couldn't remove that member."); }
-    // Always reconcile from the server (the useEffect re-syncs `members` from the
-    // refreshed prop). Don't restore a captured snapshot — it can be stale if
-    // another row changed meanwhile, which would resurrect an already-removed member.
-    router.refresh();
+      // Online (request reached the server): reconcile from the server — the
+      // useEffect re-syncs `members` from the refreshed prop. Avoids resurrecting
+      // a row another concurrent action already removed.
+      router.refresh();
+    } catch {
+      // The request THREW (offline / network drop) → it never reached the server,
+      // and router.refresh() can't fetch either. Restore the captured snapshot
+      // (safe: nothing else could have committed while offline).
+      setError("Couldn't remove that member — check your connection.");
+      setMembers(prev);
+    }
   }
 
   return (

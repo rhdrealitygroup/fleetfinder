@@ -32,9 +32,12 @@ export async function POST(req: Request) {
   // existed — e.g. auto-provisioned — so ensureOrgForUser didn't set it). Check
   // the result: don't mark onboarding complete on a failed write, or the user
   // ends up "set up" with a missing name / un-renamed company.
-  const { error: memErr } = await db.from("memberships").update({ first_name: first || null, last_name: rest.join(" ") || null })
-    .eq("org_id", ensured.org_id).eq("user_id", user.id);
-  if (memErr) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
+  const { data: memRows, error: memErr } = await db.from("memberships").update({ first_name: first || null, last_name: rest.join(" ") || null })
+    .eq("org_id", ensured.org_id).eq("user_id", user.id).select("id");
+  // Refuse to mark onboarding complete if the membership write errored OR matched
+  // zero rows (membership missing) — otherwise the gate flag would be set on a
+  // half-provisioned account.
+  if (memErr || !memRows || memRows.length === 0) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
   // profiles is a best-effort mirror (auth metadata is the source of truth for name).
   await db.from("profiles").update({ full_name: fullName }).eq("id", user.id);
   // Only the OWNER may (re)name the company — an invited agent must not rename

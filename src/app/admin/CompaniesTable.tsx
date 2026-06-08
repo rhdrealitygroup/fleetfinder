@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Users, Gift, DollarSign, Trash2 } from "lucide-react";
 
@@ -31,7 +31,11 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [confirmId, setConfirmId] = useState<string | null>(null); // org armed for delete
   const [compSaving, setCompSaving] = useState<string | null>(null); // org with an in-flight comp toggle
   const [compMsg, setCompMsg] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
   const router = useRouter();
+  // Re-sync the comped map from refreshed server props (after a toggle's
+  // router.refresh()), so the toggle state matches the source of truth.
+  useEffect(() => { setComped(Object.fromEntries(orgs.map((o) => [o.id, !!o.comped]))); }, [orgs]);
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
@@ -88,6 +92,11 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setDeleteErr((m) => ({ ...m, [id]: d.error || "Delete failed" })); return; }
+      // The org is gone, but some member logins may have failed to delete — tell
+      // the admin so they can clean up manually rather than leaving silent orphans.
+      if (Array.isArray(d.failedUserDeletes) && d.failedUserDeletes.length) {
+        setNotice(`Company deleted, but ${d.failedUserDeletes.length} login(s) couldn't be removed: ${d.failedUserDeletes.join(", ")}. Remove them manually.`);
+      }
       setRemoved((s) => new Set(s).add(id));
       if (open === id) setOpen(null);
       router.refresh(); // re-run the Server Component so the summary stat cards update
@@ -101,6 +110,13 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
     return <div className="p-6 text-sm text-muted-foreground">No companies yet. They appear here as accounts sign up.</div>;
   }
   return (
+    <>
+    {notice && (
+      <div className="m-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground flex items-start justify-between gap-3">
+        <span>{notice}</span>
+        <button onClick={() => setNotice("")} className="shrink-0 text-muted-foreground hover:text-foreground">✕</button>
+      </div>
+    )}
     <table className="w-full text-sm">
       <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
         <tr className="border-b border-border">
@@ -218,5 +234,6 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
         })}
       </tbody>
     </table>
+    </>
   );
 }
