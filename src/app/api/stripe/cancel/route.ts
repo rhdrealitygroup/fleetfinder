@@ -51,7 +51,11 @@ export async function POST(req: Request) {
       .update({ cancel_at_period_end: !resume })
       .eq("id", membership.org_id);
 
-    const endTs = updated.trial_end ?? updated.items?.data?.[0]?.current_period_end ?? updated.current_period_end ?? null;
+    // trial_end is a PAST date once a sub has converted to active — only use it
+    // while actually trialing; otherwise the access-ends date is the period end.
+    const endTs = updated.status === "trialing"
+      ? (updated.trial_end ?? null)
+      : (updated.items?.data?.[0]?.current_period_end ?? (updated as any).current_period_end ?? null);
     return NextResponse.json({
       ok: true,
       canceled: !resume,

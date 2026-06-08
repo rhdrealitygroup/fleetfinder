@@ -233,6 +233,7 @@ export async function DELETE(req: Request) {
   // Delete the auth login for members who are now orphaned (no other company) —
   // so the email is freed up to sign up fresh. Never delete a super-admin login.
   let deletedUsers = 0;
+  const failedUserDeletes: string[] = [];
   for (const m of roster) {
     // Resolve the AUTHORITATIVE auth email — memberships.email is a denormalized,
     // nullable copy that can be stale, and super-admin status is defined by the
@@ -253,7 +254,8 @@ export async function DELETE(req: Request) {
     // and then failing the auth delete would orphan a profile-less login.)
     const { error: delErr } = await db.auth.admin.deleteUser(m.user_id as string);
     if (!delErr) deletedUsers++;
+    else failedUserDeletes.push((realEmail || m.user_id) as string);
   }
 
-  return NextResponse.json({ ok: true, id, name: org.name, deletedUsers });
+  return NextResponse.json({ ok: true, id, name: org.name, deletedUsers, failedUserDeletes });
 }

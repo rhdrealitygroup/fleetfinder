@@ -244,10 +244,22 @@ export async function POST(req: Request) {
       results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
     }
   } catch (e) {
-    if (marketKey && provider !== "marketcheck") {
+    // Cross-provider fallback on a HARD failure (timeout/5xx/malformed), not just
+    // a 429. If MarketCheck threw and Auto.dev can honor this search, use it
+    // (mirrors the rate-limit fallback). If Auto.dev threw and MarketCheck exists,
+    // try MarketCheck. Otherwise surface the error.
+    if (provider !== "auto.dev" && autoKey && !autoDevCantHonor) {
+      try {
+        const r = await searchAutoDev();
+        results = r.results; total = r.total; provider = "auto.dev"; rateLimited = r.rateLimited;
+        note = " (marketcheck unavailable, used auto.dev)";
+      } catch {
+        return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+      }
+    } else if (provider !== "marketcheck" && marketKey) {
       try {
         const r = await searchMarketCheck();
-        results = r.results; total = r.total; provider = "marketcheck";
+        results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
         note = " (auto.dev failed, used marketcheck)";
       } catch (e2) {
         return NextResponse.json({ error: (e2 as Error).message }, { status: 502 });

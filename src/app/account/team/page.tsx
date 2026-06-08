@@ -19,14 +19,15 @@ export default async function TeamPage() {
     ? await db.from("memberships").select("id, role, first_name, last_name, email, created_at").eq("org_id", membership.org_id).order("created_at")
     : { data: [] };
   const { data: org } = membership
-    ? await db.from("organizations").select("name, agent_limit, plan_status, comped, stripe_subscription_id").eq("id", membership.org_id).single()
+    ? await db.from("organizations").select("name, agent_limit, plan_status, comped, stripe_subscription_id, trial_ends_at").eq("id", membership.org_id).single()
     : { data: null };
 
   const canManage = membership?.role === "owner" || membership?.role === "admin";
-  // No seat cap for comped orgs and app-trial orgs that haven't subscribed yet
-  // (mirrors the team API + DB trigger). A paid sub in its Stripe trial respects
-  // its purchased seat count.
-  const appTrial = org?.plan_status === "trial" && !org?.stripe_subscription_id;
+  // No seat cap for comped orgs and orgs on an ACTIVE app-trial (no sub yet + trial
+  // not expired) — mirrors the team API + DB trigger. A paid sub in its Stripe trial,
+  // or an expired trial, respects the seat count.
+  const appTrial = org?.plan_status === "trial" && !org?.stripe_subscription_id
+    && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
   const unlimitedSeats = !!org?.comped || appTrial;
   const memberCount = members?.length || 0;
 

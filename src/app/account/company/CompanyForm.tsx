@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
@@ -15,6 +15,9 @@ export function CompanyForm({ initialCompany, initialFullName, canRenameCompany 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+
+  // After a save + router.refresh(), reflect the server's canonical (trimmed) values.
+  useEffect(() => { setCompany(initialCompany); setFullName(initialFullName); }, [initialCompany, initialFullName]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();

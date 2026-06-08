@@ -59,7 +59,13 @@ export async function updateSession(request: NextRequest) {
     // the auth user's metadata by /api/account/onboard. getUser() returns current
     // metadata from the auth server, so this reflects completion immediately
     // after onboarding.
-    const onboarded = !!(user.user_metadata as Record<string, unknown> | undefined)?.onboarded;
+    // Super-admins (platform owners) are never forced through company onboarding —
+    // they operate above orgs. Inline the email check to avoid importing the heavy
+    // auth module (which pulls next/headers) into the proxy.
+    const isSuper = (process.env.SUPER_ADMIN_EMAILS || "")
+      .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+      .includes((user.email || "").toLowerCase());
+    const onboarded = isSuper || !!(user.user_metadata as Record<string, unknown> | undefined)?.onboarded;
 
     // Entry points (marketing / auth pages): funnel a signed-in user to setup if
     // they haven't onboarded, otherwise straight into the app.

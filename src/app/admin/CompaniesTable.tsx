@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronRight, Users, Gift, DollarSign, Trash2 } from "lucide-react";
 
 export type Org = {
@@ -29,19 +30,31 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [deleteErr, setDeleteErr] = useState<Record<string, string>>({});
   const [confirmId, setConfirmId] = useState<string | null>(null); // org armed for delete
   const [compSaving, setCompSaving] = useState<string | null>(null); // org with an in-flight comp toggle
+  const [compMsg, setCompMsg] = useState<Record<string, string>>({});
+  const router = useRouter();
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
     if (compSaving === id) return; // ignore double-clicks → no conflicting PATCHes
     const next = !comped[id];
     setCompSaving(id);
+    setCompMsg((m) => ({ ...m, [id]: "" }));
     setComped((c) => ({ ...c, [id]: next }));
     try {
       const r = await fetch("/api/admin/companies", {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, comped: next }),
       });
-      if (!r.ok) setComped((c) => ({ ...c, [id]: !next })); // revert on failure
-    } catch { setComped((c) => ({ ...c, [id]: !next })); }
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setComped((c) => ({ ...c, [id]: !next })); // revert
+        setCompMsg((m) => ({ ...m, [id]: d.error || "Couldn't update free access — try again." }));
+      } else {
+        router.refresh(); // keep the stat cards / status in sync
+      }
+    } catch {
+      setComped((c) => ({ ...c, [id]: !next }));
+      setCompMsg((m) => ({ ...m, [id]: "Couldn't update free access — try again." }));
+    }
     finally { setCompSaving(null); }
   }
 
@@ -77,6 +90,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
       if (!r.ok) { setDeleteErr((m) => ({ ...m, [id]: d.error || "Delete failed" })); return; }
       setRemoved((s) => new Set(s).add(id));
       if (open === id) setOpen(null);
+      router.refresh(); // re-run the Server Component so the summary stat cards update
     } catch {
       setDeleteErr((m) => ({ ...m, [id]: "Delete failed — try again" }));
     } finally { setDeleting(null); }
@@ -139,14 +153,17 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                     {o.trial_ends_at && o.plan_status === "trial" && !comped[o.id] && (
                       <p className="text-[11px] text-muted-foreground mt-2">Trial ends {new Date(o.trial_ends_at).toLocaleDateString()}</p>
                     )}
-                    <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between">
+                    <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-3">
                       <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
                         <Gift className="w-3.5 h-3.5" /> Complimentary access — full app, no Stripe payment
                       </span>
-                      <button onClick={() => toggleComp(o.id)} disabled={compSaving === o.id}
-                        className={`text-xs font-medium px-2.5 py-1 rounded-md border transition disabled:opacity-50 ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                        {compSaving === o.id ? "Saving…" : comped[o.id] ? "Revoke free access" : "Grant free access"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {compMsg[o.id] && <span className="text-[11px] text-destructive">{compMsg[o.id]}</span>}
+                        <button onClick={() => toggleComp(o.id)} disabled={compSaving === o.id}
+                          className={`text-xs font-medium px-2.5 py-1 rounded-md border transition disabled:opacity-50 ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                          {compSaving === o.id ? "Saving…" : comped[o.id] ? "Revoke free access" : "Grant free access"}
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-3">
                       <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
