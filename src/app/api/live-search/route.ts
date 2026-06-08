@@ -56,6 +56,10 @@ function cacheKeyFor(body: any) {
 }
 
 export async function POST(req: Request) {
+  // Whole-request wall-clock anchor (maxDuration=60). Used to bound the option
+  // decode loop RELATIVE TO REQUEST START — not the start of the decode block —
+  // so slow MarketCheck pagination beforehand can't push the deadline past 60s.
+  const reqStart = Date.now();
   // Defense-in-depth: this endpoint spends paid API quota, so require a session
   // AND an active plan directly (not just the proxy gate / billing UI).
   const gate = await requireActivePlan();
@@ -203,13 +207,11 @@ export async function POST(req: Request) {
   let provider = "";
   let note = "";
   let rateLimited = false;
+  let mcTried = false; // did we already attempt MarketCheck? (don't retry it in the catch)
   // Prefer MarketCheck whenever we have a key: it geocodes ZIPs natively AND
   // (on the Basic tier) handles unbounded nationwide queries. Auto.dev is the
   // fallback, used only if MarketCheck is unavailable or rate-limited.
   const preferMarketCheck = !!marketKey;
-  // Filters Auto.dev cannot honor (no API param + no client-side post-filter):
-  // dealer scope and interior color. We must not serve/cache an unfiltered Auto.dev
-  // result for these — it'd silently ignore the filter.
   // Filters Auto.dev cannot honor (no API param + no client-side post-filter):
   // dealer scope, interior color, AND a ZIP with no resolved lat/lng (Auto.dev has
   // no ZIP param and we have no geocoder, so it would silently center on the
@@ -219,6 +221,7 @@ export async function POST(req: Request) {
     || (!!body.zip && !(body.latitude && body.longitude));
   try {
     if (preferMarketCheck) {
+      mcTried = true;
       const r = await searchMarketCheck();
       results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
       if (r.rateLimited) {
@@ -254,6 +257,7 @@ export async function POST(req: Request) {
         if (r.rateLimited) note = " (inventory service rate-limited — try again shortly)";
       }
     } else if (marketKey) {
+      mcTried = true;
       const r = await searchMarketCheck();
       results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
     }
@@ -270,7 +274,10 @@ export async function POST(req: Request) {
       } catch {
         return NextResponse.json({ error: (e as Error).message }, { status: 502 });
       }
-    } else if (provider !== "marketcheck" && marketKey) {
+    } else if (provider !== "marketcheck" && marketKey && !mcTried) {
+      // Only retry MarketCheck if we HADN'T already tried it (i.e. Auto.dev was the
+      // failing primary). Re-running the MarketCheck that just hard-failed — e.g. on
+      // a dealer-scoped/interior search where Auto.dev can't help — is pointless.
       try {
         const r = await searchMarketCheck();
         results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
@@ -332,7 +339,7 @@ export async function POST(req: Request) {
     // sequential chunk loop with a wall-clock deadline so a cold/slow run can't
     // blow maxDuration and 504 (mirrors the diagnose + cron decode loops) — keep
     // what we've scanned and flag the partial scan instead.
-    const decodeDeadline = Date.now() + 40_000;
+    const decodeDeadline = reqStart + 47_000; // 60s budget − ~13s for a last in-flight decode chunk
     for (let i = 0; i < withVin.length; i += 8) {
       if (Date.now() > decodeDeadline) { optionScanLimited = true; break; }
       const chunk = withVin.slice(i, i + 8);

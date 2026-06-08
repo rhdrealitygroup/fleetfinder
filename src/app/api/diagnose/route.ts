@@ -17,6 +17,7 @@ import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNam
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
+  const reqStart = Date.now(); // anchor the decode budget to request start, not post-fetch
   const gate = await requireActivePlan();
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const b = await req.json().catch(() => ({}));
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
       // Each decode is a live NeoVIN call (up to 12s). Bound the sequential loop
       // with a wall-clock deadline so a slow/cold-cache run can't blow maxDuration
       // and 504 — return the best match found so far instead.
-      const decodeDeadline = Date.now() + 40_000;
+      const decodeDeadline = reqStart + 47_000; // 60s budget − ~13s for a last in-flight decode
       const uniqueCands = [...new Map(cands.map((l) => [l.vin, l])).values()].slice(0, 10);
       for (const l of uniqueCands) {
         if (Date.now() > decodeDeadline) break;

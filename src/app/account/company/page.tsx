@@ -22,7 +22,11 @@ export default async function CompanyPage() {
     ? await db.from("memberships").select("first_name, last_name").eq("org_id", membership.org_id).eq("user_id", ctx.user.id).maybeSingle()
     : { data: null };
 
-  const company = (org?.name && !/'s company$/.test(org.name)) ? org.name : "";
+  // Only blank out the AUTO-GENERATED placeholder ("<email-local>'s company" from
+  // ensureOrgForUser), not a real company a user legitimately named "…'s company".
+  const emailLocal = (ctx.user.email || "").split("@")[0];
+  const placeholder = emailLocal ? `${emailLocal}'s company` : null;
+  const company = (org?.name && org.name !== placeholder) ? org.name : "";
   const fullName = [mem?.first_name, mem?.last_name].filter(Boolean).join(" ");
 
   return (

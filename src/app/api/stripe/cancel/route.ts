@@ -30,7 +30,12 @@ export async function POST(req: Request) {
   const { data: org } = await db.from("organizations")
     .select("stripe_subscription_id, plan_status").eq("id", membership.org_id).single();
   if (!org?.stripe_subscription_id) {
-    return NextResponse.json({ error: "No subscription to cancel. You're on the free trial — no card on file, so nothing will be charged." }, { status: 400 });
+    // Don't tell a former paying (now-canceled) customer they're "on the free
+    // trial" — branch on plan_status (a stale tab can reach this after a cancel).
+    const msg = org?.plan_status === "canceled"
+      ? "Your subscription is already canceled — refresh the page."
+      : "No subscription to cancel. You're on the free trial — no card on file, so nothing will be charged.";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 
   const stripe = getStripe();

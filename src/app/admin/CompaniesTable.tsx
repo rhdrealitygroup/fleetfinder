@@ -36,9 +36,14 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   // Re-sync the comped map from refreshed server props (after a toggle's
   // router.refresh()), so the toggle state matches the source of truth — but keep
   // the optimistic value for any org whose toggle is still in flight.
+  // Only re-sync when the server props actually change (i.e. after a refresh) —
+  // NOT when compSaving clears, which would resync against stale pre-refresh props
+  // and briefly flicker the toggle back to its old value. The compSaving guard
+  // still preserves an in-flight toggle if orgs changes for another reason.
   useEffect(() => {
     setComped((cur) => Object.fromEntries(orgs.map((o) => [o.id, o.id === compSaving ? cur[o.id] : !!o.comped])));
-  }, [orgs, compSaving]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgs]);
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
