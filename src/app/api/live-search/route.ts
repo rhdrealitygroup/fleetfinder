@@ -45,9 +45,12 @@ function cacheKeyFor(body: any) {
     option_names: Array.isArray(body.option_names) ? [...body.option_names].map((s) => String(s).toLowerCase()).sort() : [],
     dealer_ids: Array.isArray(body.dealer_ids) ? [...body.dealer_ids].map(String).sort() : [],
     zip: (body.zip || "").toString().trim(),
-    radius: Math.min(500, Number(body.radius) || 100),
-    lat: Math.round(Number(body.latitude || DEFAULT_LAT) * 10) / 10,
-    lng: Math.round(Number(body.longitude || DEFAULT_LNG) * 10) / 10,
+    // radius/lat/lng only matter for a located search — for a true nationwide
+    // query they're unused, so keep them out of the key (avoids a separate cache
+    // entry per radius for identical nationwide results).
+    radius: (body.zip || (body.latitude && body.longitude)) ? Math.min(500, Number(body.radius) || 100) : 0,
+    lat: (body.latitude && body.longitude) ? Math.round(Number(body.latitude) * 10) / 10 : 0,
+    lng: (body.latitude && body.longitude) ? Math.round(Number(body.longitude) * 10) / 10 : 0,
   };
   return "search::" + JSON.stringify(norm);
 }
@@ -165,11 +168,11 @@ export async function POST(req: Request) {
       if (body.body_type) url.searchParams.set("vehicle.bodyStyle", body.body_type);
       if (body.drivetrain) url.searchParams.set("vehicle.drivetrain", body.drivetrain);
       if (body.exterior_color) url.searchParams.set("vehicle.exteriorColor", body.exterior_color);
-      // Only constrain by location when the user actually gave one (ZIP →
-      // lat/lng, or explicit lat/lng). For a true nationwide search, omit the
-      // center/radius — otherwise we'd silently limit results to ~radius miles of
-      // the default (New Jersey) coordinates and call it "nationwide".
-      const hasGeo = !!(body.zip || (body.latitude && body.longitude));
+      // Auto.dev needs real coordinates — it has no ZIP param. Only constrain by
+      // location when explicit lat/lng exist; a ZIP-only search is handled by
+      // autoDevCantHonor above (we never reach a serving Auto.dev call for it), so
+      // here a missing lat/lng means a true nationwide search → no center/radius.
+      const hasGeo = !!(body.latitude && body.longitude);
       if (hasGeo) {
         url.searchParams.set("latitude", String(body.latitude || DEFAULT_LAT));
         url.searchParams.set("longitude", String(body.longitude || DEFAULT_LNG));
@@ -207,7 +210,13 @@ export async function POST(req: Request) {
   // Filters Auto.dev cannot honor (no API param + no client-side post-filter):
   // dealer scope and interior color. We must not serve/cache an unfiltered Auto.dev
   // result for these — it'd silently ignore the filter.
-  const autoDevCantHonor = (Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0) || !!body.interior_color;
+  // Filters Auto.dev cannot honor (no API param + no client-side post-filter):
+  // dealer scope, interior color, AND a ZIP with no resolved lat/lng (Auto.dev has
+  // no ZIP param and we have no geocoder, so it would silently center on the
+  // default NJ coords). For any of these, don't serve/cache an Auto.dev result.
+  const autoDevCantHonor = (Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0)
+    || !!body.interior_color
+    || (!!body.zip && !(body.latitude && body.longitude));
   try {
     if (preferMarketCheck) {
       const r = await searchMarketCheck();

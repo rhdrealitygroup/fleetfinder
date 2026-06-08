@@ -34,8 +34,11 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [notice, setNotice] = useState("");
   const router = useRouter();
   // Re-sync the comped map from refreshed server props (after a toggle's
-  // router.refresh()), so the toggle state matches the source of truth.
-  useEffect(() => { setComped(Object.fromEntries(orgs.map((o) => [o.id, !!o.comped]))); }, [orgs]);
+  // router.refresh()), so the toggle state matches the source of truth — but keep
+  // the optimistic value for any org whose toggle is still in flight.
+  useEffect(() => {
+    setComped((cur) => Object.fromEntries(orgs.map((o) => [o.id, o.id === compSaving ? cur[o.id] : !!o.comped])));
+  }, [orgs, compSaving]);
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {

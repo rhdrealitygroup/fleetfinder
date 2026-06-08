@@ -89,11 +89,11 @@ export function BillingActions({
           ) : confirmCancel ? (
             <>
               <span className="text-sm text-muted-foreground">
-                {trialing ? "End the trial without being charged?" : "Cancel at the end of this period?"}
+                {trialingView ?"End the trial without being charged?" : "Cancel at the end of this period?"}
               </span>
               <button onClick={() => setCancel(false)} disabled={!!loading}
                 className="px-4 py-2.5 rounded-lg border border-destructive bg-destructive text-white text-sm font-semibold hover:bg-destructive/90 transition flex items-center gap-2 disabled:opacity-60">
-                {loading === "cancel" && <Loader2 className="w-4 h-4 animate-spin" />} {trialing ? "Yes, end trial" : "Yes, cancel"}
+                {loading === "cancel" && <Loader2 className="w-4 h-4 animate-spin" />} {trialingView ?"Yes, end trial" : "Yes, cancel"}
               </button>
               <button onClick={() => { setError(""); setNote(""); setConfirmCancel(false); }} disabled={!!loading}
                 className="px-3 py-2.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition disabled:opacity-60">
@@ -103,7 +103,7 @@ export function BillingActions({
           ) : (
             <button onClick={() => { setError(""); setNote(""); setConfirmCancel(true); }} disabled={!!loading}
               className="px-4 py-2.5 rounded-lg border border-destructive/40 text-destructive text-sm font-medium hover:bg-destructive/10 transition disabled:opacity-60">
-              {trialing ? "Cancel before trial ends" : "Cancel subscription"}
+              {trialingView ?"Cancel before trial ends" : "Cancel subscription"}
             </button>
           )}
         </div>

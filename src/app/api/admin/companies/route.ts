@@ -241,9 +241,20 @@ export async function DELETE(req: Request) {
     }
   }
 
-  // Delete the org → cascades all org-scoped rows + memberships.
+  // Delete the org → cascades all org-scoped rows + memberships. We cancel billing
+  // BEFORE this (above) on purpose: the money-safe order. If the cancel succeeded
+  // but this delete now fails, the sub is already canceled — say so, so the admin
+  // knows the company lost paid access and can re-comp / have them resubscribe
+  // (the alternative order would risk billing a deleted org, which is worse).
   const { error } = await db.from("organizations").delete().eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+  if (error) {
+    const billed = org.stripe_subscription_id || org.stripe_customer_id;
+    return NextResponse.json({
+      error: billed
+        ? `Couldn't delete the company — but its subscription was already canceled. Retry the delete; the company has lost paid access in the meantime.`
+        : error.message,
+    }, { status: 502 });
+  }
 
   // Delete the auth login for members who are now orphaned (no other company) —
   // so the email is freed up to sign up fresh. Never delete a super-admin login.

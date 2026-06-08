@@ -32,11 +32,15 @@ export async function ensureOrgForUser(opts?: { companyName?: string; fullName?:
   const trialEnds = new Date(Date.now() + 14 * 86400 * 1000).toISOString();
 
   let orgId: string;
-  const { data: org } = await db
-    .from("organizations")
-    .insert({ name: companyName, owner_id: user.id, agent_limit: 1, plan_status: "trial", trial_ends_at: trialEnds })
-    .select("id")
-    .single();
+  const orgPayload = { name: companyName, owner_id: user.id, agent_limit: 1, plan_status: "trial", trial_ends_at: trialEnds };
+  let { data: org, error: orgErr } = await db.from("organizations").insert(orgPayload).select("id").single();
+  // The referral_code column has a UNIQUE index over a volatile DEFAULT — on the
+  // (astronomically rare) generated-code collision the insert 23505s on
+  // organizations_referral_code_key, not owner_id. Retry once: a fresh DEFAULT is
+  // generated on the new attempt. (Don't mistake this for the owner-unique case.)
+  if (!org && orgErr?.code === "23505" && /referral_code/.test(orgErr?.message || "")) {
+    ({ data: org, error: orgErr } = await db.from("organizations").insert(orgPayload).select("id").single());
+  }
   if (org) {
     orgId = org.id as string;
   } else {
