@@ -88,7 +88,10 @@ export async function requireActivePlan(): Promise<PlanGate> {
   if (!orgId) {
     const { ensureOrgForUser } = await import("@/lib/account");
     const ensured = await ensureOrgForUser();
-    if (!ensured) return { ok: true, status: 200, ctx }; // couldn't provision → don't hard-block
+    // Couldn't provision → treat as TRANSIENT and ask the caller to retry. Do NOT
+    // fail OPEN to free metered (MarketCheck) access — that's a cost leak if the
+    // failure persists.
+    if (!ensured) return { ok: false, status: 503, error: "Setting up your account — please try again in a moment.", ctx };
     orgId = ensured.org_id;
   }
   try {

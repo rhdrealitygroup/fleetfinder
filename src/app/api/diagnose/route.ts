@@ -10,6 +10,12 @@ import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNam
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// This route does the most work of any path (facets + a closest-match search +
+// up to 10 sequential live VIN decodes), and it auto-fires whenever a search
+// returns zero — so it MUST carry the same wall-clock budget as live-search or
+// it 504s on its own triggering condition.
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const gate = await requireActivePlan();
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
@@ -145,7 +151,13 @@ export async function POST(req: Request) {
       const cData = cRes.ok ? await cRes.json() : { listings: [] };
       const cands: any[] = (cData.listings || []).filter((l: any) => l.vin);
       let best: any = null, bestScore = -1, bestMissing: string[] = [];
-      for (const l of cands.slice(0, 10)) {
+      // Each decode is a live NeoVIN call (up to 12s). Bound the sequential loop
+      // with a wall-clock deadline so a slow/cold-cache run can't blow maxDuration
+      // and 504 — return the best match found so far instead.
+      const decodeDeadline = Date.now() + 40_000;
+      const uniqueCands = [...new Map(cands.map((l) => [l.vin, l])).values()].slice(0, 10);
+      for (const l of uniqueCands) {
+        if (Date.now() > decodeDeadline) break;
         const names = (await decodeVinOptionNames(l.vin)).join(" | ");
         const hasList = optionStatus.map((o) => ({ ...o, on: phraseMatch(names, o.value) }));
         const score = hasList.filter((o) => o.on).length;

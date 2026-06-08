@@ -49,6 +49,16 @@ export default function DealersPage() {
     loadRequests();
   }, [loadRequests]);
 
+  // Prune "removal requested" markers for dealers no longer selected — once a
+  // dealer is removed (request approved), a later re-add shouldn't show a stuck
+  // disabled clock.
+  useEffect(() => {
+    setRequestedKeys((s) => {
+      const next = new Set([...s].filter((id) => selectedIds.has(id)));
+      return next.size === s.size ? s : next;
+    });
+  }, [selectedIds]);
+
   async function requestRemoval(d: Dealer) {
     setRequestedKeys((s) => new Set(s).add(d.id));
     const rollback = () => setRequestedKeys((s) => { const n = new Set(s); n.delete(d.id); return n; });
@@ -62,18 +72,19 @@ export default function DealersPage() {
   }
 
   async function actOnRequest(id: string, action: "approve" | "dismiss") {
-    const prevRequests = requests;
-    setRequests((prev) => prev.filter((r) => r.id !== id));
+    setRequests((prev) => prev.filter((r) => r.id !== id)); // optimistic
     try {
       const r = await fetch("/api/dealers/removal-requests", {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }),
       });
-      if (!r.ok) { setRequests(prevRequests); return; } // failed → restore the row so it can be retried
+      // On failure, reconcile from the server (loadRequests) rather than restoring
+      // a captured snapshot — a stale snapshot could resurrect a request another
+      // concurrent action already resolved.
+      if (!r.ok) { loadRequests(); return; }
       // Approve removes the dealer for the whole org — refresh both the request
-      // queue AND the dealer selection so it disappears (checkmark/border/count)
-      // without a manual reload.
+      // queue AND the dealer selection so it disappears (checkmark/border/count).
       if (action === "approve") { loadRequests(); reload(); }
-    } catch { setRequests(prevRequests); }
+    } catch { loadRequests(); }
   }
 
   const loadSeq = useRef(0);

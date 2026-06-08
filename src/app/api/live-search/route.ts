@@ -165,11 +165,16 @@ export async function POST(req: Request) {
       if (body.body_type) url.searchParams.set("vehicle.bodyStyle", body.body_type);
       if (body.drivetrain) url.searchParams.set("vehicle.drivetrain", body.drivetrain);
       if (body.exterior_color) url.searchParams.set("vehicle.exteriorColor", body.exterior_color);
-      const lat = body.latitude || DEFAULT_LAT;
-      const lng = body.longitude || DEFAULT_LNG;
-      url.searchParams.set("latitude", String(lat));
-      url.searchParams.set("longitude", String(lng));
-      url.searchParams.set("radius", String(radius)); // honor the user's chosen radius (was hardcoded to the default)
+      // Only constrain by location when the user actually gave one (ZIP →
+      // lat/lng, or explicit lat/lng). For a true nationwide search, omit the
+      // center/radius — otherwise we'd silently limit results to ~radius miles of
+      // the default (New Jersey) coordinates and call it "nationwide".
+      const hasGeo = !!(body.zip || (body.latitude && body.longitude));
+      if (hasGeo) {
+        url.searchParams.set("latitude", String(body.latitude || DEFAULT_LAT));
+        url.searchParams.set("longitude", String(body.longitude || DEFAULT_LNG));
+        url.searchParams.set("radius", String(radius));
+      }
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("page", String(page));
       let res: Response;

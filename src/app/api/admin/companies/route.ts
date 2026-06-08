@@ -224,6 +224,21 @@ export async function DELETE(req: Request) {
         return NextResponse.json({ error: `Couldn't cancel the company's subscription — deletion aborted so billing can't continue. Try again.` }, { status: 502 });
       }
     }
+  } else if (org.stripe_customer_id && stripeConfigured()) {
+    // The DB sub id is written only by the webhook, so it can lag a fresh
+    // checkout. Cancel any live sub on the customer too, or a deletion during that
+    // window would leave a billing subscription with no org record behind it.
+    try {
+      const stripe = getStripe();
+      const subs = await stripe.subscriptions.list({ customer: org.stripe_customer_id as string, status: "all", limit: 10 });
+      const live = subs.data.filter((s) => ["active", "trialing", "past_due", "unpaid", "paused"].includes(s.status));
+      for (const s of live) await stripe.subscriptions.cancel(s.id);
+    } catch (e: any) {
+      const code = e?.code || e?.raw?.code;
+      if (code !== "resource_missing") {
+        return NextResponse.json({ error: `Couldn't cancel the company's subscription — deletion aborted so billing can't continue. Try again.` }, { status: 502 });
+      }
+    }
   }
 
   // Delete the org → cascades all org-scoped rows + memberships.
