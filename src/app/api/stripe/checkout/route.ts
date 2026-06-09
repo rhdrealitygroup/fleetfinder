@@ -154,6 +154,12 @@ export async function POST(req: Request) {
     success_url: `${origin}/account/billing?checkout=success`,
     cancel_url: `${origin}/account/billing?checkout=cancelled`,
     allow_promotion_codes: true,
+    // Expire the hosted page after 30 min. The idempotency key includes seats, so
+    // re-opening checkout with a DIFFERENT seat count mints a separate session;
+    // a short expiry shrinks the window where two seat-variant sessions sit open
+    // and could both be completed into duplicate live subs. (The webhook's
+    // duplicate-sub guard + atomic-claim is still the primary backstop.)
+    expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
   }, { idempotencyKey: `checkout-${org.id}-${basePrice}-${seats}-t${trialEnd ?? trialDays ?? 0}` }); // dedupe rapid double-submits; include trial so a post-trial retry can't replay a stale-trial session
 
   return NextResponse.json({ url: session.url });

@@ -46,6 +46,18 @@ export async function POST(req: Request) {
     // (which a status-only guard couldn't catch).
     if (eventCreated && org.last_sub_event_at && eventCreated * 1000 < Date.parse(org.last_sub_event_at)) return;
 
+    // Same-second tie: event.created is second-granular and last_sub_event_at is
+    // stored from it, so a STALE `updated` can arrive in the SAME second as the
+    // last event we applied and slip past the strict `<` above. Left as-is it could
+    // re-adopt a just-canceled sub or silently flip a requested cancel_at_period_end
+    // back to false. On a tie, trust Stripe over the (possibly stale) payload:
+    // re-fetch the authoritative subscription. (A `deleted` event is terminal and
+    // correct in any order, so we skip the refetch for it.)
+    if (!isDeleted && eventCreated && org.last_sub_event_at && eventCreated * 1000 === Date.parse(org.last_sub_event_at)) {
+      try { sub = await stripe.subscriptions.retrieve(sub.id); }
+      catch { isDeleted = true; } // sub no longer exists in Stripe → don't resurrect it
+    }
+
     // Foreign-subscription guard: ignore events for a subscription this org does
     // NOT currently point at, so canceling a race-duplicate (or an old sub after
     // a resubscribe) can't clobber the org's live subscription. Adopt a different

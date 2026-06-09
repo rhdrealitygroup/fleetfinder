@@ -39,10 +39,18 @@ export function TeamManager({ initialMembers, canManage, agentLimit, unlimitedSe
     setMembers((m) => m.filter((x) => x.id !== id)); // optimistic
     try {
       const r = await fetch("/api/team", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membership_id: id }) });
-      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Couldn't remove that member."); }
-      // Online (request reached the server): reconcile from the server — the
-      // useEffect re-syncs `members` from the refreshed prop. Avoids resurrecting
-      // a row another concurrent action already removed.
+      if (!r.ok) {
+        // Server rejected the removal (e.g. "Can't remove the owner", or a transient
+        // error). Restore the row NOW so it doesn't briefly vanish then snap back when
+        // refresh lands — the message and the still-present row stay consistent.
+        const d = await r.json().catch(() => ({}));
+        setMembers(prev);
+        setError(d.error || "Couldn't remove that member.");
+        return; // row is already accurate; no refresh needed
+      }
+      // Online + accepted: reconcile from the server — the useEffect re-syncs
+      // `members` from the refreshed prop. Avoids resurrecting a row another
+      // concurrent action already removed.
       router.refresh();
     } catch {
       // The request THREW (offline / network drop) → it never reached the server,

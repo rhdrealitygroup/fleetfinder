@@ -208,9 +208,15 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
       // batch of them exist, monopolize every cron run so the rest of the fleet never
       // refreshes. The sweepSafe guard above still prevents a transient soft-empty
       // from wiping inventory; here we just stop re-selecting it every single run.
-      await db.from("tracked_dealers")
-        .update({ last_dumped_at: runStart, listing_count: truncated ? numFound : deduped.length })
-        .eq("dealer_id", dealerId);
+      // Only record a NEW listing_count when this pull is trustworthy. If num_found
+      // looked suspect (a transient under-report), advancing the clock is fine for
+      // rotation, but we must NOT overwrite listing_count with the low value — doing
+      // so poisons the baseline so that a SECOND consecutive blip compares the low
+      // num_found against the already-lowered count, clears numFoundSuspect, and the
+      // sweep then wipes the dealer's still-in-stock cars. Keep the last good count.
+      const countPatch: Record<string, unknown> = { last_dumped_at: runStart };
+      if (!numFoundSuspect) countPatch.listing_count = truncated ? numFound : deduped.length;
+      await db.from("tracked_dealers").update(countPatch).eq("dealer_id", dealerId);
     } else if (deadlineCut && rows.length > 0) {
       // We ran out of wall-clock mid-pull (not a fetch failure). Don't sweep — the
       // un-fetched tail is unconfirmed — but still advance last_dumped_at so this

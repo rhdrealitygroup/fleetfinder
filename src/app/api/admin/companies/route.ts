@@ -282,9 +282,16 @@ export async function DELETE(req: Request) {
     } catch { /* fall back to the denormalized value */ }
     if (isSuperAdminEmail(realEmail)) continue;     // never delete a super-admin login
     if (!realEmail) continue;                        // unknown identity → don't auto-delete
-    const { count } = await db.from("memberships")
+    // Only delete the login when we can CONFIRM the user has zero other memberships.
+    // PostgREST returns count:null on a transient read error — treating null as 0
+    // would fail open and permanently delete (CASCADE) the login of someone who
+    // still belongs to another company. Delete only on a confirmed 0.
+    const { count, error: cErr } = await db.from("memberships")
       .select("*", { count: "exact", head: true }).eq("user_id", m.user_id as string);
-    if ((count || 0) > 0) continue; // still belongs to another company → keep login
+    if (cErr || count == null || count > 0) {
+      if (cErr) failedUserDeletes.push((realEmail || m.user_id) as string);
+      continue; // still belongs elsewhere, or couldn't verify → keep the login
+    }
     // Delete the auth user FIRST — profiles.id references auth.users(id) ON DELETE
     // CASCADE (0001), so the profile row goes with it. (Deleting the profile first
     // and then failing the auth delete would orphan a profile-less login.)

@@ -168,6 +168,22 @@ export async function POST(req: Request) {
         if (score === optionStatus.length) break;
       }
       if (best) closest = { vehicle: mcListing(best), matched: bestScore, total: optionStatus.length, missing: bestMissing };
+    } else {
+      // No must-have OPTIONS were requested, but the search still returned zero — a
+      // common case is an unavailable exterior color or trim. The hard-constraint
+      // pool (year/price/area) clearly has cars, so surface the cheapest one as the
+      // "closest in stock" alternative for the agent to pitch. No decode needed
+      // (there are no options to score), so this is a single cheap query.
+      try {
+        const cUrl = new URL(`${MC_HOST}/search/car/active`);
+        withHard(cUrl);
+        cUrl.searchParams.set("rows", "1");
+        cUrl.searchParams.set("sort_by", "price"); cUrl.searchParams.set("sort_order", "asc");
+        const cRes = await fetchWithTimeout(cUrl.toString());
+        const cData = cRes.ok ? await cRes.json() : { listings: [] };
+        const top = (cData.listings || []).find((l: any) => l.vin);
+        if (top) closest = { vehicle: mcListing(top), matched: 0, total: 0, missing: [] };
+      } catch { /* best-effort — reasons/fixes still render without a closest car */ }
     }
 
     // ── Fixes ──
