@@ -33,7 +33,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "Sierra 1500", "Sierra HD", "Sierra EV", "Terrain", "Yukon", "Yukon XL",
   ],
   "Jeep": [
-    "Avenger", "Cherokee", "Compass", "Gladiator", "Grand Cherokee", "Grand Cherokee L",
+    "Cherokee", "Compass", "Gladiator", "Grand Cherokee", "Grand Cherokee L",
     "Grand Wagoneer", "Renegade", "Wagoneer", "Wagoneer S", "Wrangler", "Wrangler 4xe",
   ],
   "Lincoln": ["Aviator", "Corsair", "Nautilus", "Navigator"],
@@ -88,7 +88,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "2 Series", "3 Series", "4 Series", "5 Series", "7 Series", "8 Series",
     "M2", "M3", "M4", "M5", "M8",
     "X1", "X2", "X3", "X3 M", "X4", "X5", "X5 M", "X6", "X6 M", "X7", "XM",
-    "i4", "i5", "i7", "iX", "iX1", "iX2", "Z4",
+    "i4", "i5", "i7", "iX", "Z4",
   ],
   "Mercedes-Benz": [
     "C-Class", "CLA", "CLE", "CLS", "E-Class", "S-Class",
