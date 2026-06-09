@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionContext, type Role } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createClient } from "@/lib/supabase/server";
-import { stripeConfigured } from "@/lib/stripe";
+import { stripeConfigured, seatPriceId } from "@/lib/stripe";
 import { BillingActions } from "@/app/billing/BillingActions";
 
 const STATUS_LABEL: Record<string, { t: string; c: string }> = {
@@ -111,6 +111,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                 hasSubscription={hasSub}
                 baseMonthly={baseMonthly}
                 defaultSeats={Math.max(0, (agentCount || 1) - 1)}
+                currentBilledSeats={Math.max(0, (org?.agent_limit || 1) - 1)}
+                seatPriceConfigured={!!seatPriceId()}
                 cancelAtPeriodEnd={cancelScheduled}
                 trialing={subTrialing}
                 endLabel={subTrialing ? (trialEnds || "") : (periodEnds || "")}
