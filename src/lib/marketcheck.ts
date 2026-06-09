@@ -182,12 +182,52 @@ export function isNoiseVariant(label: string): boolean {
 // else the highest-count model that contains our name. Cached 1 day.
 // Known catalog→MarketCheck model-name mismatches. Checked first so these are
 // deterministic and never depend on the (occasionally flaky) live facet lookup.
+// Catalog model name → MarketCheck's actual model string. Without these, the
+// affected dropdown entries resolve to a model MarketCheck doesn't index and come
+// back with zero trims/colors/inventory. Verified live against the MarketCheck
+// model facet (see the audit sweep over all 360 catalog entries).
 const MODEL_ALIASES: Record<string, string> = {
   "ram::1500": "Ram 1500 Pickup",
   "ram::2500": "Ram 2500 Pickup",
   "ram::3500": "Ram 3500 Pickup",
   "ram::1500 classic": "Ram 1500 Classic",
   "ram::promaster": "ProMaster Cargo Van",
+
+  // ── Name mismatches (same vehicle, different MarketCheck spelling) ──────
+  "polestar::polestar 2": "2",
+  "polestar::polestar 3": "3",
+  "polestar::polestar 4": "4",
+  "hyundai::kona electric": "Kona EV",
+  "porsche::cayenne coupe": "Cayenne Coup",
+  "porsche::macan electric": "Macan",
+  "volkswagen::id.buzz": "ID. Buzz",
+  "audi::rs6": "RS 6 Avant",
+  "genesis::electrified gv70": "GV70",
+  "toyota::rav4 prime": "RAV4 Plug-in Hybrid",
+  "ford::transit": "Transit Van",
+  "gmc::hummer ev suv": "HUMMER EV",
+  "gmc::sierra hd": "Sierra 2500HD",
+  "chevrolet::silverado hd": "Silverado 2500HD",
+  "kia::niro ev": "Niro",
+  "volvo::ec40": "C40",
+  "bmw::m3": "M3 Sedan",
+  "mini::cooper": "Hardtop 2 Door",
+  "mini::cooper se": "Hardtop 2 Door",
+  "mini::countryman electric": "Countryman",
+
+  // ── Performance / variant sub-models that MarketCheck files as a TRIM of
+  //    the base model (not a separate model). Resolve to the base so inventory
+  //    + the full trim list load; the specific trim (Si, Type R, N, …) is then
+  //    pickable from the trim list. ──────────────────────────────────────────
+  "dodge::charger daytona": "Charger",
+  "acura::integra type s": "Integra",
+  "acura::mdx type s": "MDX",
+  "acura::tlx type s": "TLX",
+  "honda::civic si": "Civic",
+  "honda::civic type r": "Civic",
+  "hyundai::elantra n": "Elantra",
+  "hyundai::ioniq 5 n": "IONIQ 5",
+  "volkswagen::jetta gli": "Jetta",
 };
 
 export async function resolveModel(make: string, model: string): Promise<string> {
