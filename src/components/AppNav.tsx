@@ -29,7 +29,7 @@ function useUserInitials() {
 // Top navigation shared across the authenticated app pages (Modern look).
 const LINKS: { href: string; label: string; dot?: boolean }[] = [
   { href: "/search", label: "Live Search" },
-  { href: "/calculator", label: "Calculator" },
+  // Lease Calculator hidden from nav (route + math kept in place; re-add to re-enable).
   { href: "/saved", label: "Saved" },
   { href: "/customers", label: "Customers" },
   { href: "/account", label: "Account" },

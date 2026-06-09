@@ -98,7 +98,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
             {!stripeConfigured() ? (
               <div className="rounded-lg border border-warning/40 bg-warning/10 text-sm p-3 text-warning-foreground">
-                Billing isn&apos;t connected yet — add Stripe keys to enable checkout. (Search &amp; calculator work without it.)
+                Billing isn&apos;t connected yet — add Stripe keys to enable checkout. (Search works without it.)
               </div>
             ) : !isOwner ? (
               <p className="text-sm text-muted-foreground">Only the company owner can manage billing.</p>

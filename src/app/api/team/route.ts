@@ -5,6 +5,41 @@
 import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { getStripe, stripeConfigured, seatPriceId } from "@/lib/stripe";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+// Keep the Stripe subscription's seat quantity in step with the actual team size.
+// Called after an agent is added or removed. During a TRIAL this changes only the
+// quantity that will bill when the trial ends — Stripe charges nothing mid-trial —
+// so an owner can add as many agents as they want for free during the trial and
+// the first real invoice (at trial end) bills every one of them. For an active
+// sub, proration_behavior:'none' means the new count simply applies from the next
+// cycle. Best-effort: the webhook's trial→active true-up is the backstop.
+async function syncSeatQuantity(orgId: string) {
+  if (!stripeConfigured() || !seatPriceId()) return;
+  const db = createServiceRoleClient();
+  const { data: org } = await db.from("organizations").select("stripe_subscription_id").eq("id", orgId).maybeSingle();
+  const subId = org?.stripe_subscription_id as string | undefined;
+  if (!subId) return; // no card on file yet → nothing to sync (trial without a sub)
+  try {
+    const stripe = getStripe();
+    const sub = await stripe.subscriptions.retrieve(subId);
+    if (!["trialing", "active", "past_due", "unpaid", "paused"].includes(sub.status)) return;
+    const { count } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", orgId);
+    if (count == null) return;
+    const desired = Math.max(0, count - 1); // seats = team minus the owner
+    const seatItem = sub.items.data.find((i: any) => i.price?.id === seatPriceId());
+    const currentQty = seatItem?.quantity || 0;
+    if (desired === currentQty) return;
+    if (seatItem) {
+      await stripe.subscriptions.update(subId, { items: [{ id: seatItem.id, quantity: desired }], proration_behavior: "none" });
+    } else if (desired > 0) {
+      await stripe.subscriptions.update(subId, { items: [{ price: seatPriceId(), quantity: desired }], proration_behavior: "none" });
+    }
+    // agent_limit is reconciled from the resulting subscription.updated webhook.
+  } catch { /* best-effort; reconciled by the webhook trial→active true-up */ }
+}
 
 export async function POST(req: Request) {
   const { user, membership } = await getSessionContext();
@@ -78,6 +113,8 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // Reflect the new team size on the Stripe sub (no charge during a trial).
+  await syncSeatQuantity(membership.org_id);
   return NextResponse.json({ ok: true });
 }
 
@@ -98,5 +135,7 @@ export async function DELETE(req: Request) {
 
   const { error } = await createServiceRoleClient().from("memberships").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Reflect the smaller team on the Stripe sub so the next invoice bills correctly.
+  await syncSeatQuantity(membership.org_id);
   return NextResponse.json({ ok: true });
 }

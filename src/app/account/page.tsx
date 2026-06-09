@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { getSessionContext, type Role } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { referralStats } from "@/lib/referrals";
+import { referralStats, referralCreditDollars } from "@/lib/referrals";
+import { getStripe, stripeConfigured } from "@/lib/stripe";
 import { ReferralPanel } from "./referrals/ReferralPanel";
 import { Building2, CreditCard, Users, Store } from "lucide-react";
 
@@ -34,7 +35,8 @@ export default async function AccountOverviewPage() {
   const { count: agentCount } = membership
     ? await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id)
     : { count: 0 };
-  const refStats = membership ? await referralStats(membership.org_id) : { invited: 0, joined: 0, earnedDollars: 0 };
+  const refStats = membership ? await referralStats(membership.org_id) : { invited: 0, joined: 0, earnedDollars: 0, pendingDollars: 0 };
+  const refCredit = membership && stripeConfigured() ? await referralCreditDollars(getStripe(), membership.org_id) : 0;
 
   const comped = !!org?.comped;
   const status = org?.plan_status || "trial";
@@ -66,7 +68,7 @@ export default async function AccountOverviewPage() {
 
       {/* Refer & earn — the boldest thing on the page */}
       {org?.referral_code && (
-        <ReferralPanel code={org.referral_code as string} invited={refStats.invited} joined={refStats.joined} earned={refStats.earnedDollars} compact />
+        <ReferralPanel code={org.referral_code as string} invited={refStats.invited} joined={refStats.joined} earned={refStats.earnedDollars} credit={refCredit} pending={refStats.pendingDollars} compact />
       )}
 
       {/* Plan & trial status */}

@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getSessionContext, type Role } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { referralStats } from "@/lib/referrals";
+import { referralStats, referralCreditDollars } from "@/lib/referrals";
+import { getStripe, stripeConfigured } from "@/lib/stripe";
 import { ReferralPanel } from "./ReferralPanel";
 
 export default async function ReferralsPage() {
@@ -19,7 +20,8 @@ export default async function ReferralsPage() {
   const { data: org } = membership
     ? await db.from("organizations").select("referral_code").eq("id", membership.org_id).single()
     : { data: null };
-  const stats = membership ? await referralStats(membership.org_id) : { invited: 0, joined: 0, earnedDollars: 0 };
+  const stats = membership ? await referralStats(membership.org_id) : { invited: 0, joined: 0, earnedDollars: 0, pendingDollars: 0 };
+  const credit = membership && stripeConfigured() ? await referralCreditDollars(getStripe(), membership.org_id) : 0;
 
   return (
     <div className="space-y-6">
@@ -29,7 +31,7 @@ export default async function ReferralsPage() {
       </div>
 
       {org?.referral_code
-        ? <ReferralPanel code={org.referral_code as string} invited={stats.invited} joined={stats.joined} earned={stats.earnedDollars} />
+        ? <ReferralPanel code={org.referral_code as string} invited={stats.invited} joined={stats.joined} earned={stats.earnedDollars} credit={credit} pending={stats.pendingDollars} />
         : <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">Your referral link will appear here once your company is set up.</div>}
 
       {/* How it works */}

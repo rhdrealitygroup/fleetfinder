@@ -3,10 +3,20 @@
 import { useEffect, useState } from "react";
 import { Copy, Check, Mail, MessageCircle, Gift } from "lucide-react";
 
+// Small stat tile for the referral dashboard.
+function Stat({ label, value, accent = false }: { label: string; value: string | number; accent?: boolean }) {
+  return (
+    <div className="rounded-xl border border-border bg-card px-3.5 py-3">
+      <div className={`text-xl font-bold tabular-nums ${accent ? "text-positive" : "text-foreground"}`}>{value}</div>
+      <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground mt-0.5">{label}</div>
+    </div>
+  );
+}
+
 // "Give $50, get $50" share panel. `compact` renders the Account-overview hero
 // card; full renders the dedicated page body.
-export function ReferralPanel({ code, invited = 0, joined = 0, earned = 0, compact = false }:
-  { code: string; invited?: number; joined?: number; earned?: number; compact?: boolean }) {
+export function ReferralPanel({ code, invited = 0, joined = 0, earned = 0, credit = 0, pending = 0, compact = false }:
+  { code: string; invited?: number; joined?: number; earned?: number; credit?: number; pending?: number; compact?: boolean }) {
   const [link, setLink] = useState(`/r/${code}`);
   const [copied, setCopied] = useState(false);
   useEffect(() => { setLink(`${window.location.origin}/r/${code}`); }, [code]);
@@ -47,10 +57,19 @@ export function ReferralPanel({ code, invited = 0, joined = 0, earned = 0, compa
       </div>
 
       {/* stats */}
-      <div className="flex gap-6 mt-5 pt-4 border-t border-border/60 text-sm">
-        <div><span className="font-semibold tabular-nums text-foreground">{invited}</span> <span className="text-muted-foreground">invited</span></div>
-        <div><span className="font-semibold tabular-nums text-foreground">{joined}</span> <span className="text-muted-foreground">joined</span></div>
-        <div><span className="font-semibold tabular-nums text-positive">${earned}</span> <span className="text-muted-foreground">earned</span></div>
+      <div className="mt-5 pt-4 border-t border-border/60">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <Stat label="Credit available" value={`$${credit}`} accent />
+          <Stat label="Earned total" value={`$${earned}`} />
+          <Stat label="Brokers joined" value={joined} />
+          <Stat label="Invites sent" value={invited} />
+        </div>
+        {(pending > 0 || credit > 0) && (
+          <p className="text-[12px] text-muted-foreground mt-3">
+            {credit > 0 && <>Your <span className="text-foreground font-medium">${credit}</span> credit is applied automatically to your next invoice. </>}
+            {pending > 0 && <><span className="text-foreground font-medium">${pending}</span> more lands when your pending referrals make their first payment.</>}
+          </p>
+        )}
       </div>
     </div>
   );

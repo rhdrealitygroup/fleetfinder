@@ -68,5 +68,25 @@ export async function referralStats(orgId: string) {
   const invited = data?.length || 0;
   const joined = (data || []).filter((r: any) => r.referrer_reward_earned).length;
   const earnedDollars = (data || []).filter((r: any) => r.referrer_credited).length * (REFERRAL_CREDIT_CENTS / 100);
-  return { invited, joined, earnedDollars };
+  // Rewards earned but not yet dropped as credit (e.g. the referrer had no Stripe
+  // customer when their referee paid — applied at their next checkout).
+  const pendingDollars = (data || []).filter((r: any) => r.referrer_reward_earned && !r.referrer_credited).length * (REFERRAL_CREDIT_CENTS / 100);
+  return { invited, joined, earnedDollars, pendingDollars };
+}
+
+// Available account credit (in dollars) sitting on the org's Stripe customer —
+// the real spendable balance, regardless of whether it came from a referral
+// reward, a welcome credit, or a manual adjustment. Stripe stores this in cents
+// with a NEGATIVE value meaning "credit the customer." 0 when no customer yet.
+export async function referralCreditDollars(stripe: Stripe, orgId: string): Promise<number> {
+  const db = createServiceRoleClient();
+  const { data: org } = await db.from("organizations").select("stripe_customer_id").eq("id", orgId).maybeSingle();
+  const cust = org?.stripe_customer_id as string | undefined;
+  if (!cust) return 0;
+  try {
+    const c: any = await stripe.customers.retrieve(cust);
+    if (c?.deleted) return 0;
+    const bal = Number(c?.balance ?? 0);
+    return bal < 0 ? Math.round((-bal) / 100 * 100) / 100 : 0;
+  } catch { return 0; }
 }

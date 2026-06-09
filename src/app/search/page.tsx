@@ -938,7 +938,7 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
             <Building2 className="w-5 h-5 text-muted-foreground" /><div><div className="font-medium">{v.dealer_name || "—"}</div>{v.city && <div className="text-muted-foreground text-xs">{v.city}, {v.state}</div>}</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a href="/calculator" className="flex-1 text-center py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">Calculate lease</a>
+            {/* Lease Calculator link hidden (route + math kept; re-add to re-enable). */}
             <div className="flex items-center gap-2">
               <input list="lc-lists" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="List (e.g. Smith family)"
                 className="w-40 rounded-lg border border-border bg-card px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50" />
