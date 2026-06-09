@@ -170,7 +170,7 @@ export function BillingActions({
             </div>
             {minSeats > 0 && seatInput <= minSeats && (
               <p className="text-[11px] text-muted-foreground">
-                Minimum {minSeats} seat{minSeats === 1 ? "" : "s"} — you have {minSeats} agent{minSeats === 1 ? "" : "s"} on your team.
+                Minimum {minSeats} seat{minSeats === 1 ? "" : "s"} — your team has {minSeats + 1} member{minSeats + 1 === 1 ? "" : "s"} (owner + {minSeats} agent{minSeats === 1 ? "" : "s"}).
               </p>
             )}
             {seatError && <p className="text-sm text-destructive">{seatError}</p>}

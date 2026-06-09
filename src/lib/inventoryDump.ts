@@ -274,8 +274,10 @@ export async function decodeUndecoded(limit = 60, deadline = 0) {
       // throwOnError=true: a transient 429/5xx/timeout throws and we leave the VIN
       // undecoded to retry next run — instead of marking it decoded-with-no-options.
       const options = await decodeVinOptionNames(row.vin, true);
-      await db.from("inventory").update({ options, options_decoded: true }).eq("vin", row.vin);
-      done++;
+      const { error: updateErr } = await db.from("inventory").update({ options, options_decoded: true }).eq("vin", row.vin);
+      // Only count as done if the DB write actually landed. A transient DB error
+      // leaves options_decoded=false so the VIN is naturally retried next run.
+      if (!updateErr) done++;
     } catch (e) {
       // Distinguish a TRANSIENT failure (429/5xx/timeout/network) from a PERMANENT
       // one (e.g. 404 — VIN not decodable). On transient, do NOT bump the counter

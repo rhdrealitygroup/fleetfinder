@@ -40,8 +40,12 @@ export async function POST(req: Request) {
   };
   const supabase = await createClient();
   if (b.id) {
-    const { error } = await supabase.from("customers").update(row).eq("id", b.id).eq("agent_id", user.id);
+    // maybeSingle() returns data=null (no error) when 0 rows matched — which means
+    // the customer either doesn't exist or belongs to a different agent (RLS scopes
+    // to this agent's org). Return 404 instead of a misleading ok:true.
+    const { data: updated, error } = await supabase.from("customers").update(row).eq("id", b.id).eq("agent_id", user.id).select("id").maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!updated) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
     return NextResponse.json({ ok: true, id: b.id });
   }
   const { data, error } = await supabase.from("customers").insert(row).select("id").single();

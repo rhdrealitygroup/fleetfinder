@@ -3,7 +3,7 @@
 // options with humanized names. Ported from Base44.
 
 import { NextResponse } from "next/server";
-import { MC_HOST, mcKey, num, titleCase } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, titleCase, fetchWithTimeout } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
 
@@ -87,13 +87,13 @@ export async function POST(req: Request) {
   try {
     const url = new URL(`${MC_HOST}/decode/car/neovin/${vin}/specs`);
     url.searchParams.set("api_key", apiKey);
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
 
     if (!res.ok) {
       if (res.status === 404) {
         const fb = new URL(`${MC_HOST}/decode/car/${vin}/specs`);
         fb.searchParams.set("api_key", apiKey);
-        const fbRes = await fetch(fb.toString());
+        const fbRes = await fetchWithTimeout(fb.toString());
         if (fbRes.ok) {
           const decoded = normalizeBasicDecode(vin, await fbRes.json());
           cacheSet(cacheKey, decoded, DAY * 30);

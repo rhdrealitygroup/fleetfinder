@@ -70,7 +70,14 @@ export async function DELETE(req: Request) {
     // customer list (data loss). `payload->>list` defaults to "Saved".
     if (!body.allLists) {
       const list = String(body.list || "Saved").trim() || "Saved";
-      qb = qb.eq("payload->>list", list);
+      if (list === "Saved") {
+        // Also match legacy rows where payload.list is null — the GET normalises
+        // those to "Saved", so the user sees them under Saved and expects to delete
+        // them from there. `eq` alone would silently miss null rows.
+        qb = qb.or("payload->>list.eq.Saved,payload->>list.is.null");
+      } else {
+        qb = qb.eq("payload->>list", list);
+      }
     }
   } else {
     return NextResponse.json({ error: "id or vin required" }, { status: 400 });
