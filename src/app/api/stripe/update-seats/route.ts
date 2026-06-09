@@ -87,19 +87,28 @@ export async function POST(req: Request) {
 
   // Apply the change. proration_behavior:"none" means no immediate charge;
   // the new amount applies from the next billing cycle.
+  //
+  // Idempotency key includes the FROM→TO transition (and sub id), not just the
+  // target seat count. A key of just (org, seats) breaks on a repeated value:
+  // Stripe caches keys ~24h and REPLAYS the cached response without re-executing,
+  // so e.g. 3→5→3 within a day would replay the old "3" success and silently leave
+  // the sub at 5 (billing the owner for seats the UI says they removed). Keying on
+  // currentQty→seats makes every real transition unique while still deduping a
+  // genuine rapid double-click of the same change.
+  const idemKey = `update-seats-${membership.org_id}-${org.stripe_subscription_id}-${currentQty}to${seats}`;
   try {
     if (seatItem) {
       // Update the existing seat item.
       await stripe.subscriptions.update(org.stripe_subscription_id as string, {
         items: [{ id: seatItem.id, quantity: seats }],
         proration_behavior: "none",
-      }, { idempotencyKey: `update-seats-${membership.org_id}-${seats}` });
+      }, { idempotencyKey: idemKey });
     } else if (seats > 0) {
       // No seat item yet — add one (org subscribed at 0 extra seats).
       await stripe.subscriptions.update(org.stripe_subscription_id as string, {
         items: [{ price: priceId, quantity: seats }],
         proration_behavior: "none",
-      }, { idempotencyKey: `update-seats-${membership.org_id}-${seats}` });
+      }, { idempotencyKey: idemKey });
     }
     // seats === 0 && !seatItem: already at 0 extra seats, nothing to update
     // (we short-circuited the no-op check above, so this path only runs if the
