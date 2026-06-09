@@ -134,6 +134,33 @@ export async function POST(req: Request) {
       await db.from("organizations").update(patch).eq("id", org.id);
     }
 
+    // Trial → paid seat true-up. Owners can add agents DURING the trial (the team
+    // route exempts an active trial from the seat cap), but checkout at signup
+    // billed the seat quantity that existed THEN (usually 0). The instant the trial
+    // converts to a paid sub, reconcile the seat quantity to the current team size
+    // so the first real invoice bills every agent. Runs only on the trial/incomplete
+    // → active edge (idempotent: skipped when the quantity already matches, and the
+    // resulting subscription.updated event re-enters with plan_status already
+    // 'active', so it won't loop). The patch above is written first, so that's safe.
+    if (!isDeleted && status === "active" && ["trial", "incomplete"].includes(String(org.plan_status || "")) && process.env.STRIPE_PRICE_SEAT) {
+      try {
+        const { count: memberCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", org.id);
+        if (memberCount != null) {
+          const desired = Math.max(0, memberCount - 1); // total seats minus the owner
+          const seatItem = sub.items.data.find((i: any) => i.price?.id === process.env.STRIPE_PRICE_SEAT);
+          const currentQty = seatItem?.quantity || 0;
+          if (desired !== currentQty) {
+            if (seatItem) {
+              await stripe.subscriptions.update(sub.id, { items: [{ id: seatItem.id, quantity: desired }], proration_behavior: "none" });
+            } else if (desired > 0) {
+              await stripe.subscriptions.update(sub.id, { items: [{ price: process.env.STRIPE_PRICE_SEAT, quantity: desired }], proration_behavior: "none" });
+            }
+            // agent_limit is reconciled from the resulting subscription.updated event.
+          }
+        }
+      } catch { /* best-effort — a mismatch self-corrects on the next seat change */ }
+    }
+
     // Durable comp reconciliation: if the org is comped, ensure the 100%-off
     // coupon is on this subscription. The admin toggle only reconciles at toggle
     // time, so a checkout that completes AFTER an org was comped (its session was
@@ -195,6 +222,27 @@ export async function POST(req: Request) {
       if (s.subscription && typeof s.subscription === "string") {
         const sub = await stripe.subscriptions.retrieve(s.subscription);
         await syncSubscription(sub, false, event.created); // freshly retrieved → live status
+
+        // Backstop the signup card gate: once a card is on file, open the
+        // onboarding gate for the org's owner (the /api/account/finalize call the
+        // success page makes is the primary path; this covers a closed tab). Merge
+        // metadata so we never clobber the user's name/company. Idempotent.
+        try {
+          const cust = typeof sub.customer === "string" ? sub.customer : null;
+          const orgId = (sub.metadata?.org_id as string) || null;
+          const { data: o } = orgId
+            ? await db.from("organizations").select("id").eq("id", orgId).maybeSingle()
+            : cust ? await db.from("organizations").select("id").eq("stripe_customer_id", cust).maybeSingle()
+            : { data: null as any };
+          if (o?.id) {
+            const { data: ownerMem } = await db.from("memberships").select("user_id").eq("org_id", o.id).eq("role", "owner").limit(1).maybeSingle();
+            if (ownerMem?.user_id) {
+              const { data: u } = await db.auth.admin.getUserById(ownerMem.user_id as string);
+              const m = (u?.user?.user_metadata as Record<string, unknown>) || {};
+              if (!m.onboarded) await db.auth.admin.updateUserById(ownerMem.user_id as string, { user_metadata: { ...m, onboarded: true, profile_complete: true } });
+            }
+          }
+        } catch { /* best-effort; finalize is the primary path */ }
       }
       break;
     }

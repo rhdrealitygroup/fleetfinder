@@ -47,11 +47,28 @@ export async function POST(req: Request) {
     if (orgErr) return NextResponse.json({ error: "Couldn't finish setup — please try again." }, { status: 500 });
   }
 
-  // Mark first-run setup complete on the auth user's metadata. The middleware
-  // reads this flag to stop funnelling the user back to /onboarding. (Supabase
-  // merges these keys into existing user_metadata rather than replacing it.)
+  // Card gate: an OWNER must put a card on file (start the Stripe trial) before
+  // they get into the app — so `onboarded` (the middleware gate) stays FALSE for
+  // them until payment completes; the client sends them straight to Checkout.
+  // Exceptions that need no card: invited agents (covered by the owner's sub), a
+  // comped org, an org that already has a subscription, or billing not configured
+  // (dev/mock). `profile_complete` records that this name/company step is done so
+  // we show the payment step (not the form) if they come back before paying.
+  const billingOn = !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_PRICE_BASE;
+  const isOwner = ensured.role === "owner";
+  let needsPayment = false;
+  let onboardedFlag = true;
+  if (isOwner && billingOn) {
+    const { data: o } = await db.from("organizations")
+      .select("comped, stripe_subscription_id").eq("id", ensured.org_id).maybeSingle();
+    if (!o?.comped && !o?.stripe_subscription_id) { needsPayment = true; onboardedFlag = false; }
+  }
+
+  // Mark first-run setup on the auth user's metadata. The middleware reads
+  // `onboarded` to stop funnelling the user back to /onboarding. (Supabase merges
+  // these keys into existing user_metadata rather than replacing it.)
   const { error: metaErr } = await db.auth.admin.updateUserById(user.id, {
-    user_metadata: { full_name: fullName, ...(companyName ? { company_name: companyName } : {}), onboarded: true },
+    user_metadata: { full_name: fullName, ...(companyName ? { company_name: companyName } : {}), profile_complete: true, onboarded: onboardedFlag },
   });
   // The middleware gates the whole app on this flag. If the write fails we MUST
   // NOT report success — otherwise the client navigates to /search and the gate
@@ -81,7 +98,9 @@ export async function POST(req: Request) {
     }
   } catch { /* referral linking is best-effort */ }
 
-  const res = NextResponse.json({ ok: true });
+  // needsPayment tells the client to send an owner into Stripe Checkout to add a
+  // card before entering the app (the hard signup gate).
+  const res = NextResponse.json({ ok: true, needsPayment });
   if (refLinked) res.cookies.set("lc_ref", "", { path: "/", maxAge: 0 }); // consume the cookie
   return res;
 }

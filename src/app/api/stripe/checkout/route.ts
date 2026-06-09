@@ -20,6 +20,9 @@ export async function POST(req: Request) {
   // Clamp the client-supplied seat count — this endpoint is directly POST-able, so
   // an unbounded value would let someone bill themselves arbitrarily.
   const requestedSeats = Math.min(1000, Math.max(0, Math.floor(Number(body.seats) || 0)));
+  // Where to return after the hosted page. Onboarding (the signup card gate) needs
+  // to land back on /onboarding to finish setup; everywhere else returns to billing.
+  const fromOnboarding = body.context === "onboarding";
 
   const supabase = await createClient();
   const { data: org } = await supabase.from("organizations").select("*").eq("id", membership.org_id).single();
@@ -151,8 +154,12 @@ export async function POST(req: Request) {
       ...(trialEnd ? { trial_end: trialEnd } : trialDays ? { trial_period_days: trialDays } : {}),
       metadata: { org_id: org.id },
     },
-    success_url: `${origin}/account/billing?checkout=success`,
-    cancel_url: `${origin}/account/billing?checkout=cancelled`,
+    // Require a card even though the first 14 days are free — this is the signup
+    // card gate. 'always' collects a payment method during the trial so the sub
+    // auto-converts when the trial ends. ('if_required' would skip it for trials.)
+    payment_method_collection: "always",
+    success_url: `${origin}${fromOnboarding ? "/onboarding" : "/account/billing"}?checkout=success`,
+    cancel_url: `${origin}${fromOnboarding ? "/onboarding" : "/account/billing"}?checkout=cancelled`,
     allow_promotion_codes: true,
     // Expire the hosted page after 30 min. The idempotency key includes seats, so
     // re-opening checkout with a DIFFERENT seat count mints a separate session;

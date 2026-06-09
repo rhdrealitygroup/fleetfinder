@@ -24,6 +24,24 @@ export function OnboardingForm({ initialFullName, initialCompany, isAgent = fals
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError(d.error || "Something went wrong — try again."); setLoading(false); return; }
+      // Owner must add a card to start the trial → send them straight to Stripe
+      // Checkout. (Agents and comped/dev owners skip this and go to the app.)
+      if (d.needsPayment) {
+        try {
+          const cr = await fetch("/api/stripe/checkout", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ context: "onboarding", seats: 0 }),
+          });
+          const cd = await cr.json().catch(() => ({}));
+          if (cr.ok && cd.url) { window.location.href = cd.url; return; }
+          // Couldn't start checkout → land on the payment step to retry with a button.
+          window.location.href = "/onboarding?checkout=cancelled";
+          return;
+        } catch {
+          window.location.href = "/onboarding?checkout=cancelled";
+          return;
+        }
+      }
       window.location.href = "/search";
     } catch {
       setError("Something went wrong — try again.");
@@ -52,7 +70,7 @@ export function OnboardingForm({ initialFullName, initialCompany, isAgent = fals
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition flex items-center justify-center gap-2 disabled:opacity-60">
-        {loading && <Loader2 className="w-4 h-4 animate-spin" />} Finish setup →
+        {loading && <Loader2 className="w-4 h-4 animate-spin" />} {isAgent ? "Finish setup →" : "Continue to payment →"}
       </button>
     </form>
   );

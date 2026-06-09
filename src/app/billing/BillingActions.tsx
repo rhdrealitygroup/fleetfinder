@@ -136,7 +136,7 @@ export function BillingActions({
       </button>
       <p className="text-[11px] text-muted-foreground">
         {trialAvailable
-          ? <>No card on file during your trial — you&apos;re never charged unless you start a subscription. If you start one, you can cancel any time before the trial ends and pay nothing.</>
+          ? <>You won&apos;t be charged today — this starts your 14-day free trial with a card on file. Cancel any time before the trial ends and pay nothing.</>
           : <>You&apos;ve already used your free trial, so checkout charges your card today. You can cancel anytime.</>}
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}

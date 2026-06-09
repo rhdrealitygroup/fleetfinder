@@ -50,7 +50,7 @@ export default function SignupPage() {
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <h1 className="font-heading text-2xl font-bold mb-1">Start your free trial</h1>
-        <p className="text-sm text-muted-foreground mb-6">14 days free · no card required · $100/mo after.</p>
+        <p className="text-sm text-muted-foreground mb-6">14 days free · cancel anytime · $100/mo after.</p>
 
         {referrer && (
           <div className="mb-6 rounded-lg border border-primary/40 bg-primary/10 p-3 text-sm flex items-start gap-2.5">

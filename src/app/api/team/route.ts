@@ -23,13 +23,16 @@ export async function POST(req: Request) {
   // before subscribing. Trial-added agents are billed when they convert (checkout
   // floors the paid seat count at the current agent count).
   const { data: org } = await db.from("organizations").select("agent_limit, comped, plan_status, stripe_subscription_id, trial_ends_at").eq("id", membership.org_id).single();
-  // Exempt comped orgs, and orgs on an ACTIVE app-trial (no Stripe sub yet AND the
-  // trial window hasn't passed). An EXPIRED trial must respect the seat limit —
-  // otherwise it could add unlimited agents for free forever. A paid sub in its
-  // Stripe trial also has plan_status='trial' but already carries a paid limit.
-  const appTrialActive = org?.plan_status === "trial" && !org?.stripe_subscription_id
+  // Exempt comped orgs, and orgs whose trial window is still active — owners build
+  // their team during the free trial regardless of whether a card is already on
+  // file (now that signup collects one, a trial usually HAS a Stripe sub). The
+  // seats added during the trial are reconciled onto the Stripe subscription when
+  // the trial converts to paid (see the webhook's trial→active true-up), so the
+  // first real invoice bills every agent. An EXPIRED trial must respect the seat
+  // limit — otherwise an org could add unlimited free agents forever.
+  const trialActive = org?.plan_status === "trial"
     && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
-  const exemptFromSeatLimit = !!org?.comped || appTrialActive;
+  const exemptFromSeatLimit = !!org?.comped || trialActive;
   if (!exemptFromSeatLimit) {
     const { count: seatCount } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("org_id", membership.org_id);
     // agent_limit is TOTAL seats and already includes the owner (the webhook sets

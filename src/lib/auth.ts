@@ -108,13 +108,23 @@ export async function requireActivePlan(): Promise<PlanGate> {
     if (!org) return { ok: true, status: 200, ctx }; // truly unreadable → don't hard-block
     if (org.comped) return { ok: true, status: 200, ctx }; // complimentary free access (set by a super-admin)
     const status = String(org.plan_status || "");
-    const trialOk = status === "trial" && (!org.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
+    // Card-gated trial: when billing is configured, a trial only grants access once
+    // a card is on file (a Stripe sub exists). This both enforces the signup gate
+    // and closes the direct-API bypass (a signed-in, un-onboarded user hitting a
+    // metered route). When billing is OFF (dev/mock) we can't collect a card, so a
+    // trial passes on its own. Always fails CLOSED to 402, never silently free.
+    const billingOn = !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_PRICE_BASE;
+    const hasCard = !!org.stripe_subscription_id;
+    const trialNotExpired = !org.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now();
+    const trialOk = status === "trial" && (!billingOn || hasCard) && trialNotExpired;
     // 'incomplete' is the transient post-checkout state before the first payment
     // confirms (Stripe auto-expires it within ~23h). Grant grace access rather than
     // hard-blocking a customer who just paid while the charge settles.
     if (status === "active" || status === "incomplete" || trialOk) return { ok: true, status: 200, ctx };
     const error = status === "trial"
-      ? "Your free trial has ended — add a payment method to keep searching."
+      ? (hasCard
+          ? "Your free trial has ended — add a payment method to keep searching."
+          : "Add a payment method to start your 14-day free trial.")
       : "Your subscription is inactive. Update billing to continue.";
     return { ok: false, status: 402, error, ctx };
   } catch {
