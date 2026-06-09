@@ -6,6 +6,7 @@ import {
   Search, SlidersHorizontal, ArrowUpDown, Star, Building2, X, Check,
   Award, GitCompare, Loader2, ExternalLink, FileText, MapPin, Gift,
 } from "lucide-react";
+import Image from "next/image";
 import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
 import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue } from "@/lib/inventory";
@@ -67,16 +68,16 @@ function SearchPageInner() {
   useEffect(() => { setRefNudge(typeof window !== "undefined" && localStorage.getItem("lc_ref_nudge") !== "off"); }, []);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
-  const [provider, setProvider] = useState("");
+  const [_provider, setProvider] = useState(""); // tracked for future "Results from X" banner; not yet displayed
   const [sort, setSort] = useState("distance");
   const [open, setOpen] = useState<Vehicle | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const { items: saved, save, remove: removeSaved, has: hasSaved, lists, ready } = useSavedVehicles();
+  const { save, remove: removeSaved, has: hasSaved, lists, ready } = useSavedVehicles();
   const { items: myDealers } = useOrgDealers();
   const [scopeDealers, setScopeDealers] = useState(true); // default: search your dealers
   const [searchedAll, setSearchedAll] = useState(false);  // last search overrode to all dealers
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [diagnosis, setDiagnosis] = useState<any>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [compare, setCompare] = useState<Set<string>>(new Set());
@@ -117,7 +118,7 @@ function SearchPageInner() {
       return;
     }
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setTrimsLoading(true);
     fetch("/api/list-trims", {
       method: "POST",
@@ -142,7 +143,7 @@ function SearchPageInner() {
       return;
     }
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setColorsLoading(true);
     fetch("/api/list-colors", {
       method: "POST",
@@ -164,7 +165,7 @@ function SearchPageInner() {
   useEffect(() => {
     if (!make) { setIntColors([]); return; }
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setIntColorsLoading(true);
     fetch("/api/list-interior-colors", {
       method: "POST",
@@ -185,7 +186,7 @@ function SearchPageInner() {
       return;
     }
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setFeaturesLoading(true);
     fetch("/api/list-features", {
       method: "POST",
@@ -329,7 +330,7 @@ function SearchPageInner() {
     } finally {
       if (seq === diagSeq.current) setDiagnosing(false);
     }
-  }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, scopeDealers, myDealers, searchedAll]);
+  }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, bodyType, drivetrain, scopeDealers, myDealers, searchedAll]);
 
   // When a search returns nothing, diagnose why — but NOT when the emptiness is a
   // rate-limit (diagnose would fire a second MarketCheck call and likely 429 again).
@@ -850,7 +851,7 @@ function VehicleCard({ v, saved, compareOn, onOpen, onSave, onCompare }: { v: Ve
       </div>
       <div className="relative h-44 rounded-2xl overflow-hidden flex items-center justify-center mb-3" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
         {v.image_url
-          ? <img src={v.image_url} alt={`${v.year} ${v.make} ${v.model}`} className="w-full h-full object-cover" loading="lazy" />
+          ? <Image fill src={v.image_url} alt={`${v.year} ${v.make} ${v.model}`} className="object-cover" sizes="(max-width: 768px) 100vw, 400px" />
           : <span className="font-heading font-semibold tracking-[0.14em] text-2xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
         {v.is_cpo && <span className="absolute top-2 left-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-[10px] font-medium text-white"><Award className="w-3 h-3" /> CPO</span>}
       </div>
@@ -906,8 +907,8 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
           <span className="font-semibold">Vehicle details</span>
           <button onClick={onClose} className="w-8 h-8 rounded-md hover:bg-white/10 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
         </div>
-        <div className="h-48 flex items-center justify-center border-b border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
-          {v.image_url ? <img src={v.image_url} alt="" className="w-full h-full object-cover" /> : <span className="font-heading font-semibold tracking-[0.2em] text-3xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
+        <div className="relative h-48 flex items-center justify-center border-b border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
+          {v.image_url ? <Image fill src={v.image_url} alt="" className="object-cover" sizes="480px" /> : <span className="font-heading font-semibold tracking-[0.2em] text-3xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
         </div>
         <div className="p-5 space-y-5">
           <div>

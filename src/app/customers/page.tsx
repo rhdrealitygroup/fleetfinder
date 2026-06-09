@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { Users, Plus, Trash2, Search, Phone, Mail, Clock } from "lucide-react";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 type Needs = { make?: string; model?: string; zip?: string; max_monthly?: string; color?: string; notes?: string };
 type Customer = { id: string; name: string; phone?: string; email?: string; notes?: string; needs?: Needs; expires_at?: string; created_at?: string };

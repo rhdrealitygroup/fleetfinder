@@ -48,7 +48,9 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   // if the org never used a trial AND its app trial window hasn't passed. A
   // resubscribe-after-cancel or expired trial gets charged immediately, so the UI
   // must not promise "pay nothing during your trial".
-  const trialAvailable = !org?.trial_used && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now() + 60_000);
+  // eslint-disable-next-line react-hooks/purity -- Server Component: executes once on the server, never re-renders
+  const now = Date.now();
+  const trialAvailable = !org?.trial_used && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > now + 60_000);
   const isOwner = membership?.role === "owner";
   const comped = !!org?.comped;
   const baseMonthly = org?.monthly_price_override != null ? org.monthly_price_override : 100;

@@ -19,6 +19,14 @@ const eslintConfig = defineConfig([
       // before async fetches in effects (a common, safe pattern). Downgrade
       // to a warning so the build stays clean without contorting the code.
       "react-hooks/set-state-in-effect": "warn",
+      // Allow _-prefixed identifiers as intentionally unused (e.g. a state
+      // value kept for type inference but not yet rendered, or a named arg
+      // kept for documentation). Standard TS convention.
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        vars: "all", varsIgnorePattern: "^_",
+        args: "after-used", argsIgnorePattern: "^_",
+        ignoreRestSiblings: true,
+      }],
     },
   },
 ]);

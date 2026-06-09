@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Star, Building2, Trash2, Search } from "lucide-react";
 import { AppNav } from "@/components/AppNav";
 import { useSavedVehicles } from "@/lib/useSavedVehicles";
@@ -44,7 +45,7 @@ export default function SavedPage() {
             return (
               <div key={v.id || v.vin || `${v.dealer_name}-${v.price}-${i}`} className="rounded-xl border border-border bg-card p-3 flex flex-col">
                 <div className="relative h-32 rounded-lg overflow-hidden flex items-center justify-center mb-3 border border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 40% 22%), hsl(${hue} 30% 12%))` }}>
-                  {v.image_url ? <img src={v.image_url} alt="" className="w-full h-full object-cover" /> : <span className="font-heading font-semibold tracking-[0.18em] text-lg uppercase text-white/70">{v.make}</span>}
+                  {v.image_url ? <Image fill src={v.image_url} alt="" className="object-cover" sizes="300px" /> : <span className="font-heading font-semibold tracking-[0.18em] text-lg uppercase text-white/70">{v.make}</span>}
                 </div>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0"><div className="font-semibold text-[15px] truncate">{v.year} {v.make} {v.model}</div>{v.trim && <div className="text-sm text-primary font-medium">{v.trim}</div>}</div>

@@ -26,8 +26,10 @@ export default async function TeamPage() {
   // No seat cap for comped orgs and orgs on an ACTIVE app-trial (no sub yet + trial
   // not expired) — mirrors the team API + DB trigger. A paid sub in its Stripe trial,
   // or an expired trial, respects the seat count.
+  // eslint-disable-next-line react-hooks/purity -- Server Component: executes once on the server, never re-renders
+  const now = Date.now();
   const appTrial = org?.plan_status === "trial" && !org?.stripe_subscription_id
-    && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
+    && (!org?.trial_ends_at || Date.parse(org.trial_ends_at as string) > now);
   const unlimitedSeats = !!org?.comped || appTrial;
   const memberCount = members?.length || 0;
 

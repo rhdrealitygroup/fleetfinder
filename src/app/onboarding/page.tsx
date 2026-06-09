@@ -6,7 +6,7 @@ import { OnboardingForm } from "./OnboardingForm";
 import { OnboardingPayment } from "./OnboardingPayment";
 import { CalendarClock, Ban, ShieldCheck, Check } from "lucide-react";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 // First-run setup. Two guided steps for an owner: (1) name + company, then (2) the
 // card gate — add a card to start the 14-day trial before entering the app.

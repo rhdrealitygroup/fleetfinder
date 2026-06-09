@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Building2, Search, Check, Phone, ExternalLink, Star, Clock, X } from "lucide-react";
+import { Building2, Search, Check, Phone, ExternalLink, Star, Clock } from "lucide-react";
 import { useOrgDealers } from "@/lib/useOrgDealers";
 
 type RemReq = { id: string; dealer_key: string; dealer_name: string | null; requested_by_email: string | null; created_at: string };

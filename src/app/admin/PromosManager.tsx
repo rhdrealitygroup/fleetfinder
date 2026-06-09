@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Tag, Plus, Loader2, Check, X } from "lucide-react";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 type Promo = {
   id: string; code: string; active: boolean;
