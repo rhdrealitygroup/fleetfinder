@@ -1,19 +1,17 @@
 // POST /api/list-trims — accurate, complete trim list for a make/model.
 //
-// REBUILT from the Base44 version, which was unreliable because it used the
-// listing facet as the source of truth (package-suffix noise, exact-match
-// failures, nationwide availability that didn't match the radius-capped
-// search, and a 30-day cache that could be poisoned by one empty response).
+// Source of truth = MarketCheck's live listing facets. (The former Vehicle Style
+// catalog endpoint, /vehicle/style/{year}/{make}/{model}, now 404s for every
+// make/model, so it can no longer be used.)
 //
-// New approach:
-//   1. SOURCE OF TRUTH = MarketCheck Vehicle Style catalog across a year
-//      window (currentYear+1 .. currentYear-3). Manufacturer-blessed, complete
-//      regardless of inventory, year-pinned. Title-cased + deduped.
-//   2. ENRICHMENT = listing facet (same make/model) provides availability +
-//      live count, matched to catalog trims by a canonical key so package
-//      suffixes don't fragment the list.
-//   3. Trims present only in the facet (not catalog) are still included, so
-//      nothing currently for sale is ever hidden.
+// Approach:
+//   1. UNIVERSE = trim facet with NO car_type filter → every trim that exists in
+//      live inventory (new + used), so nothing real is hidden. Deduped by a
+//      canonical key so package suffixes don't fragment the list.
+//   2. AVAILABILITY = trim facet scoped to the requested car_type → marks which
+//      trims are in stock now and their live counts.
+//   3. VARIANTS = the `version` facet supplies range/config sub-variants
+//      (Extended Range, Max Range, …) attached to the matching trim.
 //   4. Errors are surfaced; empty/failed results are cached only briefly.
 
 import { NextResponse } from "next/server";
@@ -62,71 +60,69 @@ export async function POST(req: Request) {
   const mcModel = model ? await resolveModel(make, model) : model;
 
   try {
-    // ── 1. Catalog trims from Vehicle Style across a year window ───────────
-    const currentYear = new Date().getFullYear();
-    const years = model ? [currentYear + 1, currentYear, currentYear - 1, currentYear - 2, currentYear - 3] : [];
     const byKey = new Map<string, Trim>();
 
-    const styleResults = await Promise.all(
-      years.map(async (yr) => {
-        try {
-          const u = new URL(`${MC_HOST}/vehicle/style/${yr}/${encodeURIComponent(make)}/${encodeURIComponent(mcModel)}`);
-          u.searchParams.set("api_key", apiKey);
-          const r = await fetchWithTimeout(u.toString());
-          if (!r.ok) return [];
-          const d = await r.json();
-          return Array.isArray(d) ? d : Array.isArray(d.styles) ? d.styles : Array.isArray(d.results) ? d.results : [];
-        } catch {
-          return [];
-        }
-      }),
-    );
+    // Scope to recent model years so the list is "current trims", not decade-old
+    // engine-code trims from very old used listings (e.g. a 2008 BMW "4.8is").
+    const endYear = new Date().getFullYear() + 1;
+    const yearRange = `${endYear - 8}-${endYear}`; // ~current + previous generation
 
-    for (const arr of styleResults) {
-      for (const s of arr as any[]) {
-        const name = prettyTrim(titleCase(s.trim || s.name || s.style));
-        if (!name) continue;
-        const key = canonicalTrimKey(name);
-        if (!key) continue;
-        const msrp = num(s.base_msrp || s.msrp);
-        const existing = byKey.get(key);
-        if (existing) {
-          // Keep the cleanest (shortest non-empty) display name; richest MSRP.
-          if (name.length < existing.name.length) existing.name = name;
-          if (!existing.msrp && msrp) existing.msrp = msrp;
-        } else {
-          byKey.set(key, { name, count: 0, available: false, msrp: msrp || undefined });
-        }
+    // Fetch the trim facet from the live listing index. `scoped=true` restricts to
+    // the requested car_type (new/used) for availability + live counts; `scoped=false`
+    // pulls the COMPLETE universe (any car_type) so trims that exist but aren't in the
+    // selected car_type right now are still listed (marked unavailable / dimmed).
+    const fetchTrimFacet = async (scoped: boolean): Promise<any[]> => {
+      const u = new URL(`${MC_HOST}/search/car/active`);
+      u.searchParams.set("api_key", apiKey);
+      if (scoped) u.searchParams.set("car_type", carType);
+      u.searchParams.set("make", make);
+      if (mcModel) u.searchParams.set("model", mcModel);
+      u.searchParams.set("year_range", yearRange);
+      u.searchParams.set("rows", "0");
+      u.searchParams.set("facets", "trim|0|100|1");
+      const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
+      if (!r.ok) return [];
+      const d = await r.json();
+      return (d.facets?.trim || []) as any[];
+    };
+
+    // ── 1. Complete trim list from live facets ─────────────────────────────
+    // (MarketCheck's former Vehicle Style catalog endpoint now 404s, so the live
+    // listing facets are the source of truth. The unscoped facet gives the full
+    // trim universe; the scoped one supplies availability + counts.)
+    const [universeItems, scopedItems] = await Promise.all([
+      fetchTrimFacet(false),
+      fetchTrimFacet(true),
+    ]);
+
+    // Seed every real trim from the universe (available=false until proven in-stock).
+    for (const t of universeItems) {
+      const rawName = String(t.item || "");
+      if (!rawName) continue;
+      const key = canonicalTrimKey(rawName);
+      if (!key) continue; // empty canonical key would collapse distinct trims together
+      const pretty = prettyTrim(titleCase(rawName));
+      const existing = byKey.get(key);
+      if (existing) {
+        if (pretty && pretty.length < existing.name.length) existing.name = pretty; // cleanest display name
+      } else {
+        byKey.set(key, { name: pretty, count: 0, available: false });
       }
     }
 
-    // ── 2. Availability + live counts from the listing facet ───────────────
-    const facetUrl = new URL(`${MC_HOST}/search/car/active`);
-    facetUrl.searchParams.set("api_key", apiKey);
-    facetUrl.searchParams.set("car_type", body.car_type || "new");
-    facetUrl.searchParams.set("make", make);
-    if (mcModel) facetUrl.searchParams.set("model", mcModel);
-    facetUrl.searchParams.set("rows", "0");
-    facetUrl.searchParams.set("facets", "trim|0|100|1");
-    const facetRes = await fetchWithTimeout(facetUrl.toString(), { cache: "no-store" });
-    if (facetRes.ok) {
-      const fData = await facetRes.json();
-      const facetItems: any[] = fData.facets?.trim || [];
-      for (const t of facetItems) {
-        const rawName = String(t.item || "");
-        if (!rawName) continue;
-        const key = canonicalTrimKey(rawName);
-        if (!key) continue; // empty canonical key would collapse distinct trims together
-        const cnt = num(t.count);
-        const existing = byKey.get(key);
-        if (existing) {
-          existing.available = true;
-          existing.count += cnt;
-        } else {
-          // Trim exists in live inventory but not in the catalog window —
-          // include it so nothing for sale is hidden. Use a clean display.
-          byKey.set(key, { name: prettyTrim(titleCase(rawName)), count: cnt, available: true });
-        }
+    // ── 2. Availability + live counts for the requested car_type ───────────
+    for (const t of scopedItems) {
+      const rawName = String(t.item || "");
+      if (!rawName) continue;
+      const key = canonicalTrimKey(rawName);
+      if (!key) continue;
+      const cnt = num(t.count);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.available = true;
+        existing.count += cnt;
+      } else {
+        byKey.set(key, { name: prettyTrim(titleCase(rawName)), count: cnt, available: true });
       }
     }
 
