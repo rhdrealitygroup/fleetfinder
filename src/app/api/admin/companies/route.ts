@@ -36,6 +36,7 @@ export async function PATCH(req: Request) {
   };
 
   const patch: Record<string, any> = {};
+  let compAppliedSubId: string | null = null; // sub we just attached the comp coupon to (for rollback)
 
   // ── Comp toggle: reconcile Stripe BEFORE persisting comped, so a Stripe
   // failure can never leave comped=true in the DB (free app access) while the
@@ -70,6 +71,7 @@ export async function PATCH(req: Request) {
             try { await stripe.coupons.retrieve(COMP_COUPON); }
             catch { await stripe.coupons.create({ id: COMP_COUPON, percent_off: 100, duration: "forever", name: "LotCompass complimentary" }); }
             await stripe.subscriptions.update(subId, { discounts: [...others, { coupon: COMP_COUPON }] });
+            compAppliedSubId = subId; // remember for rollback if the DB write below fails
           } else {
             // In this Stripe API version an EMPTY ARRAY leaves discounts unchanged;
             // only "" actually clears them. Use "" when no real promo remains, else
@@ -110,7 +112,22 @@ export async function PATCH(req: Request) {
   if (!Object.keys(patch).length) return NextResponse.json({ ok: true, id, unchanged: true });
 
   const { error } = await db.from("organizations").update(patch).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 502 });
+  if (error) {
+    // The DB write failed AFTER we attached the 100%-off comp coupon in Stripe.
+    // Roll the coupon back so we don't leave the customer free in Stripe while the
+    // DB still treats them as a paying org.
+    if (patch.comped === true && compAppliedSubId && stripeConfigured()) {
+      try {
+        const stripe = getStripe();
+        const s: any = await stripe.subscriptions.retrieve(compAppliedSubId, { expand: ["discounts"] });
+        const others = (s.discounts || [])
+          .filter((d: any) => (typeof d === "string" ? d : d?.coupon?.id || d?.coupon) !== COMP_COUPON)
+          .map(asDiscountInput).filter(Boolean);
+        await stripe.subscriptions.update(compAppliedSubId, { discounts: others.length ? others : "" });
+      } catch { /* best-effort rollback */ }
+    }
+    return NextResponse.json({ error: error.message }, { status: 502 });
+  }
 
   // If the custom price changed AND the org has a live subscription, push the
   // new base price to Stripe (otherwise it'd only apply at a checkout the
@@ -205,34 +222,27 @@ export async function DELETE(req: Request) {
   const roster = (members || []).filter((m) => m.user_id);
 
   // Stop billing first — cancel any live subscription so a deleted company never
-  // keeps getting charged. Best-effort; a Stripe hiccup shouldn't block deletion.
-  if (org.stripe_subscription_id && stripeConfigured()) {
+  // keeps getting charged. We cancel the NAMED sub AND always sweep the customer's
+  // subscriptions (the named id is webhook-written and can be stale/lagging a fresh
+  // checkout, so a sweep covers a live sub under a different id). If we can't
+  // guarantee billing stopped, abort the delete.
+  const LIVE = ["active", "trialing", "past_due", "unpaid", "paused"];
+  if (stripeConfigured() && (org.stripe_subscription_id || org.stripe_customer_id)) {
     try {
       const stripe = getStripe();
-      const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id as string);
-      // Only a LIVE sub needs canceling. If the cancel of a live sub fails, ABORT
-      // the delete — otherwise we'd remove the org (and the only record of who to
-      // bill) while Stripe keeps charging the customer forever.
-      if (["active", "trialing", "past_due", "unpaid", "paused"].includes(sub.status)) {
-        await stripe.subscriptions.cancel(org.stripe_subscription_id as string);
+      if (org.stripe_subscription_id) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(org.stripe_subscription_id as string);
+          if (LIVE.includes(sub.status)) await stripe.subscriptions.cancel(org.stripe_subscription_id as string);
+        } catch (e: any) {
+          // Stale/missing id → ignore and fall through to the customer sweep below.
+          if ((e?.code || e?.raw?.code) !== "resource_missing") throw e;
+        }
       }
-    } catch (e: any) {
-      // A 'no such subscription' / already-canceled error is safe to ignore;
-      // anything else means we couldn't guarantee billing stopped → don't delete.
-      const code = e?.code || e?.raw?.code;
-      if (code !== "resource_missing") {
-        return NextResponse.json({ error: `Couldn't cancel the company's subscription — deletion aborted so billing can't continue. Try again.` }, { status: 502 });
+      if (org.stripe_customer_id) {
+        const subs = await stripe.subscriptions.list({ customer: org.stripe_customer_id as string, status: "all", limit: 20 });
+        for (const s of subs.data) if (LIVE.includes(s.status)) await stripe.subscriptions.cancel(s.id);
       }
-    }
-  } else if (org.stripe_customer_id && stripeConfigured()) {
-    // The DB sub id is written only by the webhook, so it can lag a fresh
-    // checkout. Cancel any live sub on the customer too, or a deletion during that
-    // window would leave a billing subscription with no org record behind it.
-    try {
-      const stripe = getStripe();
-      const subs = await stripe.subscriptions.list({ customer: org.stripe_customer_id as string, status: "all", limit: 10 });
-      const live = subs.data.filter((s) => ["active", "trialing", "past_due", "unpaid", "paused"].includes(s.status));
-      for (const s of live) await stripe.subscriptions.cancel(s.id);
     } catch (e: any) {
       const code = e?.code || e?.raw?.code;
       if (code !== "resource_missing") {

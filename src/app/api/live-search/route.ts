@@ -223,6 +223,7 @@ export async function POST(req: Request) {
   // default NJ coords). For any of these, don't serve/cache an Auto.dev result.
   const autoDevCantHonor = (Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0)
     || !!body.interior_color
+    || !!body.powertrain_type
     || (!!body.zip && !(body.latitude && body.longitude));
   try {
     if (preferMarketCheck) {
@@ -331,6 +332,7 @@ export async function POST(req: Request) {
     ? body.option_names.map((s: unknown) => String(s || "").trim().toLowerCase()).filter(Boolean)
     : [];
   let optionScanLimited = false;
+  let decodeTimedOut = false; // loop broke on the wall-clock deadline (partial scan)
   if (optionQuery || optionNames.length) {
     const terms = optionQuery.split(/[,\s]+/).filter(Boolean);
     const all17 = results.filter((r) => r.vin && r.vin.length === 17);
@@ -347,7 +349,7 @@ export async function POST(req: Request) {
     const decodeDeadline = reqStart + 47_000; // 60s budget − ~13s for a last in-flight decode chunk
     let chunksRun = 0;
     for (let i = 0; i < withVin.length; i += 8) {
-      if (Date.now() > decodeDeadline) { optionScanLimited = true; break; }
+      if (Date.now() > decodeDeadline) { optionScanLimited = true; decodeTimedOut = true; break; }
       const chunk = withVin.slice(i, i + 8);
       const names = await Promise.all(chunk.map((r) => decodeVinOptionNames(r.vin)));
       chunksRun++;
@@ -369,7 +371,8 @@ export async function POST(req: Request) {
     }
   }
 
-  if (optionScanLimited) note += " (option filter scanned the first 240 closest matches)";
+  if (decodeTimedOut) note += " (option filter ran out of time — partial scan; re-run for full coverage)";
+  else if (optionScanLimited) note += " (option filter scanned the first 240 closest matches)";
   const narrowed = !!variant || maxMonthly > 0 || !!optionQuery || optionNames.length > 0;
   // Include `truncated` and `note` IN the cached payload so a cache-hit re-run
   // shows the same "showing first N" banner / note as the fresh response (the
@@ -384,10 +387,14 @@ export async function POST(req: Request) {
   }
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider, truncated, note: note || undefined };
   // Never persist a rate-limited/partial response — it would pin an empty result.
-  // Cache empty result sets only briefly: a genuine "nothing in stock" can flip
-  // to results as soon as a dealer lists one, and a near-miss transient empty
-  // shouldn't be served as the answer for a full hour.
-  if (!rateLimited) cacheSet(ckey, payload, results.length === 0 ? 2 * 60_000 : HOUR);
+  // Cache empty results only briefly (nothing-in-stock can flip fast), AND cache a
+  // deadline-truncated option scan only briefly too — otherwise an incomplete
+  // option-filtered set (only the chunks that beat the clock) would be served as
+  // authoritative for a full hour, hiding real matches.
+  if (!rateLimited) {
+    const shortTtl = results.length === 0 || decodeTimedOut;
+    cacheSet(ckey, payload, shortTtl ? 2 * 60_000 : HOUR);
+  }
 
   // Surface rateLimited so the client can skip the auto-diagnose retry (which
   // would fire a second MarketCheck call on an empty-because-rate-limited result).

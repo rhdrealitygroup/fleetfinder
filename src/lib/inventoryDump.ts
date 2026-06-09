@@ -185,7 +185,19 @@ export async function dumpDealerListings(dealerId: string, meta?: { name?: strin
     // paging can return the same VIN on multiple pages when inventory shifts
     // mid-dump, which would inflate rows.length and let an incomplete pull pass
     // the 80% coverage gate and wrongly sweep still-in-stock cars.
-    const sweepSafe = !truncated && deduped.length > 0 && numFound > 0 && deduped.length >= numFound * 0.8;
+    // Guard against a TRANSIENT num_found under-report (MarketCheck occasionally
+    // returns a low num_found on a backend hiccup, with a matching short first
+    // page). num_found is the only coverage signal, so cross-check it against the
+    // dealer's last known listing_count: if it collapsed to <50% of what we had,
+    // treat it as suspect and SKIP the sweep this run — a genuine drop re-confirms
+    // next run (by which point the stored count reflects the lower number).
+    let priorCount = 0;
+    {
+      const { data: td } = await db.from("tracked_dealers").select("listing_count").eq("dealer_id", dealerId).maybeSingle();
+      priorCount = Number(td?.listing_count) || 0;
+    }
+    const numFoundSuspect = priorCount > 0 && numFound < priorCount * 0.5;
+    const sweepSafe = !truncated && !numFoundSuspect && deduped.length > 0 && numFound > 0 && deduped.length >= numFound * 0.8;
     if (complete) {
       if (sweepSafe) {
         await db.from("inventory").delete().eq("dealer_id", dealerId).lt("updated_at", runStart);

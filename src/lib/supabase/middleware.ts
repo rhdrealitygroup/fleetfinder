@@ -59,6 +59,11 @@ export async function updateSession(request: NextRequest) {
   // Signed-out visitor hitting a protected page → send to /login, remembering
   // where they were headed so the callback returns them there.
   if (!user && !isPublic) {
+    // API routes should answer with 401 JSON, not a 302 to an HTML login page —
+    // a fetch() can't follow that meaningfully and ends up parsing HTML as JSON.
+    if (path.startsWith("/api")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", path);

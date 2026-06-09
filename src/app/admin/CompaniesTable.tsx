@@ -195,7 +195,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                       </span>
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs text-muted-foreground">$</span>
-                        <input value={price[o.id] ?? ""} onChange={(e) => setPrice((p) => ({ ...p, [o.id]: e.target.value.replace(/[^0-9]/g, "") }))}
+                        <input value={price[o.id] ?? ""} onChange={(e) => { setPriceMsg((m) => ({ ...m, [o.id]: "" })); setPrice((p) => ({ ...p, [o.id]: e.target.value.replace(/[^0-9]/g, "") })); }}
                           placeholder="std" inputMode="numeric"
                           className="w-20 rounded-md border border-border bg-card px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50" />
                         <span className="text-xs text-muted-foreground">/mo</span>

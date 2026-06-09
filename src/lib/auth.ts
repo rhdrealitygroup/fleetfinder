@@ -109,7 +109,10 @@ export async function requireActivePlan(): Promise<PlanGate> {
     if (org.comped) return { ok: true, status: 200, ctx }; // complimentary free access (set by a super-admin)
     const status = String(org.plan_status || "");
     const trialOk = status === "trial" && (!org.trial_ends_at || Date.parse(org.trial_ends_at as string) > Date.now());
-    if (status === "active" || trialOk) return { ok: true, status: 200, ctx };
+    // 'incomplete' is the transient post-checkout state before the first payment
+    // confirms (Stripe auto-expires it within ~23h). Grant grace access rather than
+    // hard-blocking a customer who just paid while the charge settles.
+    if (status === "active" || status === "incomplete" || trialOk) return { ok: true, status: 200, ctx };
     const error = status === "trial"
       ? "Your free trial has ended — add a payment method to keep searching."
       : "Your subscription is inactive. Update billing to continue.";

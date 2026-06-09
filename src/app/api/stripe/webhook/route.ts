@@ -89,8 +89,10 @@ export async function POST(req: Request) {
     }
 
     // Persist trial end + current billing period end so the UI can show a real
-    // date and the server gate can enforce trial expiry.
-    if (typeof sub.trial_end === "number") patch.trial_ends_at = new Date(sub.trial_end * 1000).toISOString();
+    // date and the server gate can enforce trial expiry. Only while ACTUALLY
+    // trialing — once a sub converts to active, sub.trial_end is a PAST date and
+    // re-writing it on every update would make trial_ends_at perpetually stale.
+    if (sub.status === "trialing" && typeof sub.trial_end === "number") patch.trial_ends_at = new Date(sub.trial_end * 1000).toISOString();
     // Mark the trial as consumed the first time we see a trial/live sub, so a
     // cancel -> resubscribe loop can't keep minting fresh 14-day Stripe trials.
     if (sub.status === "trialing" || sub.trial_end || sub.status === "active") patch.trial_used = true;
