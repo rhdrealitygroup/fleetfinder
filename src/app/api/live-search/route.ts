@@ -94,6 +94,10 @@ export async function POST(req: Request) {
     const out: any[] = [];
     let total = 0;
     for (let page = 0; page * PAGE_SIZE < MAX_RESULTS; page++) {
+      // Stop paging if we're near the function's time budget — a slow upstream over
+      // ~15 sequential pages could otherwise blow maxDuration and 504. Keep what we
+      // collected so far (the truncated note still fires downstream).
+      if (page > 0 && Date.now() > reqStart + 47_000) break;
       const url = new URL(`${MC_HOST}/search/car/active`);
       url.searchParams.set("api_key", marketKey);
       url.searchParams.set("car_type", body.car_type || "new");
@@ -160,6 +164,7 @@ export async function POST(req: Request) {
     const out: any[] = [];
     let total = 0;
     for (let page = 1; (page - 1) * PAGE_SIZE < MAX_RESULTS; page++) {
+      if (page > 1 && Date.now() > reqStart + 47_000) break; // near time budget → stop paging
       const url = new URL(`${AUTO_DEV_HOST}/listings`);
       url.searchParams.set("retailListing.used", body.car_type === "used" ? "true" : "false");
       if (body.vin) url.searchParams.set("vin", String(body.vin).toUpperCase().trim());
@@ -340,10 +345,12 @@ export async function POST(req: Request) {
     // blow maxDuration and 504 (mirrors the diagnose + cron decode loops) — keep
     // what we've scanned and flag the partial scan instead.
     const decodeDeadline = reqStart + 47_000; // 60s budget − ~13s for a last in-flight decode chunk
+    let chunksRun = 0;
     for (let i = 0; i < withVin.length; i += 8) {
       if (Date.now() > decodeDeadline) { optionScanLimited = true; break; }
       const chunk = withVin.slice(i, i + 8);
       const names = await Promise.all(chunk.map((r) => decodeVinOptionNames(r.vin)));
+      chunksRun++;
       chunk.forEach((r, j) => {
         const hay = names[j].join(" | ");
         // Word-boundary match so "tow" can't match "Towel Hooks" etc.
@@ -352,7 +359,14 @@ export async function POST(req: Request) {
         if (okQuery && okNames) kept.push(r);
       });
     }
-    results = kept;
+    // If the budget was exhausted before ANY chunk ran, don't collapse to the empty
+    // `kept` set (that would wrongly show "no matches" for a healthy search) — keep
+    // the un-filtered results and flag that the option filter couldn't be applied.
+    if (chunksRun === 0 && withVin.length > 0) {
+      note += " (couldn't apply the option filter in time — showing unfiltered matches)";
+    } else {
+      results = kept;
+    }
   }
 
   if (optionScanLimited) note += " (option filter scanned the first 240 closest matches)";

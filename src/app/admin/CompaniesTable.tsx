@@ -29,7 +29,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteErr, setDeleteErr] = useState<Record<string, string>>({});
   const [confirmId, setConfirmId] = useState<string | null>(null); // org armed for delete
-  const [compSaving, setCompSaving] = useState<string | null>(null); // org with an in-flight comp toggle
+  const [compSavingIds, setCompSavingIds] = useState<Set<string>>(() => new Set()); // orgs with an in-flight comp toggle
   const [compMsg, setCompMsg] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
   const router = useRouter();
@@ -41,15 +41,15 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
   // and briefly flicker the toggle back to its old value. The compSaving guard
   // still preserves an in-flight toggle if orgs changes for another reason.
   useEffect(() => {
-    setComped((cur) => Object.fromEntries(orgs.map((o) => [o.id, o.id === compSaving ? cur[o.id] : !!o.comped])));
+    setComped((cur) => Object.fromEntries(orgs.map((o) => [o.id, compSavingIds.has(o.id) ? cur[o.id] : !!o.comped])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgs]);
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
-    if (compSaving === id) return; // ignore double-clicks → no conflicting PATCHes
+    if (compSavingIds.has(id)) return; // ignore double-clicks → no conflicting PATCHes
     const next = !comped[id];
-    setCompSaving(id);
+    setCompSavingIds((s) => new Set(s).add(id));
     setCompMsg((m) => ({ ...m, [id]: "" }));
     setComped((c) => ({ ...c, [id]: next }));
     try {
@@ -67,7 +67,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
       setComped((c) => ({ ...c, [id]: !next }));
       setCompMsg((m) => ({ ...m, [id]: "Couldn't update free access — try again." }));
     }
-    finally { setCompSaving(null); }
+    finally { setCompSavingIds((s) => { const n = new Set(s); n.delete(id); return n; }); }
   }
 
   // Set a custom monthly price for an org (blank = standard pricing).
@@ -183,9 +183,9 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                       </span>
                       <div className="flex items-center gap-2">
                         {compMsg[o.id] && <span className="text-[11px] text-destructive">{compMsg[o.id]}</span>}
-                        <button onClick={() => toggleComp(o.id)} disabled={compSaving === o.id}
+                        <button onClick={() => toggleComp(o.id)} disabled={compSavingIds.has(o.id)}
                           className={`text-xs font-medium px-2.5 py-1 rounded-md border transition disabled:opacity-50 ${comped[o.id] ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                          {compSaving === o.id ? "Saving…" : comped[o.id] ? "Revoke free access" : "Grant free access"}
+                          {compSavingIds.has(o.id) ? "Saving…" : comped[o.id] ? "Revoke free access" : "Grant free access"}
                         </button>
                       </div>
                     </div>

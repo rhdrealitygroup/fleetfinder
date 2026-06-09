@@ -34,7 +34,10 @@ export async function GET(req: Request) {
   const refreshed: { dealer: string; n: number }[] = [];
   let rateLimited = false;
   for (const d of due as Array<{ dealer_id: string; name?: string; city?: string; state?: string }>) {
-    if (Date.now() - startedAt > BUDGET_MS) break; // out of time → rest rolls to next run
+    // Reserve a per-dealer floor of margin: don't START a dealer we can't give a
+    // meaningful slice of time to (it'd get deadline-cut immediately and be
+    // mis-counted as "refreshed"). Leftover rolls to the next run.
+    if (Date.now() - startedAt > BUDGET_MS - 13_000) break;
     try {
       // Pass the shared run deadline so a dealer started late can't page past 60s.
       const n = await dumpDealerListings(d.dealer_id, { name: d.name, city: d.city, state: d.state }, startedAt + BUDGET_MS);

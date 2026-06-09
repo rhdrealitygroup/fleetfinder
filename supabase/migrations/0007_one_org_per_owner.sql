@@ -15,9 +15,26 @@ join (
   select distinct on (owner_id) owner_id, id as keep_id
   from public.organizations
   where owner_id is not null
-  order by owner_id, created_at asc, id asc
+  -- Prefer an org that already has a Stripe subscription as the keeper, so the
+  -- dedupe never deletes the PAID org (which would orphan its subscription); then
+  -- fall back to earliest.
+  order by owner_id, (stripe_subscription_id is null), created_at asc, id asc
 ) kp on kp.owner_id = o.owner_id
 where o.id <> kp.keep_id;
+
+-- Safety backstop: if a to-be-deleted duplicate still carries a Stripe
+-- subscription (e.g. BOTH orgs were subscribed), abort rather than silently
+-- orphan billing — a human must reconcile first.
+do $$
+begin
+  if exists (
+    select 1 from _dup_map d
+    join public.organizations o on o.id = d.dup_id
+    where o.stripe_subscription_id is not null
+  ) then
+    raise exception 'Refusing to dedupe: a duplicate org has a stripe_subscription_id — reconcile billing manually first.';
+  end if;
+end $$;
 
 -- 2) Repoint child rows from duplicate orgs to the keeper.
 --    Memberships first (skip ones that would collide on the keeper, then drop

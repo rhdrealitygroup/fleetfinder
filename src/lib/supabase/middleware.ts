@@ -40,6 +40,17 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
+  // getUser() can rotate the refresh token; Supabase wrote the new auth cookies
+  // onto `response` via setAll. A bare NextResponse.redirect() would DROP those
+  // Set-Cookie headers, so the browser keeps the now-consumed old token → the next
+  // request fails to refresh and the user is spuriously logged out. Copy the
+  // rotated cookies onto every redirect we return.
+  const redirectTo = (to: URL) => {
+    const res = NextResponse.redirect(to);
+    response.cookies.getAll().forEach((c) => res.cookies.set(c));
+    return res;
+  };
+
   // The whole app requires sign-in. Public = marketing home + auth routes +
   // the Stripe webhook (server-to-server, no session). Everything else is gated.
   const publicPrefixes = ["/login", "/signup", "/auth", "/api/stripe/webhook", "/api/cron", "/r/", "/api/referral"];
@@ -51,7 +62,7 @@ export async function updateSession(request: NextRequest) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", path);
-    return NextResponse.redirect(redirect);
+    return redirectTo(redirect);
   }
 
   if (user) {
@@ -73,7 +84,7 @@ export async function updateSession(request: NextRequest) {
       const redirect = request.nextUrl.clone();
       redirect.pathname = onboarded ? "/search" : "/onboarding";
       redirect.search = "";
-      return NextResponse.redirect(redirect);
+      return redirectTo(redirect);
     }
 
     // Force first-run setup before any app PAGE is usable. Never touch /api/*
@@ -88,7 +99,7 @@ export async function updateSession(request: NextRequest) {
       const redirect = request.nextUrl.clone();
       redirect.pathname = "/onboarding";
       redirect.search = "";
-      return NextResponse.redirect(redirect);
+      return redirectTo(redirect);
     }
   }
 
