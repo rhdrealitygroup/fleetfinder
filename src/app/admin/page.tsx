@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { ShieldAlert } from "lucide-react";
 import { CompaniesTable, type Member } from "./CompaniesTable";
 import { PromosManager } from "./PromosManager";
+import { CAR_CATALOG } from "@/lib/carCatalog";
 
 // Super-admin platform console (RHD only). Lists every organization with its
 // plan + agent count, and every user. Uses the service role to bypass RLS.
@@ -38,6 +39,18 @@ export default async function AdminPage() {
   const totalUsers = members?.length || 0;
   const activeOrgs = (orgs || []).filter((o) => o.plan_status === "active").length;
 
+  // Catalog drift watchdog (written by /api/cron/catalog-health).
+  const { data: health } = await db
+    .from("catalog_health")
+    .select("make, model, status, last_checked")
+    .order("last_checked", { ascending: false });
+  const hRows = health || [];
+  const totalCatalog = Object.values(CAR_CATALOG).reduce((n, ms) => n + (ms as string[]).length, 0);
+  const hOk = hRows.filter((r) => r.status === "ok").length;
+  const hEmpty = hRows.filter((r) => r.status === "empty").length;
+  const hRegressed = hRows.filter((r) => r.status === "regressed");
+  const lastSweep = hRows[0]?.last_checked ? new Date(hRows[0].last_checked as string) : null;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppNav />
@@ -59,6 +72,35 @@ export default async function AdminPage() {
           <CompaniesTable orgs={orgs || []} membersByOrg={membersByOrg} />
         </div>
 
+        {/* Catalog drift watchdog */}
+        <div className="rounded-xl border border-border bg-card overflow-hidden mb-8">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <span className="text-sm font-semibold">Catalog health</span>
+            <span className="text-[11px] text-muted-foreground">
+              {lastSweep ? `Last checked ${lastSweep.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "No sweep yet"}
+            </span>
+          </div>
+          <div className="p-4 space-y-4">
+            {hRegressed.length > 0 ? (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                <div className="font-semibold mb-1">⚠️ {hRegressed.length} model{hRegressed.length === 1 ? "" : "s"} lost spec data since the last check</div>
+                <div className="text-[13px] text-foreground">{hRegressed.map((r) => `${r.make} ${r.model}`).join(", ")}</div>
+                <div className="text-[12px] text-muted-foreground mt-1">Usually a model rename in MarketCheck or a feed break — fix via MODEL_ALIASES in marketcheck.ts.</div>
+              </div>
+            ) : hRows.length > 0 ? (
+              <div className="rounded-lg border border-positive/30 bg-positive/10 p-3 text-sm text-positive">✓ Every checked model has live trim &amp; color data.</div>
+            ) : (
+              <div className="text-sm text-muted-foreground">Baseline still building — the daily sweep covers the whole catalog over about a week.</div>
+            )}
+            <div className="grid grid-cols-4 gap-3">
+              <MiniStat label="Models OK" value={String(hOk)} />
+              <MiniStat label="Empty (not US-sold)" value={String(hEmpty)} />
+              <MiniStat label="Regressed" value={String(hRegressed.length)} alert={hRegressed.length > 0} />
+              <MiniStat label="Coverage" value={`${hRows.length}/${totalCatalog}`} />
+            </div>
+          </div>
+        </div>
+
         <PromosManager />
 
         <p className="text-xs text-muted-foreground mt-4">Click a company to see its people and seat usage. Promo codes are redeemable at checkout.</p>
@@ -69,4 +111,13 @@ export default async function AdminPage() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-xl border border-border bg-card p-4"><div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div><div className="text-2xl font-semibold mt-1 tnum">{value}</div></div>;
+}
+
+function MiniStat({ label, value, alert = false }: { label: string; value: string; alert?: boolean }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-3">
+      <div className={`text-lg font-bold tnum ${alert ? "text-destructive" : "text-foreground"}`}>{value}</div>
+      <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground mt-0.5">{label}</div>
+    </div>
+  );
 }
