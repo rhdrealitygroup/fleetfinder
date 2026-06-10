@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/sync-dealers", "schedule": "0 8 * * *" },
     { "path": "/api/cron/refresh-catalog", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/dump-inventory", "schedule": "0 */6 * * *" }
+    { "path": "/api/cron/dump-inventory", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/catalog-health", "schedule": "0 10 * * *" }
   ]
 }
