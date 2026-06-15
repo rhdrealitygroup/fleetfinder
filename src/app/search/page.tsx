@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { AppNav } from "@/components/AppNav";
-import { CAR_CATALOG, CATALOG_MAKES } from "@/lib/carCatalog";
+import { CAR_CATALOG, CATALOG_MAKES, DIRECT_SALES_BRANDS, PRE_LAUNCH_MODELS } from "@/lib/carCatalog";
 import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue } from "@/lib/inventory";
 import { moneyShort } from "@/lib/format";
 import { useSavedVehicles } from "@/lib/useSavedVehicles";
@@ -227,9 +227,11 @@ function SearchPageInner() {
     });
   };
 
-  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean; dropOption?: string; clearMaxMonthly?: boolean; clearVariant?: boolean; clearIntColor?: boolean }) => {
+  const runSearch = useCallback(async (opts?: { radiusOverride?: number; allDealers?: boolean; dropOption?: string; clearMaxMonthly?: boolean; clearVariant?: boolean; clearIntColor?: boolean; carTypeOverride?: "new" | "used" }) => {
     const effRadius = opts?.radiusOverride ?? radius;
     if (opts?.radiusOverride) setRadius(opts.radiusOverride);
+    const effCarType = opts?.carTypeOverride ?? carType;
+    if (opts?.carTypeOverride) setCarType(opts.carTypeOverride);
     const useDealers = scopeDealers && myDealers.length > 0 && !opts?.allDealers;
     const effFeatures = opts?.dropOption ? [...features].filter((f) => f !== opts.dropOption) : [...features];
     // Diagnose "clear X" fixes pass the cleared value explicitly so the search
@@ -249,7 +251,7 @@ function SearchPageInner() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          car_type: carType, make, model, trim, variant: effVariant,
+          car_type: effCarType, make, model, trim, variant: effVariant,
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
           interior_color: (intColors.find((c) => c.name === effIntColor)?.variants || []).join(",") || undefined,
           zip: zip.trim() || undefined, radius: effRadius,
@@ -335,7 +337,11 @@ function SearchPageInner() {
   // When a search returns nothing, diagnose why — but NOT when the emptiness is a
   // rate-limit (diagnose would fire a second MarketCheck call and likely 429 again).
   useEffect(() => {
-    if (results !== null && !searching && sorted.length === 0 && !error && make && !rateLimited) runDiagnose();
+    // Direct-sales brands (Tesla/Rivian/Lucid) have ~0 NEW dealer inventory by
+    // design — a zero result there isn't a "bad filter" to diagnose, it's the
+    // factory-direct model. The empty-state shows a "show used" nudge instead.
+    const directNewEmpty = DIRECT_SALES_BRANDS.has(make) && carType === "new";
+    if (results !== null && !searching && sorted.length === 0 && !error && make && !rateLimited && !directNewEmpty) runDiagnose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results, searching]);
 
@@ -412,7 +418,10 @@ function SearchPageInner() {
       <Field label="Model">
         <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
           <option value="">{make ? "Any model" : "Pick a make first"}</option>
-          {[...models].sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
+          {[...models].sort((a, b) => a.localeCompare(b)).map((m) => {
+            const preLaunch = PRE_LAUNCH_MODELS.has(`${make}::${m}`.toLowerCase());
+            return <option key={m} value={m}>{preLaunch ? `${m} — not yet on sale` : m}</option>;
+          })}
         </select>
       </Field>
 
@@ -654,7 +663,16 @@ function SearchPageInner() {
               <p>Searching live inventory nationwide…</p>
             </div>
           )}
-          {results !== null && !searching && sorted.length === 0 && !error && (
+          {results !== null && !searching && sorted.length === 0 && !error && DIRECT_SALES_BRANDS.has(make) && carType === "new" && (
+            <div className="max-w-2xl mx-auto py-14">
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 text-center">
+                <p className="text-lg font-medium text-foreground mb-1">{make} sells factory-direct</p>
+                <p className="text-sm text-muted-foreground mb-4">{make} doesn&apos;t sell new cars through franchised dealers, so dealer feeds carry almost no new {make} inventory. Used listings are widely available.</p>
+                <button onClick={() => runSearch({ carTypeOverride: "used" })} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">Show used {make} listings</button>
+              </div>
+            </div>
+          )}
+          {results !== null && !searching && sorted.length === 0 && !error && !(DIRECT_SALES_BRANDS.has(make) && carType === "new") && (
             <div className="max-w-2xl mx-auto py-14">
               <div className="text-center mb-6">
                 <p className="text-lg font-medium text-foreground mb-1">No exact match</p>

@@ -3,7 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout, normalizeColorName, isJunkColor } from "@/lib/marketcheck";
 
 export const maxDuration = 30;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
@@ -45,10 +45,9 @@ export async function POST(req: Request) {
     const data = await res.json();
     const facetItems: any[] = data.facets?.exterior_color || [];
 
-    const cleanName = (raw: string) => String(raw || "")
-      .replace(/\s+Exterior Paint$/i, "")
-      .replace(/\s+Clear-Coat\s+Exterior Paint$/i, " Clear-Coat")
-      .trim();
+    // Expand truncated/abbreviated dealer spellings ("Agate Blk Met" →
+    // "Agate Black Metallic") so variants collapse into one bucket.
+    const cleanName = (raw: string) => normalizeColorName(raw);
     const dedupKey = (name: string) => String(name || "")
       .toLowerCase()
       .replace(/\s+(metallic|pearl|pearl-?coat|clear-?coat|tricoat|tri-?coat|mica)\s*$/i, "")
@@ -65,7 +64,7 @@ export async function POST(req: Request) {
     for (const c of facetItems) {
       const raw = String(c.item || "").trim();
       const cleaned = cleanName(c.item);
-      if (!cleaned) continue;
+      if (!cleaned || isJunkColor(cleaned)) continue; // drop code-like junk ("Dr", "M7", "9b")
       const key = dedupKey(cleaned);
       if (!key) continue;
       const cnt = num(c.count);

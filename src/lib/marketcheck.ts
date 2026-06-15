@@ -107,6 +107,50 @@ export function normalizeFeature(s: unknown): string {
     .replace(/\bWifi\b/g, "WiFi");
 }
 
+// ── Color-name cleanup (exterior + interior dropdowns) ────────────────────────
+// Dealer free-text colors arrive truncated ("Agate Blk Met"), abbreviated, and
+// padded with junk codes ("Dr", "Js", "M7", "9b"). normalizeColorName expands
+// the common truncations so spelling variants collapse into one bucket, and
+// isJunkColor drops the code-like garbage. Both are token-based and only touch
+// WHOLE tokens, so real names ("Red", "Jet Black", "GT Silver") pass through.
+const COLOR_ABBREV: Record<string, string> = {
+  blk: "Black", wht: "White", whi: "White", sil: "Silver", slv: "Silver",
+  slvr: "Silver", gry: "Gray", grey: "Gray", blu: "Blue", grn: "Green",
+  brn: "Brown", brz: "Bronze", chrcl: "Charcoal", chcl: "Charcoal",
+  met: "Metallic", mtl: "Metallic", mtlc: "Metallic", metalic: "Metallic",
+  prl: "Pearl", pearlcoat: "Pearl", burg: "Burgundy", dk: "Dark", lt: "Light",
+  drk: "Dark", med: "Medium", grnt: "Granite", snd: "Sand",
+};
+export function normalizeColorName(raw: unknown): string {
+  const s = String(raw || "")
+    .replace(/\s+Exterior Paint$/i, "")
+    .replace(/\s+Clear-?Coat\b/gi, " Clear-Coat")
+    .replace(/[._]+/g, " ")
+    .trim();
+  if (!s) return "";
+  return s
+    .split(/\s+/)
+    .map((tok) => {
+      const k = tok.toLowerCase().replace(/[^a-z]/g, "");
+      if (COLOR_ABBREV[k]) return COLOR_ABBREV[k];
+      return tok.charAt(0).toUpperCase() + tok.slice(1).toLowerCase();
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+// True when a (cleaned) color name is dealer junk — a code with no real word.
+// "Real word" = a token of >=3 letters containing a vowel. Drops "Dr", "Js",
+// "M7", "Yz", "Um", "9b"; keeps "Red", "Tan", "Jet Black", "Agate Black".
+export function isJunkColor(name: unknown): boolean {
+  const s = String(name || "").trim();
+  if (!s) return true;
+  return !s.split(/\s+/).some((t) => {
+    const letters = t.replace(/[^a-zA-Z]/g, "");
+    return letters.length >= 3 && /[aeiou]/i.test(letters);
+  });
+}
+
 // ── Trim normalization — the core of the trims fix ────────────────────────
 // MarketCheck listing facets return raw trim strings that often carry package
 // or drivetrain suffixes ("xDrive40i Sport", "Limited w/ Tech Pkg"). Feeding

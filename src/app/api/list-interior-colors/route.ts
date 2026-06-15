@@ -4,7 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout, normalizeColorName, isJunkColor } from "@/lib/marketcheck";
 
 export const maxDuration = 30;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     const data = await res.json();
     const facetItems: any[] = data.facets?.interior_color || [];
 
-    const cleanName = (raw: string) => String(raw || "").replace(/\s+(interior|int\.?)$/i, "").trim();
+    const cleanName = (raw: string) => normalizeColorName(raw).replace(/\s+(interior|int\.?)$/i, "").trim();
     const dedupKey = (name: string) => String(name || "")
       .toLowerCase()
       .replace(/\s+(leather|leatherette|cloth|vinyl|premium|perforated)\s*$/i, "")
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     for (const c of facetItems) {
       const raw = String(c.item || "").trim();
       const cleaned = cleanName(c.item);
-      if (!cleaned) continue;
+      if (!cleaned || isJunkColor(cleaned)) continue; // drop code-like junk tokens
       const key = dedupKey(cleaned);
       if (!key) continue;
       const cnt = num(c.count);

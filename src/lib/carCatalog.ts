@@ -63,7 +63,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
   ],
   "Subaru": [
     "Ascent", "BRZ", "Crosstrek", "Forester", "Impreza",
-    "Legacy", "Outback", "Solterra", "WRX",
+    "Legacy", "Outback", "Solterra", "Trailseeker", "Uncharted", "WRX",
   ],
   "Toyota": [
     "4Runner", "Camry", "Corolla", "Corolla Cross", "Crown", "Crown Signia",
@@ -82,7 +82,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
   "Audi": [
     "A3", "A4", "A5", "A6", "A7", "A8", "S3", "S4", "S5", "S6",
     "RS3", "RS5", "RS6", "Q3", "Q4 e-tron", "Q5", "Q5 Sportback",
-    "Q7", "Q8", "SQ5", "SQ7", "SQ8", "e-tron GT", "RS e-tron GT",
+    "Q6 e-tron", "Q7", "Q8", "RS Q8", "SQ5", "SQ7", "SQ8", "e-tron GT", "RS e-tron GT",
   ],
   "BMW": [
     "2 Series", "3 Series", "4 Series", "5 Series", "7 Series", "8 Series",
@@ -93,7 +93,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
   "Mercedes-Benz": [
     "C-Class", "CLA", "CLE", "CLS", "E-Class", "S-Class",
     "GLA", "GLB", "GLC", "GLE", "GLS", "G-Class",
-    "EQB", "EQE", "EQE SUV", "EQS", "EQS SUV", "EQG", "AMG GT",
+    "EQB", "EQE", "EQE SUV", "EQS", "EQS SUV", "EQG", "AMG GT", "Sprinter",
   ],
   "Porsche": [
     "718 Boxster", "718 Cayman", "911", "Cayenne", "Cayenne Coupe",
@@ -169,3 +169,20 @@ export const CAR_CATALOG: Record<string, string[]> = {
 };
 
 export const CATALOG_MAKES = Object.keys(CAR_CATALOG).sort();
+
+// Brands that sell factory-direct, not through franchised dealers — so NEW
+// inventory in a dealer feed (MarketCheck/Auto.dev) is ~0. When a search for
+// one of these returns nothing in New mode, the UI nudges the user to Used
+// instead of showing a generic "no match" diagnosis.
+export const DIRECT_SALES_BRANDS = new Set(["Tesla", "Rivian", "Lucid"]);
+
+// Models that are in the lineup/catalog but NOT yet on sale (pre-production or
+// announced-only) — they legitimately return 0 inventory. Keyed "make::model"
+// (lowercase) so the picker can flag them "not yet on sale" instead of looking
+// broken. Revisit as each launches.
+export const PRE_LAUNCH_MODELS = new Set([
+  "rivian::r2",
+  "rivian::r3",
+  "cadillac::celestiq",
+  "mercedes-benz::eqg",
+]);
