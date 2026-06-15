@@ -416,35 +416,48 @@ function SearchPageInner() {
         </select>
       </Field>
 
-      {/* Trim picker — lives with the filters, populated once make+model set */}
+      {/* Trim picker — a dropdown (model-specific trims from MarketCheck),
+          populated once make+model are both set. Always a <select> so it
+          stays consistent with every other filter. */}
       {make && model && (
-        <div>
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">
-            Trim {trimsLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <TrimPill label="All trims" active={trim === ""} onClick={() => { setTrim(""); setVariant(""); }} />
-            {trims.map((t) => (
-              <TrimPill key={t.name} label={t.name} count={t.count} dim={!t.available}
-                active={trim === t.name} onClick={() => { setTrim(t.name); setVariant(""); }} />
-            ))}
-            {!trimsLoading && trims.length === 0 && (
-              <span className="text-xs text-muted-foreground py-1.5">No trims found — search still runs.</span>
-            )}
-          </div>
-          {activeVariants.length > 0 && (
-            <div className="mt-3 pl-3 border-l-2 border-primary/30">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">{trim} configuration</div>
-              <div className="flex flex-wrap gap-2">
-                <TrimPill label="Any" active={variant === ""} onClick={() => setVariant("")} />
-                {activeVariants.map((v) => (
-                  <TrimPill key={v.label} label={v.label} count={v.count}
-                    active={variant === v.label} onClick={() => setVariant(v.label)} />
+        <Field label="Trim">
+          <select
+            value={trim}
+            onChange={(e) => { setTrim(e.target.value); setVariant(""); }}
+            disabled={trimsLoading && trims.length === 0}
+            className={selectCls}
+          >
+            <option value="">{trimsLoading && trims.length === 0 ? "Loading trims…" : "All trims"}</option>
+            {trims.filter((t) => t.available).length > 0 && (
+              <optgroup label="Currently available">
+                {trims.filter((t) => t.available).map((t) => (
+                  <option key={t.name} value={t.name}>{t.name}{t.count ? ` · ${t.count.toLocaleString()}` : ""}</option>
                 ))}
-              </div>
+              </optgroup>
+            )}
+            {trims.filter((t) => !t.available).length > 0 && (
+              <optgroup label="No current listings (factory trims)">
+                {trims.filter((t) => !t.available).map((t) => (
+                  <option key={t.name} value={t.name}>{t.name}</option>
+                ))}
+              </optgroup>
+            )}
+            {!trimsLoading && trims.length === 0 && (
+              <option value="" disabled>No trims found — search still runs</option>
+            )}
+          </select>
+          {activeVariants.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">{trim} configuration</div>
+              <select value={variant} onChange={(e) => setVariant(e.target.value)} className={selectCls}>
+                <option value="">Any configuration</option>
+                {activeVariants.map((v) => (
+                  <option key={v.label} value={v.label}>{v.label}{v.count ? ` · ${v.count.toLocaleString()}` : ""}</option>
+                ))}
+              </select>
             </div>
           )}
-        </div>
+        </Field>
       )}
 
       {/* Exterior color — make/model-specific, pulled live from MarketCheck */}
@@ -819,15 +832,6 @@ const selectCls = "w-full rounded-lg border border-border bg-card px-3 py-2 text
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{label}</span><div className="mt-1">{children}</div></label>;
-}
-
-function TrimPill({ label, count, active, dim, onClick }: { label: string; count?: number; active: boolean; dim?: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-sm border transition ${active ? "bg-foreground text-background border-foreground font-medium" : dim ? "bg-card/50 border-border text-muted-foreground/60 hover:text-foreground" : "bg-card border-border text-foreground hover:border-white/40"}`}>
-      {label}{typeof count === "number" && count > 0 && <span className="ml-1.5 text-[11px] opacity-60 tnum">{count.toLocaleString()}</span>}
-    </button>
-  );
 }
 
 function StatusPill({ status }: { status: string }) {
