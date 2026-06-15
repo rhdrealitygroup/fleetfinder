@@ -121,6 +121,39 @@ export const CAR_CATALOG: Record<string, string[]> = {
   "Alfa Romeo": ["Stelvio", "Giulia", "Tonale"],
   "Fiat": ["500e"],
 
+  // ── Exotic / ultra-luxury ─────────────────────────────────────────────
+  "Ferrari": [
+    "296 GTB", "296 GTS", "SF90 Stradale", "SF90 Spider", "Roma", "Roma Spider",
+    "Purosangue", "812 Superfast", "812 GTS", "F8 Tributo", "F8 Spider",
+    "488 GTB", "488 Spider", "488 Pista", "Portofino", "Portofino M",
+    "California", "California T", "GTC4Lusso", "F12berlinetta", "458 Italia",
+    "812 Competizione", "Daytona SP3", "F430", "360",
+  ],
+  "Lamborghini": [
+    "Urus", "Huracan", "Revuelto", "Aventador", "Temerario",
+    "Gallardo", "Murcielago", "Diablo", "Countach",
+  ],
+  "Rolls-Royce": ["Cullinan", "Ghost", "Phantom", "Spectre", "Wraith", "Dawn"],
+  "McLaren": [
+    "Artura", "750S", "720S", "765LT", "GT", "GTS",
+    "570S", "570GT", "600LT", "620R", "650S", "P1", "Senna",
+  ],
+  "Lotus": ["Emira", "Eletre", "Evija", "Evora", "Elise", "Esprit"],
+
+  // ── Other / commercial / discontinued ─────────────────────────────────
+  "Ineos": ["Grenadier"],
+  "Karma": ["Revero", "GS-6"],
+  "Fisker": ["Ocean", "Karma"],
+  "Isuzu": ["NPR", "NPR HD", "NRR", "NQR", "FTR", "Ascender", "Rodeo", "Trooper"],
+  "Pontiac": [
+    "G6", "G8", "Firebird", "Solstice", "Grand Prix", "Vibe", "Torrent",
+    "GTO", "Grand Am", "Bonneville", "Fiero", "G5", "Montana", "Aztek",
+  ],
+  "Suzuki": [
+    "SX4", "Grand Vitara", "Kizashi", "XL-7", "Equator",
+    "Forenza", "Aerio", "Reno", "Verona", "Swift",
+  ],
+
   // ── Swedish ───────────────────────────────────────────────────────────
   "Volvo": [
     "C40", "EC40", "EX30", "EX90", "S60", "S90", "V60", "V90",

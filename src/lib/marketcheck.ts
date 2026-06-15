@@ -188,7 +188,10 @@ export function isNoiseVariant(label: string): boolean {
 // back with zero trims/colors/inventory. Verified live against the MarketCheck
 // model facet (see the audit sweep over all 360 catalog entries).
 const MODEL_ALIASES: Record<string, string> = {
-  "ram::1500": "Ram 1500 Pickup",
+  // RAM files every pickup as "Ram <n> Pickup"; the 1500 also still sells the
+  // prior-gen body as a distinct "Ram 1500 Classic" model — union both so the
+  // 1500 count isn't truncated to just the current body.
+  "ram::1500": "Ram 1500 Pickup,Ram 1500 Classic",
   "ram::2500": "Ram 2500 Pickup",
   "ram::3500": "Ram 3500 Pickup",
   "ram::1500 classic": "Ram 1500 Classic",
@@ -201,6 +204,11 @@ const MODEL_ALIASES: Record<string, string> = {
   "hyundai::kona electric": "Kona EV",
   "porsche::cayenne coupe": "Cayenne Coup",
   "porsche::macan electric": "Macan",
+  // MarketCheck files the current mid-engine cars as "718" (both body styles)
+  // and keeps the pre-718 cars under "Boxster"/"Cayman" — union so neither the
+  // modern nor the legacy inventory is dropped.
+  "porsche::718 boxster": "718,Boxster",
+  "porsche::718 cayman": "718,Cayman",
   "volkswagen::id.buzz": "ID. Buzz",
   "audi::rs6": "RS 6 Avant",
   "genesis::electrified gv70": "GV70",
@@ -208,8 +216,10 @@ const MODEL_ALIASES: Record<string, string> = {
   "toyota::prius prime": "Prius Plug-in Hybrid",
   "ford::transit": "Transit Van",
   "gmc::hummer ev suv": "HUMMER EV",
-  "gmc::sierra hd": "Sierra 2500HD",
-  "chevrolet::silverado hd": "Silverado 2500HD",
+  // "…HD" is a catalog umbrella; MarketCheck splits it by GVWR (2500HD/3500HD)
+  // and again by Denali trim. Union every HD bucket so the count is complete.
+  "gmc::sierra hd": "Sierra 2500HD,Sierra 3500HD,Sierra 2500 Denali HD,Sierra 3500 Denali HD",
+  "chevrolet::silverado hd": "Silverado 2500HD,Silverado 3500HD",
   "kia::niro ev": "Niro",
   "volvo::ec40": "C40",
   "bmw::m3": "M3 Sedan",
@@ -230,6 +240,23 @@ const MODEL_ALIASES: Record<string, string> = {
   "hyundai::elantra n": "Elantra",
   "hyundai::ioniq 5 n": "IONIQ 5",
   "volkswagen::jetta gli": "Jetta",
+
+  // ── Ferrari: the catalog uses the marketing names (296 GTB, SF90 Stradale,
+  //    …) but MarketCheck indexes each car under a shorter base name. Map to
+  //    the base so inventory loads; body/trim (GTB, GTS, Spider, M) is then
+  //    pickable from the trim list. Includes two that "exist" under the granular
+  //    name but with near-zero count — F8 Tributo (1) and 812 Superfast (1) —
+  //    whose real inventory lives under "F8" (107) and "812" (33). ─────────────
+  "ferrari::296 gtb": "296",
+  "ferrari::296 gts": "296",
+  "ferrari::sf90 stradale": "SF90",
+  "ferrari::sf90 spider": "SF90",
+  "ferrari::roma spider": "Roma",
+  "ferrari::f8 tributo": "F8",
+  "ferrari::f8 spider": "F8",
+  "ferrari::812 superfast": "812",
+  "ferrari::portofino m": "Portofino",
+  "ferrari::gtc4lusso": "GTC4Lusso,GTC4",
 };
 
 export async function resolveModel(make: string, model: string): Promise<string> {
