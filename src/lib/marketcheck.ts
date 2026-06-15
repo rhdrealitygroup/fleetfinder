@@ -205,6 +205,7 @@ const MODEL_ALIASES: Record<string, string> = {
   "audi::rs6": "RS 6 Avant",
   "genesis::electrified gv70": "GV70",
   "toyota::rav4 prime": "RAV4 Plug-in Hybrid",
+  "toyota::prius prime": "Prius Plug-in Hybrid",
   "ford::transit": "Transit Van",
   "gmc::hummer ev suv": "HUMMER EV",
   "gmc::sierra hd": "Sierra 2500HD",
@@ -253,9 +254,18 @@ export async function resolveModel(make: string, model: string): Promise<string>
 
     // Sibling models the catalog lists for this make (lowercased). These are
     // user-pickable in their own right, so they must NEVER be folded into
-    // another model's OR-list (e.g. "Wrangler 4xe", "Grand Cherokee L").
+    // another model's OR-list (e.g. "Wrangler 4xe", "Grand Cherokee L"). Include
+    // each sibling's ALIAS-resolved MarketCheck name too — e.g. Toyota "RAV4
+    // Prime" → "RAV4 Plug-in Hybrid" and Porsche "Cayenne Coupe" → "Cayenne
+    // Coup" — so base "RAV4"/"Cayenne" don't swallow a model that's pickable on
+    // its own under a different MarketCheck spelling.
     const makeKey = Object.keys(CAR_CATALOG).find((k) => k.toLowerCase() === make.toLowerCase());
-    const siblings = new Set((makeKey ? CAR_CATALOG[makeKey] : []).map((m) => m.toLowerCase()));
+    const siblings = new Set<string>();
+    for (const sm of (makeKey ? CAR_CATALOG[makeKey] : [])) {
+      siblings.add(sm.toLowerCase());
+      const alias = MODEL_ALIASES[`${make}::${sm}`.toLowerCase()];
+      if (alias) siblings.add(alias.toLowerCase());
+    }
 
     // MarketCheck frequently splits ONE model across body-style names — e.g.
     // Jeep "Wrangler" → "Wrangler 2-Door" + "Wrangler 4-Door" — so a literal
