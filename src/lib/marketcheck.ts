@@ -3,6 +3,7 @@
 // logic rebuilt (see list-trims route) to fix the long-standing bugs.
 
 import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
+import { CAR_CATALOG } from "@/lib/carCatalog";
 
 export const MC_HOST = "https://api.marketcheck.com/v2";
 export const AUTO_DEV_HOST = "https://api.auto.dev";
@@ -249,15 +250,40 @@ export async function resolveModel(make: string, model: string): Promise<string>
     const d = await r.json();
     const items = (d.facets?.model || []) as { item: string; count: number }[];
     const ml = model.toLowerCase();
-    let best = items.find((i) => i.item.toLowerCase() === ml);
-    if (!best) {
-      const cands = items
-        .filter((i) => i.item.toLowerCase().includes(ml))
-        .sort((a, b) => b.count - a.count);
-      best = cands[0];
+
+    // Sibling models the catalog lists for this make (lowercased). These are
+    // user-pickable in their own right, so they must NEVER be folded into
+    // another model's OR-list (e.g. "Wrangler 4xe", "Grand Cherokee L").
+    const makeKey = Object.keys(CAR_CATALOG).find((k) => k.toLowerCase() === make.toLowerCase());
+    const siblings = new Set((makeKey ? CAR_CATALOG[makeKey] : []).map((m) => m.toLowerCase()));
+
+    // MarketCheck frequently splits ONE model across body-style names — e.g.
+    // Jeep "Wrangler" → "Wrangler 2-Door" + "Wrangler 4-Door" — so a literal
+    // `model=Wrangler` query catches only the tiny mislabeled residual (12 of
+    // ~54k). Union the exact model with every facet that EXTENDS it at a word
+    // boundary ("Wrangler " + …), EXCEPT extensions that are themselves a
+    // distinct catalog model. The space boundary also stops "Cherokee" from
+    // pulling in "Grand Cherokee". MarketCheck's `model` param accepts this
+    // comma-separated OR-list on both search and facet endpoints.
+    const variants = items
+      .filter((i) => {
+        const it = i.item.toLowerCase();
+        if (it === ml) return true;
+        return it.startsWith(ml + " ") && !siblings.has(it);
+      })
+      .sort((a, b) => b.count - a.count);
+    if (variants.length) {
+      const orList = variants.map((v) => v.item).join(",");
+      cacheSet(ck, orList, DAY);
+      return orList;
     }
+
+    // No word-boundary match — fall back to the best fuzzy (contains) hit.
     // Only cache a real hit — never poison the cache with the fallback (which
     // can happen if MarketCheck soft-rate-limits and returns an empty facet).
+    const best = items
+      .filter((i) => i.item.toLowerCase().includes(ml))
+      .sort((a, b) => b.count - a.count)[0];
     if (best) {
       cacheSet(ck, best.item, DAY);
       return best.item;
