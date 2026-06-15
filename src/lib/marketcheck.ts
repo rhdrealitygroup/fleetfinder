@@ -206,9 +206,6 @@ const MODEL_ALIASES: Record<string, string> = {
   // no-space catalog name catches only a tiny mislabeled residual.
   "audi::rs3": "RS 3",
   "audi::rs5": "RS 5,RS 5 Sportback,RS 5 Coupe,RS 5 Cabriolet",
-  // The CLS sold mostly as the legacy "CLS-Class" body (hyphen, so it isn't
-  // caught by the space-boundary body-style union); current "CLS" is a sliver.
-  "mercedes-benz::cls": "CLS,CLS-Class",
   // Lamborghini "Murcielago" — MarketCheck stores it accent-stripped as
   // "Murcilago" for most listings.
   "lamborghini::murcielago": "Murcilago,Murcielago",
@@ -315,11 +312,19 @@ export async function resolveModel(make: string, model: string): Promise<string>
     // distinct catalog model. The space boundary also stops "Cherokee" from
     // pulling in "Grand Cherokee". MarketCheck's `model` param accepts this
     // comma-separated OR-list on both search and facet endpoints.
+    //
+    // Mercedes also keeps a legacy HYPHENATED form for the same nameplate —
+    // "GLE" + "GLE-Class" + "GLE-Class Coupe", "CLA" + "CLA-Class" — which the
+    // space boundary alone misses (the CLS even sells mostly under "CLS-Class").
+    // Treat "<model>-Class…" as the same word-boundary extension. This suffix is
+    // Mercedes-specific, so it's inert for other makes and never merges a
+    // distinct trim (e.g. "CT4-V" is not "CT4-Class").
     const variants = items
       .filter((i) => {
         const it = i.item.toLowerCase();
         if (it === ml) return true;
-        return it.startsWith(ml + " ") && !siblings.has(it);
+        if (siblings.has(it)) return false;
+        return it.startsWith(ml + " ") || it.startsWith(ml + "-class");
       })
       .sort((a, b) => b.count - a.count);
     if (variants.length) {
