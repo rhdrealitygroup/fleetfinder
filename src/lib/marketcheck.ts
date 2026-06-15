@@ -202,6 +202,16 @@ const MODEL_ALIASES: Record<string, string> = {
   "polestar::polestar 3": "3",
   "polestar::polestar 4": "4",
   "hyundai::kona electric": "Kona EV",
+  // Audi files the RS performance cars with a SPACE ("RS 3", "RS 5"), so the
+  // no-space catalog name catches only a tiny mislabeled residual.
+  "audi::rs3": "RS 3",
+  "audi::rs5": "RS 5,RS 5 Sportback,RS 5 Coupe,RS 5 Cabriolet",
+  // The CLS sold mostly as the legacy "CLS-Class" body (hyphen, so it isn't
+  // caught by the space-boundary body-style union); current "CLS" is a sliver.
+  "mercedes-benz::cls": "CLS,CLS-Class",
+  // Lamborghini "Murcielago" — MarketCheck stores it accent-stripped as
+  // "Murcilago" for most listings.
+  "lamborghini::murcielago": "Murcilago,Murcielago",
   "porsche::cayenne coupe": "Cayenne Coup",
   "porsche::macan electric": "Macan",
   // MarketCheck files the current mid-engine cars as "718" (both body styles)
@@ -232,6 +242,9 @@ const MODEL_ALIASES: Record<string, string> = {
   //    + the full trim list load; the specific trim (Si, Type R, N, …) is then
   //    pickable from the trim list. ──────────────────────────────────────────
   "dodge::charger daytona": "Charger",
+  "cadillac::ct4-v": "CT4",
+  "cadillac::ct5-v": "CT5",
+  "toyota::gr supra": "Supra",
   "acura::integra type s": "Integra",
   "acura::mdx type s": "MDX",
   "acura::tlx type s": "TLX",
