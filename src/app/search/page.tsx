@@ -57,6 +57,10 @@ function SearchPageInner() {
   // make) so discontinued/older models brokers lease used are searchable too.
   // null = not yet loaded for this make → fall back to the static catalog.
   const [usedModels, setUsedModels] = useState<string[] | null>(null);
+  // Live used-listing counts per model (model name → count), for the picker.
+  // A 0 count means the model exists in the catalog but has no used listings
+  // right now — kept selectable (honest zero, soft-hide), just flagged.
+  const [usedCounts, setUsedCounts] = useState<Record<string, number>>({});
   const [usedModelsLoading, setUsedModelsLoading] = useState(false);
   // The car_type the currently-shown results were fetched under. Lease estimates
   // (~$X/mo) are a NEW-car concept — the residual is a % of MSRP, which used
@@ -122,18 +126,25 @@ function SearchPageInner() {
   // New mode stays fully static (no API call). Reset on make/mode change so a
   // stale make's list never bleeds into another.
   useEffect(() => {
-    if (carType !== "used" || !make) { setUsedModels(null); return; }
+    if (carType !== "used" || !make) { setUsedModels(null); setUsedCounts({}); return; }
     let cancelled = false;
     setUsedModelsLoading(true);
     setUsedModels(null);
+    setUsedCounts({});
     fetch("/api/list-models", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ make, car_type: "used" }),
     })
       .then((r) => r.json())
-      .then((d) => { if (!cancelled) setUsedModels(Array.isArray(d.models) ? d.models : null); })
-      .catch(() => { if (!cancelled) setUsedModels(null); })
+      .then((d) => {
+        if (cancelled) return;
+        setUsedModels(Array.isArray(d.models) ? d.models : null);
+        const counts: Record<string, number> = {};
+        if (Array.isArray(d.detail)) for (const row of d.detail) if (row && row.model) counts[row.model] = Number(row.count) || 0;
+        setUsedCounts(counts);
+      })
+      .catch(() => { if (!cancelled) { setUsedModels(null); setUsedCounts({}); } })
       .finally(() => { if (!cancelled) setUsedModelsLoading(false); });
     return () => { cancelled = true; };
   }, [make, carType]);
@@ -460,7 +471,14 @@ function SearchPageInner() {
           <option value="">{!make ? "Pick a make first" : usedModelsLoading ? "Loading used models…" : "Any model"}</option>
           {[...models].sort((a, b) => a.localeCompare(b)).map((m) => {
             const preLaunch = PRE_LAUNCH_MODELS.has(`${make}::${m}`.toLowerCase());
-            return <option key={m} value={m}>{preLaunch ? `${m} — not yet on sale` : m}</option>;
+            if (preLaunch) return <option key={m} value={m}>{m} — not yet on sale</option>;
+            // Used mode: annotate each model with its live used-listing count.
+            // 0-count models stay selectable but are flagged "no used listings".
+            if (carType === "used" && usedModels) {
+              const c = usedCounts[m] ?? 0;
+              return <option key={m} value={m}>{c > 0 ? `${m} (${c.toLocaleString()})` : `${m} — no used listings`}</option>;
+            }
+            return <option key={m} value={m}>{m}</option>;
           })}
         </select>
       </Field>
