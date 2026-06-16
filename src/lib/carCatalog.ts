@@ -176,6 +176,19 @@ export const CATALOG_MAKES = Object.keys(CAR_CATALOG).sort();
 // instead of showing a generic "no match" diagnosis.
 export const DIRECT_SALES_BRANDS = new Set(["Tesla", "Rivian", "Lucid"]);
 
+// Makes that no longer build new cars (defunct in the US). They can never have
+// new inventory, so they're hidden from the make picker in NEW mode — but kept
+// selectable in USED mode, where real used units still exist.
+export const DEFUNCT_MAKES = new Set(["Pontiac", "Suzuki", "Fisker", "Karma"]);
+
+// Ultra-low-volume exotics: sold almost entirely off-feed (allocation/order),
+// so franchised-dealer feeds carry ~0 new inventory. Kept selectable for
+// coverage, but a New search that comes back empty nudges to Used instead of
+// running the zero-result diagnoser (which would imply the search was wrong).
+export const LIMITED_NEW_BRANDS = new Set([
+  "Ferrari", "McLaren", "Lamborghini", "Rolls-Royce", "Lotus",
+]);
+
 // Models that are in the lineup/catalog but NOT yet on sale (pre-production or
 // announced-only) — they legitimately return 0 inventory. Keyed "make::model"
 // (lowercase) so the picker can flag them "not yet on sale" instead of looking

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { AppNav } from "@/components/AppNav";
-import { CAR_CATALOG, CATALOG_MAKES, DIRECT_SALES_BRANDS, PRE_LAUNCH_MODELS } from "@/lib/carCatalog";
+import { CAR_CATALOG, CATALOG_MAKES, DIRECT_SALES_BRANDS, DEFUNCT_MAKES, LIMITED_NEW_BRANDS, PRE_LAUNCH_MODELS } from "@/lib/carCatalog";
 import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue } from "@/lib/inventory";
 import { moneyShort } from "@/lib/format";
 import { useSavedVehicles } from "@/lib/useSavedVehicles";
@@ -153,6 +153,12 @@ function SearchPageInner() {
   useEffect(() => {
     if (carType === "used" && sort.startsWith("monthly")) setSort("distance");
   }, [carType, sort]);
+
+  // Defunct makes are hidden from the New picker; if one is selected when the
+  // user flips to New, clear it so the dropdown isn't stuck on a hidden value.
+  useEffect(() => {
+    if (carType === "new" && DEFUNCT_MAKES.has(make)) { setMake(""); setModel(""); }
+  }, [carType, make]);
 
   const staticModels = make ? CAR_CATALOG[make] || [] : [];
   // Used mode uses the derived list once loaded; otherwise the static catalog so
@@ -386,11 +392,12 @@ function SearchPageInner() {
   // When a search returns nothing, diagnose why — but NOT when the emptiness is a
   // rate-limit (diagnose would fire a second MarketCheck call and likely 429 again).
   useEffect(() => {
-    // Direct-sales brands (Tesla/Rivian/Lucid) have ~0 NEW dealer inventory by
-    // design — a zero result there isn't a "bad filter" to diagnose, it's the
-    // factory-direct model. The empty-state shows a "show used" nudge instead.
-    const directNewEmpty = DIRECT_SALES_BRANDS.has(make) && carType === "new";
-    if (results !== null && !searching && sorted.length === 0 && !error && make && !rateLimited && !directNewEmpty) runDiagnose();
+    // Brands with ~0 NEW dealer inventory by design — direct-sales (Tesla/
+    // Rivian/Lucid) and ultra-low-volume exotics (Ferrari/McLaren/…). A zero
+    // result there isn't a "bad filter" to diagnose; the empty-state shows a
+    // "show used" nudge instead of running the diagnoser.
+    const newNudgeBrand = (DIRECT_SALES_BRANDS.has(make) || LIMITED_NEW_BRANDS.has(make)) && carType === "new";
+    if (results !== null && !searching && sorted.length === 0 && !error && make && !rateLimited && !newNudgeBrand) runDiagnose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results, searching]);
 
@@ -462,7 +469,8 @@ function SearchPageInner() {
       <Field label="Make">
         <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} className={selectCls}>
           <option value="">Any make</option>
-          {[...CATALOG_MAKES].sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
+          {/* Defunct makes (no new cars built) are hidden in New, shown in Used. */}
+          {[...CATALOG_MAKES].filter((m) => carType === "used" || !DEFUNCT_MAKES.has(m)).sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </Field>
 
@@ -721,16 +729,18 @@ function SearchPageInner() {
               <p>Searching live inventory nationwide…</p>
             </div>
           )}
-          {results !== null && !searching && sorted.length === 0 && !error && DIRECT_SALES_BRANDS.has(make) && carType === "new" && (
+          {results !== null && !searching && sorted.length === 0 && !error && carType === "new" && (DIRECT_SALES_BRANDS.has(make) || LIMITED_NEW_BRANDS.has(make)) && (
             <div className="max-w-2xl mx-auto py-14">
               <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 text-center">
-                <p className="text-lg font-medium text-foreground mb-1">{make} sells factory-direct</p>
-                <p className="text-sm text-muted-foreground mb-4">{make} doesn&apos;t sell new cars through franchised dealers, so dealer feeds carry almost no new {make} inventory. Used listings are widely available.</p>
+                <p className="text-lg font-medium text-foreground mb-1">{DIRECT_SALES_BRANDS.has(make) ? `${make} sells factory-direct` : `Limited new ${make} inventory`}</p>
+                <p className="text-sm text-muted-foreground mb-4">{DIRECT_SALES_BRANDS.has(make)
+                  ? `${make} doesn't sell new cars through franchised dealers, so dealer feeds carry almost no new ${make} inventory. Used listings are widely available.`
+                  : `${make} is sold almost entirely by allocation/order, so franchised-dealer feeds carry very few new cars. You'll usually find more by searching used.`}</p>
                 <button onClick={() => runSearch({ carTypeOverride: "used" })} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition">Show used {make} listings</button>
               </div>
             </div>
           )}
-          {results !== null && !searching && sorted.length === 0 && !error && !(DIRECT_SALES_BRANDS.has(make) && carType === "new") && (
+          {results !== null && !searching && sorted.length === 0 && !error && !((DIRECT_SALES_BRANDS.has(make) || LIMITED_NEW_BRANDS.has(make)) && carType === "new") && (
             <div className="max-w-2xl mx-auto py-14">
               <div className="text-center mb-6">
                 <p className="text-lg font-medium text-foreground mb-1">No exact match</p>
