@@ -102,7 +102,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
 
   // ── Luxury Asian ──────────────────────────────────────────────────────
   "Acura": ["MDX", "RDX", "TLX", "Integra", "ADX", "ZDX"],
-  "Genesis": ["G70", "G80", "G90", "Electrified G80", "GV60", "GV70", "Electrified GV70", "GV80", "GV80 Coupe"],
+  "Genesis": ["G70", "G80", "G90", "GV60", "GV70", "GV80", "GV80 Coupe"],
   "Infiniti": ["QX50", "QX55", "QX60", "QX80"],
   "Lexus": ["ES", "GX", "IS", "LC", "LS", "LX", "NX", "RX", "RZ", "TX", "UX"],
 

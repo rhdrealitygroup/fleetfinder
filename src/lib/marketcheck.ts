@@ -266,10 +266,6 @@ const MODEL_ALIASES: Record<string, string> = {
   "audi::e-tron gt": "e-tron GT,S e-tron GT",
   "audi::rs e-tron gt": "RS e-tron GT,RS e-tron GT Performance",
   "audi::q4 e-tron": "Q4 e-tron,Q4 Sportback e-tron",
-  "genesis::electrified gv70": "GV70",
-  // Electrified G80 isn't a separate MarketCheck model — it's bucketed under G80
-  // (mirrors the Electrified GV70 → GV70 mapping above). Was returning 0.
-  "genesis::electrified g80": "G80",
   // Mitsubishi files the PHEV as "Outlander Plug-in Hybrid" (+ casing/abbr
   // variants), not "Outlander PHEV". Bare name caught only 21 of 652 listings.
   "mitsubishi::outlander phev": "Outlander Plug-in Hybrid,Outlander PHEV,Outlander Plug-In Hybrid",
