@@ -284,18 +284,14 @@ const MODEL_ALIASES: Record<string, string> = {
   "kia::niro ev": "Niro",
   "bmw::m3": "M3 Sedan",
   "mini::cooper": "Hardtop 2 Door",
-  "mini::countryman electric": "Countryman",
 
   // ── Performance / variant sub-models that MarketCheck files as a TRIM of
   //    the base model (not a separate model). Resolve to the base so inventory
   //    + the full trim list load; the specific trim (Si, Type R, N, …) is then
   //    pickable from the trim list. ──────────────────────────────────────────
-  "dodge::charger daytona": "Charger",
-  "cadillac::ct5-v": "CT5",
   "toyota::gr supra": "Supra",
   "honda::civic si": "Civic",
   "honda::civic type r": "Civic",
-  "hyundai::elantra n": "Elantra",
 
   // ── Ferrari: the catalog uses the marketing names (296 GTB, SF90 Stradale,
   //    …) but MarketCheck indexes each car under a shorter base name. Map to

@@ -13,7 +13,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
   // ── Mass-market American ──────────────────────────────────────────────
   "Buick": ["Encore GX", "Envista", "Envision", "Enclave"],
   "Cadillac": [
-    "CT4", "CT5", "CT5-V", "XT4", "XT5", "XT6",
+    "CT4", "CT5", "XT4", "XT5", "XT6",
     "Escalade", "Escalade IQ", "Lyriq", "Optiq", "Vistiq", "Celestiq",
   ],
   "Chevrolet": [
@@ -22,7 +22,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "Colorado", "Silverado 1500", "Silverado HD", "Silverado EV",
   ],
   "Chrysler": ["Pacifica", "300", "Voyager"],
-  "Dodge": ["Hornet", "Durango", "Charger", "Charger Daytona"],
+  "Dodge": ["Hornet", "Durango", "Charger"],
   "Ford": [
     "Maverick", "Ranger", "F-150", "F-150 Lightning", "F-250 Super Duty", "F-350 Super Duty",
     "Bronco Sport", "Bronco", "Edge", "Escape", "Expedition", "Explorer",
@@ -45,7 +45,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "Odyssey", "Passport", "Pilot", "Prologue", "Ridgeline",
   ],
   "Hyundai": [
-    "Elantra", "Elantra N", "Ioniq 5", "Ioniq 6", "Ioniq 9",
+    "Elantra", "Ioniq 5", "Ioniq 6", "Ioniq 9",
     "Kona", "Kona Electric", "Palisade", "Santa Cruz", "Santa Fe",
     "Sonata", "Tucson", "Venue",
   ],
@@ -115,7 +115,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "Range Rover", "Range Rover Sport", "Range Rover Velar", "Range Rover Evoque",
   ],
   "Maserati": ["Grecale", "GranTurismo", "Levante", "MC20"],
-  "Mini": ["Cooper", "Countryman", "Countryman Electric"],
+  "Mini": ["Cooper", "Countryman"],
 
   // ── Italian ───────────────────────────────────────────────────────────
   "Alfa Romeo": ["Stelvio", "Giulia", "Tonale"],
