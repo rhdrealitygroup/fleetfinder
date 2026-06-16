@@ -58,6 +58,10 @@ function SearchPageInner() {
   // null = not yet loaded for this make → fall back to the static catalog.
   const [usedModels, setUsedModels] = useState<string[] | null>(null);
   const [usedModelsLoading, setUsedModelsLoading] = useState(false);
+  // The car_type the currently-shown results were fetched under. Lease estimates
+  // (~$X/mo) are a NEW-car concept — the residual is a % of MSRP, which used
+  // listings don't have — so we never show an estimated monthly payment on used.
+  const [resultsCarType, setResultsCarType] = useState<"new" | "used">("new");
   const [zip, setZip] = useState("");
   const [radius, setRadius] = useState(100);
   const [maxMonthly, setMaxMonthly] = useState("");
@@ -133,6 +137,11 @@ function SearchPageInner() {
       .finally(() => { if (!cancelled) setUsedModelsLoading(false); });
     return () => { cancelled = true; };
   }, [make, carType]);
+
+  // No monthly-payment sort in used mode (estimates are new-car only).
+  useEffect(() => {
+    if (carType === "used" && sort.startsWith("monthly")) setSort("distance");
+  }, [carType, sort]);
 
   const staticModels = make ? CAR_CATALOG[make] || [] : [];
   // Used mode uses the derived list once loaded; otherwise the static catalog so
@@ -294,6 +303,7 @@ function SearchPageInner() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Search failed");
       setResults(d.results || []);
+      setResultsCarType(effCarType);
       setTotal(d.total || 0);
       setTruncated(!!d.truncated);
       setNote(typeof d.note === "string" ? d.note.trim() : "");
@@ -387,8 +397,10 @@ function SearchPageInner() {
   }
 
   function exportCsv() {
-    const head = ["Year", "Make", "Model", "Trim", "Version", "Price", "Est Monthly", "Color", "Mileage", "Dealer", "City", "State", "VIN", "Listing"];
-    const rows = [head, ...sorted.map((v) => [v.year, v.make, v.model, v.trim, v.version, v.price, v.est_monthly, v.exterior_color, v.mileage, v.dealer_name, v.city, v.state, v.vin, v.listing_url])];
+    // No "Est Monthly" column for used exports — lease estimates are new-car only.
+    const showMonthly = resultsCarType !== "used";
+    const head = ["Year", "Make", "Model", "Trim", "Version", "Price", ...(showMonthly ? ["Est Monthly"] : []), "Color", "Mileage", "Dealer", "City", "State", "VIN", "Listing"];
+    const rows = [head, ...sorted.map((v) => [v.year, v.make, v.model, v.trim, v.version, v.price, ...(showMonthly ? [v.est_monthly] : []), v.exterior_color, v.mileage, v.dealer_name, v.city, v.state, v.vin, v.listing_url])];
     const csv = rows.map((r) => r.map((x) => `"${String(x ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -657,7 +669,7 @@ function SearchPageInner() {
                 )}
                 <div className="relative">
                   <select value={sort} onChange={(e) => setSort(e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 rounded-md bg-card border border-border text-sm focus:outline-none cursor-pointer">
-                    {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    {SORTS.filter((s) => resultsCarType !== "used" || !s.value.startsWith("monthly")).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
                   <ArrowUpDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 </div>
@@ -968,7 +980,7 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
             <Spec label="Price" value={moneyShort(v.price)} />
-            <Spec label="Est. monthly" value={v.est_monthly > 0 ? `${moneyShort(v.est_monthly)}/mo` : "—"} />
+            {v.inventory_type.includes("new") && <Spec label="Est. monthly" value={v.est_monthly > 0 ? `${moneyShort(v.est_monthly)}/mo` : "—"} />}
             <Spec label="Exterior" value={v.exterior_color || "—"} />
             {decode?.interior_color ? <Spec label="Interior" value={decode.interior_color} /> : <Spec label="Mileage" value={v.mileage > 0 ? `${v.mileage.toLocaleString()} mi` : "New"} />}
           </div>
