@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Poppins, Newsreader, Bebas_Neue, JetBrains_Mono } from "next/font/google";
+import { Inter, Poppins, Newsreader, Bebas_Neue, JetBrains_Mono, Archivo, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
 // Body + heading fonts (default landing + product UI).
@@ -33,6 +33,19 @@ const mono = JetBrains_Mono({
   weight: ["400", "500", "600"],
 });
 
+// "Navigation Chart" landing fonts — Archivo (display/UI) + IBM Plex Mono
+// (labels/data). Scoped to the marketing landing; product UI keeps Inter/Newsreader.
+const archivo = Archivo({
+  variable: "--font-archivo",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://fleetfinder.vercel.app";
 
 export const metadata: Metadata = {
@@ -60,7 +73,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${poppins.variable} ${newsreader.variable} ${bebas.variable} ${mono.variable} h-full antialiased`}
+      className={`${inter.variable} ${poppins.variable} ${newsreader.variable} ${bebas.variable} ${mono.variable} ${archivo.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
