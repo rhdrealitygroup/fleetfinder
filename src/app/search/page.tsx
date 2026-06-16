@@ -53,6 +53,11 @@ function SearchPageInner() {
   const [priceIdx, setPriceIdx] = useState(0);
   const [features, setFeatures] = useState<Set<string>>(new Set());
   const [carType, setCarType] = useState<"new" | "used">("new");
+  // Used mode: models are derived live from MarketCheck used inventory (keyed by
+  // make) so discontinued/older models brokers lease used are searchable too.
+  // null = not yet loaded for this make → fall back to the static catalog.
+  const [usedModels, setUsedModels] = useState<string[] | null>(null);
+  const [usedModelsLoading, setUsedModelsLoading] = useState(false);
   const [zip, setZip] = useState("");
   const [radius, setRadius] = useState(100);
   const [maxMonthly, setMaxMonthly] = useState("");
@@ -109,7 +114,30 @@ function SearchPageInner() {
     setWantColor("");
   }, [colors, wantColor]);
 
-  const models = make ? CAR_CATALOG[make] || [] : [];
+  // Derive the used-mode model list whenever make is set and used is selected.
+  // New mode stays fully static (no API call). Reset on make/mode change so a
+  // stale make's list never bleeds into another.
+  useEffect(() => {
+    if (carType !== "used" || !make) { setUsedModels(null); return; }
+    let cancelled = false;
+    setUsedModelsLoading(true);
+    setUsedModels(null);
+    fetch("/api/list-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ make, car_type: "used" }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setUsedModels(Array.isArray(d.models) ? d.models : null); })
+      .catch(() => { if (!cancelled) setUsedModels(null); })
+      .finally(() => { if (!cancelled) setUsedModelsLoading(false); });
+    return () => { cancelled = true; };
+  }, [make, carType]);
+
+  const staticModels = make ? CAR_CATALOG[make] || [] : [];
+  // Used mode uses the derived list once loaded; otherwise the static catalog so
+  // the picker is never empty while the live list is in flight.
+  const models = carType === "used" && usedModels ? usedModels : staticModels;
 
   // Load trims whenever make+model are both set.
   useEffect(() => {
@@ -375,7 +403,7 @@ function SearchPageInner() {
     <div className="space-y-5">
       <div className="flex rounded-lg border border-border overflow-hidden text-sm">
         {(["new", "used"] as const).map((t) => (
-          <button key={t} onClick={() => { setCarType(t); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }}
+          <button key={t} onClick={() => { setCarType(t); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }}
             className={`flex-1 py-1.5 capitalize transition ${carType === t ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}>
             {t}
           </button>
@@ -417,7 +445,7 @@ function SearchPageInner() {
 
       <Field label="Model">
         <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
-          <option value="">{make ? "Any model" : "Pick a make first"}</option>
+          <option value="">{!make ? "Pick a make first" : usedModelsLoading ? "Loading used models…" : "Any model"}</option>
           {[...models].sort((a, b) => a.localeCompare(b)).map((m) => {
             const preLaunch = PRE_LAUNCH_MODELS.has(`${make}::${m}`.toLowerCase());
             return <option key={m} value={m}>{preLaunch ? `${m} — not yet on sale` : m}</option>;
