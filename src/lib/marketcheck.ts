@@ -254,7 +254,6 @@ const MODEL_ALIASES: Record<string, string> = {
   // "Murcilago" for most listings.
   "lamborghini::murcielago": "Murcilago,Murcielago",
   "porsche::cayenne coupe": "Cayenne Coup",
-  "porsche::macan electric": "Macan",
   // MarketCheck files the current mid-engine cars as "718" (both body styles)
   // and keeps the pre-718 cars under "Boxster"/"Cayman" — union so neither the
   // modern nor the legacy inventory is dropped.
@@ -262,7 +261,18 @@ const MODEL_ALIASES: Record<string, string> = {
   "porsche::718 cayman": "718,Cayman",
   "volkswagen::id.buzz": "ID. Buzz",
   "audi::rs6": "RS 6 Avant",
+  // e-tron GT lineup: MarketCheck has no bare "e-tron GT"/"RS e-tron GT" — only
+  // "S e-tron GT" + "RS e-tron GT Performance". Without these, both returned 0.
+  "audi::e-tron gt": "e-tron GT,S e-tron GT",
+  "audi::rs e-tron gt": "RS e-tron GT,RS e-tron GT Performance",
+  "audi::q4 e-tron": "Q4 e-tron,Q4 Sportback e-tron",
   "genesis::electrified gv70": "GV70",
+  // Electrified G80 isn't a separate MarketCheck model — it's bucketed under G80
+  // (mirrors the Electrified GV70 → GV70 mapping above). Was returning 0.
+  "genesis::electrified g80": "G80",
+  // Mitsubishi files the PHEV as "Outlander Plug-in Hybrid" (+ casing/abbr
+  // variants), not "Outlander PHEV". Bare name caught only 21 of 652 listings.
+  "mitsubishi::outlander phev": "Outlander Plug-in Hybrid,Outlander PHEV,Outlander Plug-In Hybrid",
   "toyota::rav4 prime": "RAV4 Plug-in Hybrid",
   "toyota::prius prime": "Prius Plug-in Hybrid",
   "ford::transit": "Transit Van",
@@ -272,10 +282,8 @@ const MODEL_ALIASES: Record<string, string> = {
   "gmc::sierra hd": "Sierra 2500HD,Sierra 3500HD,Sierra 2500 Denali HD,Sierra 3500 Denali HD",
   "chevrolet::silverado hd": "Silverado 2500HD,Silverado 3500HD",
   "kia::niro ev": "Niro",
-  "volvo::ec40": "C40",
   "bmw::m3": "M3 Sedan",
   "mini::cooper": "Hardtop 2 Door",
-  "mini::cooper se": "Hardtop 2 Door",
   "mini::countryman electric": "Countryman",
 
   // ── Performance / variant sub-models that MarketCheck files as a TRIM of
@@ -283,17 +291,11 @@ const MODEL_ALIASES: Record<string, string> = {
   //    + the full trim list load; the specific trim (Si, Type R, N, …) is then
   //    pickable from the trim list. ──────────────────────────────────────────
   "dodge::charger daytona": "Charger",
-  "cadillac::ct4-v": "CT4",
   "cadillac::ct5-v": "CT5",
   "toyota::gr supra": "Supra",
-  "acura::integra type s": "Integra",
-  "acura::mdx type s": "MDX",
-  "acura::tlx type s": "TLX",
   "honda::civic si": "Civic",
   "honda::civic type r": "Civic",
   "hyundai::elantra n": "Elantra",
-  "hyundai::ioniq 5 n": "IONIQ 5",
-  "volkswagen::jetta gli": "Jetta",
 
   // ── Ferrari: the catalog uses the marketing names (296 GTB, SF90 Stradale,
   //    …) but MarketCheck indexes each car under a shorter base name. Map to
@@ -305,11 +307,9 @@ const MODEL_ALIASES: Record<string, string> = {
   "ferrari::296 gts": "296",
   "ferrari::sf90 stradale": "SF90",
   "ferrari::sf90 spider": "SF90",
-  "ferrari::roma spider": "Roma",
   "ferrari::f8 tributo": "F8",
   "ferrari::f8 spider": "F8",
   "ferrari::812 superfast": "812",
-  "ferrari::portofino m": "Portofino",
   "ferrari::gtc4lusso": "GTC4Lusso,GTC4",
 };
 

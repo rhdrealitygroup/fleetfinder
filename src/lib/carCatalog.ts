@@ -13,7 +13,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
   // ── Mass-market American ──────────────────────────────────────────────
   "Buick": ["Encore GX", "Envista", "Envision", "Enclave"],
   "Cadillac": [
-    "CT4", "CT4-V", "CT5", "CT5-V", "XT4", "XT5", "XT6",
+    "CT4", "CT5", "CT5-V", "XT4", "XT5", "XT6",
     "Escalade", "Escalade IQ", "Lyriq", "Optiq", "Vistiq", "Celestiq",
   ],
   "Chevrolet": [
@@ -45,7 +45,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "Odyssey", "Passport", "Pilot", "Prologue", "Ridgeline",
   ],
   "Hyundai": [
-    "Elantra", "Elantra N", "Ioniq 5", "Ioniq 5 N", "Ioniq 6", "Ioniq 9",
+    "Elantra", "Elantra N", "Ioniq 5", "Ioniq 6", "Ioniq 9",
     "Kona", "Kona Electric", "Palisade", "Santa Cruz", "Santa Fe",
     "Sonata", "Tucson", "Venue",
   ],
@@ -75,7 +75,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
   // ── European mass-market ──────────────────────────────────────────────
   "Volkswagen": [
     "Atlas", "Atlas Cross Sport", "Golf GTI", "Golf R", "ID.4", "ID.Buzz",
-    "Jetta", "Jetta GLI", "Taos", "Tiguan",
+    "Jetta", "Taos", "Tiguan",
   ],
 
   // ── Luxury German ─────────────────────────────────────────────────────
@@ -97,11 +97,11 @@ export const CAR_CATALOG: Record<string, string[]> = {
   ],
   "Porsche": [
     "718 Boxster", "718 Cayman", "911", "Cayenne", "Cayenne Coupe",
-    "Macan", "Macan Electric", "Panamera", "Taycan",
+    "Macan", "Panamera", "Taycan",
   ],
 
   // ── Luxury Asian ──────────────────────────────────────────────────────
-  "Acura": ["MDX", "MDX Type S", "RDX", "TLX", "TLX Type S", "Integra", "Integra Type S", "ADX", "ZDX"],
+  "Acura": ["MDX", "RDX", "TLX", "Integra", "ADX", "ZDX"],
   "Genesis": ["G70", "G80", "G90", "Electrified G80", "GV60", "GV70", "Electrified GV70", "GV80", "GV80 Coupe"],
   "Infiniti": ["QX50", "QX55", "QX60", "QX80"],
   "Lexus": ["ES", "GX", "IS", "LC", "LS", "LX", "NX", "RX", "RZ", "TX", "UX"],
@@ -115,7 +115,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
     "Range Rover", "Range Rover Sport", "Range Rover Velar", "Range Rover Evoque",
   ],
   "Maserati": ["Grecale", "GranTurismo", "Levante", "MC20"],
-  "Mini": ["Cooper", "Cooper SE", "Countryman", "Countryman Electric"],
+  "Mini": ["Cooper", "Countryman", "Countryman Electric"],
 
   // ── Italian ───────────────────────────────────────────────────────────
   "Alfa Romeo": ["Stelvio", "Giulia", "Tonale"],
@@ -123,9 +123,9 @@ export const CAR_CATALOG: Record<string, string[]> = {
 
   // ── Exotic / ultra-luxury ─────────────────────────────────────────────
   "Ferrari": [
-    "296 GTB", "296 GTS", "SF90 Stradale", "SF90 Spider", "Roma", "Roma Spider",
+    "296 GTB", "296 GTS", "SF90 Stradale", "SF90 Spider", "Roma",
     "Purosangue", "812 Superfast", "812 GTS", "F8 Tributo", "F8 Spider",
-    "488 GTB", "488 Spider", "488 Pista", "Portofino", "Portofino M",
+    "488 GTB", "488 Spider", "488 Pista", "Portofino",
     "California", "California T", "GTC4Lusso", "F12berlinetta", "458 Italia",
     "812 Competizione", "Daytona SP3", "F430", "360",
   ],
@@ -156,7 +156,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
 
   // ── Swedish ───────────────────────────────────────────────────────────
   "Volvo": [
-    "C40", "EC40", "EX30", "EX90", "S60", "S90", "V60", "V90",
+    "C40", "EX30", "EX90", "S60", "S90", "V60", "V90",
     "XC40", "XC60", "XC90",
   ],
 
