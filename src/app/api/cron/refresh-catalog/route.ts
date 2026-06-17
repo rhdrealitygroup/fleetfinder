@@ -70,6 +70,8 @@ export async function GET(req: Request) {
           { key: k("versions"), make, model, kind: "versions", payload: snap.versions, updated_at: now },
           { key: k("colors"), make, model, kind: "colors", payload: snap.colors, updated_at: now },
           { key: k("interior_colors"), make, model, kind: "interior_colors", payload: snap.interiorColors, updated_at: now },
+          { key: k("colors_by_trim"), make, model, kind: "colors_by_trim", payload: snap.colorsByTrim ?? {}, updated_at: now },
+          { key: k("interior_colors_by_trim"), make, model, kind: "interior_colors_by_trim", payload: snap.interiorColorsByTrim ?? {}, updated_at: now },
           { key: k("options"), make, model, kind: "options", payload: snap.options, updated_at: now },
         ], { onConflict: "key" });
         done.push(`${make} ${model}`);
