@@ -1,5 +1,5 @@
 import "server-only";
-import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTimeout } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTimeout, cleanColorFacet, fixVersionName } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -33,9 +33,12 @@ export async function snapshotModel(make: string, model: string, deadline = 0) {
   const fd: any = await fRes.json().catch(() => null);
   if (!fd) return null;
   const trims = (fd.facets?.trim || []).map((t: any) => ({ name: t.item, count: num(t.count) }));
-  const versions = (fd.facets?.version || []).map((t: any) => ({ name: t.item, count: num(t.count) }));
-  const colors = (fd.facets?.exterior_color || []).map((c: any) => ({ name: c.item, count: num(c.count) }));
-  const interiorColors = (fd.facets?.interior_color || []).map((c: any) => ({ name: c.item, count: num(c.count) }));
+  // Fix known raw-data typos on versions (e.g. "Stamdard" → "Standard").
+  const versions = (fd.facets?.version || []).map((t: any) => ({ name: fixVersionName(t.item), count: num(t.count) }));
+  // Scrub factory paint-code cruft + dedupe so the stored catalog matches the
+  // cleaned names the live picker shows (raw values preserved in `variants`).
+  const colors = cleanColorFacet(fd.facets?.exterior_color || []);
+  const interiorColors = cleanColorFacet(fd.facets?.interior_color || []);
   // No facet data at all → treat as a transient miss, don't overwrite good data.
   if (!trims.length && !versions.length && !colors.length) return null;
 

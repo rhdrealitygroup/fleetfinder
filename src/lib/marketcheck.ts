@@ -151,6 +151,75 @@ export function isJunkColor(name: unknown): boolean {
   });
 }
 
+// Strip dealer/factory paint-code cruft that rides on raw facet color strings:
+// a LEADING code token ("0475 Black Sapphire Metallic" → "Black Sapphire
+// Metallic", "0c36 Dravit Grey Metallic" → "Dravit Grey Metallic"), a TRAILING
+// "- Pw7" / "/Ea03" code suffix, a trailing lone digit ("Wind Chill Pearl 1"),
+// and stray asterisks. A leading token is only treated as a code when it holds a
+// digit AND is either 3+ digits or a letter+digit mix — so a real first word
+// ("8 Ball Black") is left alone. Pairs with normalizeColorName + isJunkColor,
+// which drop anything with no real word left (pure codes like "Nh-731p").
+export function scrubColorCode(raw: unknown): string {
+  let s = String(raw || "").trim();
+  const lead = /^(\S+)\s+(.*)$/.exec(s);
+  if (lead) {
+    const t = lead[1];
+    const bare = t.replace(/[^0-9a-z]/gi, "");
+    if (/\d/.test(t) && (/^\d{3,}$/.test(bare) || /[a-z]/i.test(t))) s = lead[2];
+  }
+  return s
+    .replace(/\s*[-/]\s*\S*\d\S*\s*$/i, "") // trailing "- Pw7" / "/Ea03" code
+    .replace(/\*+/g, " ")
+    .replace(/\s+\d$/, "")                   // trailing lone digit
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Clean + dedupe a raw exterior/interior color facet into display buckets.
+// Mirrors the list-colors route (normalizeColorName + isJunkColor + variant
+// bucketing) PLUS the factory-code scrub, so the persisted catalog matches what
+// the live picker shows. Keeps the RAW facet values in `variants` for exact
+// MarketCheck filtering later.
+export function cleanColorFacet(
+  items: { item?: unknown; count?: unknown }[],
+): { name: string; count: number; variants: string[] }[] {
+  const dedupKey = (name: string) => name.toLowerCase()
+    .replace(/\s+(metallic|pearl|pearl-?coat|clear-?coat|tricoat|tri-?coat|mica)\s*$/i, "")
+    .replace(/\s+(i{1,3}|iv|v|vi)\s*$/i, "")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
+  for (const c of items || []) {
+    const raw = String(c.item || "").trim();
+    const cleaned = normalizeColorName(scrubColorCode(c.item));
+    if (!cleaned || isJunkColor(cleaned)) continue;
+    const key = dedupKey(cleaned);
+    if (!key) continue;
+    const cnt = num(c.count);
+    const prev = buckets.get(key);
+    if (prev) {
+      prev.count += cnt;
+      if (cleaned.length > prev.name.length) prev.name = cleaned;
+      if (raw && !prev.variants.includes(raw)) prev.variants.push(raw);
+    } else {
+      buckets.set(key, { name: cleaned, count: cnt, variants: raw ? [raw] : [] });
+    }
+  }
+  return [...buckets.values()].filter((c) => c.name.length > 0).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Correct known misspellings carried on raw MarketCheck `version` strings
+// (e.g. "Elevation Stamdard Range Crew Cab e4WD" → "Standard").
+const VERSION_TYPOS: [RegExp, string][] = [
+  [/\bStamdard\b/gi, "Standard"],
+];
+export function fixVersionName(raw: unknown): string {
+  let s = String(raw || "");
+  for (const [re, to] of VERSION_TYPOS) s = s.replace(re, to);
+  return s.trim();
+}
+
 // ── Trim normalization — the core of the trims fix ────────────────────────
 // MarketCheck listing facets return raw trim strings that often carry package
 // or drivetrain suffixes ("xDrive40i Sport", "Limited w/ Tech Pkg"). Feeding
