@@ -161,16 +161,25 @@ export function isJunkColor(name: unknown): boolean {
 // which drop anything with no real word left (pure codes like "Nh-731p").
 export function scrubColorCode(raw: unknown): string {
   let s = String(raw || "").trim();
+  // Leading factory code token: 3+ digits, OR an alnum mix with both a letter and
+  // a digit (len>=2). A lone leading digit is NOT a code, so "8 Ball" / "30 Xdrive"
+  // are left intact.
   const lead = /^(\S+)\s+(.*)$/.exec(s);
   if (lead) {
     const t = lead[1];
     const bare = t.replace(/[^0-9a-z]/gi, "");
-    if (/\d/.test(t) && (/^\d{3,}$/.test(bare) || /[a-z]/i.test(t))) s = lead[2];
+    if (/\d/.test(t) && (/^\d{3,}$/.test(bare) || (/[a-z]/i.test(t) && bare.length >= 2))) s = lead[2];
   }
   return s
-    .replace(/\s*[-/]\s*\S*\d\S*\s*$/i, "") // trailing "- Pw7" / "/Ea03" code
+    .replace(/^[0-9]{2,4}\s*\/\s*/, "")              // leading "040/" code prefix → drop
+    .replace(/^[0-9]{3,4}(?=[a-z])/i, "")            // leading digit-glue "149white" → "white"
+    .replace(/\s*\([0-9a-z]{2,6}\)\s*$/i, "")        // trailing paren code "(g4j)"
+    .replace(/\s*[-/]\s*\S*\d\S*\s*$/i, "")          // trailing "- Pw7" / "/Ea03" code
+    // trailing short code with BOTH a letter and a digit ("41w","Pe2","M7","47c") —
+    // leaves pure numbers ("Area 51") and real words untouched.
+    .replace(/\s+(?=[0-9a-z]{1,4}$)(?=[0-9a-z]*[a-z])(?=[0-9a-z]*[0-9])[0-9a-z]{1,4}$/i, "")
     .replace(/\*+/g, " ")
-    .replace(/\s+\d$/, "")                   // trailing lone digit
+    .replace(/\s+\d$/, "")                            // trailing lone single digit
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -186,9 +195,11 @@ export function cleanColorFacet(
   const dedupKey = (name: string) => name.toLowerCase()
     .replace(/\s+(metallic|pearl|pearl-?coat|clear-?coat|tricoat|tri-?coat|mica)\s*$/i, "")
     .replace(/\s+(i{1,3}|iv|v|vi)\s*$/i, "")
+    .replace(/\s+[0-9a-z]{0,3}[0-9][0-9a-z]{0,3}$/i, "") // trailing residual code/number → collapse variants
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  const numDigits = (s: string) => (s.match(/\d/g) || []).length;
   const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
   for (const c of items || []) {
     const raw = String(c.item || "").trim();
@@ -200,7 +211,9 @@ export function cleanColorFacet(
     const prev = buckets.get(key);
     if (prev) {
       prev.count += cnt;
-      if (cleaned.length > prev.name.length) prev.name = cleaned;
+      // Prefer the cleanest display name in the bucket: fewest digits, then longer.
+      if (numDigits(cleaned) < numDigits(prev.name) ||
+          (numDigits(cleaned) === numDigits(prev.name) && cleaned.length > prev.name.length)) prev.name = cleaned;
       if (raw && !prev.variants.includes(raw)) prev.variants.push(raw);
     } else {
       buckets.set(key, { name: cleaned, count: cnt, variants: raw ? [raw] : [] });
