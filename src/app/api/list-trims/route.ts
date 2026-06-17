@@ -21,7 +21,7 @@ import {
   isNoiseVariant, resolveModel, fetchWithTimeout,
 } from "@/lib/marketcheck";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -58,6 +58,13 @@ export async function POST(req: Request) {
 
   // Resolve to MarketCheck's actual model string (RAM "1500" → "Ram 1500 Pickup").
   const mcModel = model ? await resolveModel(make, model) : model;
+
+  // Wall-clock budget: the two trim facets are required, but the third (version)
+  // facet is best-effort enrichment — skip it if a triple-cold-cache run is
+  // already close to the maxDuration ceiling so it can never 504 (a 12s facet
+  // call must finish inside the 60s budget). Mirrors the live-search guard.
+  const reqStart = Date.now();
+  const versionFacetDeadline = reqStart + 44_000; // 60s budget − ~16s for the version call + response
 
   try {
     const byKey = new Map<string, Trim>();
@@ -132,6 +139,7 @@ export async function POST(req: Request) {
     // out the meaningful sub-variant, and attach to the matching trim.
     const versionsByTrimKey = new Map<string, Map<string, number>>();
     try {
+      if (Date.now() > versionFacetDeadline) throw new Error("version facet skipped — wall-clock budget");
       const vUrl = new URL(`${MC_HOST}/search/car/active`);
       vUrl.searchParams.set("api_key", apiKey);
       vUrl.searchParams.set("car_type", body.car_type || "new");

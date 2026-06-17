@@ -22,7 +22,7 @@ export function AccountNav() {
         return (
           <Link key={i.href} href={i.href}
             className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap transition ${
-              active ? "bg-white/10 text-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              active ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}>
             {i.label}
           </Link>

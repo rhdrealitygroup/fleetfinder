@@ -392,7 +392,7 @@ export async function POST(req: Request) {
   // option-filtered set (only the chunks that beat the clock) would be served as
   // authoritative for a full hour, hiding real matches.
   if (!rateLimited) {
-    const shortTtl = results.length === 0 || decodeTimedOut;
+    const shortTtl = results.length === 0 || decodeTimedOut || optionScanLimited;
     cacheSet(ckey, payload, shortTtl ? 2 * 60_000 : HOUR);
   }
 

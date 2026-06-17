@@ -128,7 +128,7 @@ export function BillingActions({
                 <button
                   onClick={() => { setSeatError(""); setSeatInput((v) => Math.max(minSeats, v - 1)); }}
                   disabled={seatInput <= minSeats || !!loading}
-                  className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-white/30 disabled:opacity-40 transition"
+                  className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-40 transition"
                   aria-label="Remove seat"
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -137,7 +137,7 @@ export function BillingActions({
                 <button
                   onClick={() => { setSeatError(""); setSeatInput((v) => Math.min(1000, v + 1)); }}
                   disabled={seatInput >= 1000 || !!loading}
-                  className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-white/30 disabled:opacity-40 transition"
+                  className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/30 disabled:opacity-40 transition"
                   aria-label="Add seat"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -185,7 +185,7 @@ export function BillingActions({
 
           {canceled ? (
             <button onClick={() => setCancel(true)} disabled={!!loading}
-              className="px-4 py-2.5 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition flex items-center gap-2 disabled:opacity-60">
+              className="px-4 py-2.5 rounded-lg border border-border text-sm font-medium hover:bg-muted transition flex items-center gap-2 disabled:opacity-60">
               {loading === "cancel" && <Loader2 className="w-4 h-4 animate-spin" />} Resume subscription
             </button>
           ) : confirmCancel ? (
@@ -194,7 +194,7 @@ export function BillingActions({
                 {trialingView ? "End the trial without being charged?" : "Cancel at the end of this period?"}
               </span>
               <button onClick={() => setCancel(false)} disabled={!!loading}
-                className="px-4 py-2.5 rounded-lg border border-destructive bg-destructive text-white text-sm font-semibold hover:bg-destructive/90 transition flex items-center gap-2 disabled:opacity-60">
+                className="px-4 py-2.5 rounded-lg border border-destructive bg-destructive text-primary-foreground text-sm font-semibold hover:bg-destructive/90 transition flex items-center gap-2 disabled:opacity-60">
                 {loading === "cancel" && <Loader2 className="w-4 h-4 animate-spin" />} {trialingView ? "Yes, end trial" : "Yes, cancel"}
               </button>
               <button onClick={() => { setError(""); setNote(""); setConfirmCancel(false); }} disabled={!!loading}

@@ -85,13 +85,13 @@ export function OnboardingPayment({ mode }: { mode: "payment" | "finalize" | "ca
           </div>
         </div>
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-          <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+          <ShieldCheck className="w-4 h-4 text-positive shrink-0" />
           Card details are entered securely on Stripe — we never see or store them.
         </div>
       </div>
 
       {mode === "cancelled" && (
-        <p className="text-[13px] text-amber-600 dark:text-amber-400">
+        <p className="text-[13px] text-warning">
           Your trial hasn&apos;t started yet — add a card below to begin. You won&apos;t be charged today.
         </p>
       )}

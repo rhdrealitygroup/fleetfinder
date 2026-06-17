@@ -97,20 +97,20 @@ export default async function AccountOverviewPage() {
           </div>
         </dl>
         <div className="flex items-center gap-2 mt-5">
-          <Link href="/account/company" className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition">Edit company</Link>
+          <Link href="/account/company" className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition">Edit company</Link>
           <form action="/auth/signout" method="post">
-            <button type="submit" className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition">Sign out</button>
+            <button type="submit" className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition">Sign out</button>
           </form>
         </div>
       </div>
 
       {/* Quick links */}
       <div className="grid sm:grid-cols-2 gap-4">
-        <Link href="/account/team" className="rounded-xl border border-border bg-card p-5 hover:bg-white/5 transition">
+        <Link href="/account/team" className="rounded-xl border border-border bg-card p-5 hover:bg-muted transition">
           <div className="flex items-center gap-2 font-medium mb-1"><Users className="w-4 h-4 text-muted-foreground" /> Agents</div>
           <p className="text-sm text-muted-foreground">{agents} on your team · invite or remove</p>
         </Link>
-        <Link href="/account/dealers" className="rounded-xl border border-border bg-card p-5 hover:bg-white/5 transition">
+        <Link href="/account/dealers" className="rounded-xl border border-border bg-card p-5 hover:bg-muted transition">
           <div className="flex items-center gap-2 font-medium mb-1"><Store className="w-4 h-4 text-muted-foreground" /> Dealers</div>
           <p className="text-sm text-muted-foreground">Pick the dealers your searches scope to</p>
         </Link>

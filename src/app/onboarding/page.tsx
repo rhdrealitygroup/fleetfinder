@@ -93,7 +93,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               const current = i === stepIndex;
               return (
                 <li key={label} className="flex items-center gap-3">
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${done ? "bg-positive text-white" : current ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${done ? "bg-positive text-primary-foreground" : current ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
                     {done ? <Check className="w-3.5 h-3.5" /> : i + 1}
                   </span>
                   <span className={`text-sm ${current ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-muted-foreground"}`}>{label}</span>

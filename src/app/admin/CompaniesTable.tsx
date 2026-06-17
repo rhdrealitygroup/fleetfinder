@@ -140,7 +140,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
           const isOpen = open === o.id;
           return (
             <Fragment key={o.id}>
-              <tr className="border-b border-border/50 last:border-0 cursor-pointer hover:bg-white/5"
+              <tr className="border-b border-border/50 last:border-0 cursor-pointer hover:bg-muted"
                 onClick={() => setOpen(isOpen ? null : o.id)}>
                 <td className="px-4 py-2.5 font-medium">
                   <span className="inline-flex items-center gap-1.5">
@@ -157,7 +157,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                 <td className="px-4 py-2.5 tnum">{o.agent_limit}</td>
               </tr>
               {isOpen && (
-                <tr className="bg-white/[0.03]">
+                <tr className="bg-muted/50">
                   <td colSpan={4} className="px-4 py-3">
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5" /> People ({people.length})
@@ -222,7 +222,7 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
                               Cancel
                             </button>
                             <button onClick={() => deleteCompany(o.id)} disabled={deleting === o.id}
-                              className="text-xs font-semibold px-2.5 py-1 rounded-md border border-destructive bg-destructive text-white hover:bg-destructive/90 transition disabled:opacity-50">
+                              className="text-xs font-semibold px-2.5 py-1 rounded-md border border-destructive bg-destructive text-primary-foreground hover:bg-destructive/90 transition disabled:opacity-50">
                               {deleting === o.id ? "Deleting…" : "Yes, delete"}
                             </button>
                           </>

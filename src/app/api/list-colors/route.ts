@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
 import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout, normalizeColorName, isJunkColor } from "@/lib/marketcheck";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

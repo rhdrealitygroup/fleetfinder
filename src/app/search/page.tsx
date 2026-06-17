@@ -768,7 +768,7 @@ function SearchPageInner() {
                       <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">Your options, in stock?</div>
                       <div className="flex flex-wrap gap-1.5">
                         {diagnosis.options.map((o: { value: string; name: string; available: boolean }) => (
-                          <span key={o.value} className={`px-2 py-1 rounded-md text-[12px] border ${o.available ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600" : "bg-destructive/10 border-destructive/30 text-destructive"}`}>{o.available ? "✓" : "✗"} {o.name}</span>
+                          <span key={o.value} className={`px-2 py-1 rounded-md text-[12px] border ${o.available ? "bg-positive/10 border-positive/30 text-positive" : "bg-destructive/10 border-destructive/30 text-destructive"}`}>{o.available ? "✓" : "✗"} {o.name}</span>
                         ))}
                       </div>
                     </div>
@@ -943,7 +943,7 @@ function VehicleCard({ v, saved, compareOn, onOpen, onSave, onCompare }: { v: Ve
         {v.image_url
           ? <Image fill src={v.image_url} alt={`${v.year} ${v.make} ${v.model}`} className="object-cover" sizes="(max-width: 768px) 100vw, 400px" />
           : <span className="font-heading font-semibold tracking-[0.14em] text-2xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
-        {v.is_cpo && <span className="absolute top-2 left-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-[10px] font-medium text-white"><Award className="w-3 h-3" /> CPO</span>}
+        {v.is_cpo && <span className="absolute top-2 left-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-positive text-[10px] font-medium text-primary-foreground"><Award className="w-3 h-3" /> CPO</span>}
       </div>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0"><div className="font-semibold text-[15px] truncate">{v.year} {v.make} {v.model}</div>{v.trim && <div className="text-sm text-primary font-medium truncate">{v.trim}</div>}{v.version && v.version.toLowerCase() !== v.trim.toLowerCase() && <div className="text-[11px] text-muted-foreground truncate">{v.version}</div>}</div>

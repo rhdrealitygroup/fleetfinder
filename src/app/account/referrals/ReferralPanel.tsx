@@ -51,9 +51,9 @@ export function ReferralPanel({ code, invited = 0, joined = 0, earned = 0, credi
 
       {/* share actions */}
       <div className="flex flex-wrap gap-2">
-        <a href={mailto} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition"><Mail className="w-4 h-4" /> Email an invite</a>
-        <a href={sms} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition"><MessageCircle className="w-4 h-4" /> Text it</a>
-        <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-white/5 transition"><MessageCircle className="w-4 h-4" /> WhatsApp</a>
+        <a href={mailto} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition"><Mail className="w-4 h-4" /> Email an invite</a>
+        <a href={sms} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition"><MessageCircle className="w-4 h-4" /> Text it</a>
+        <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium hover:bg-muted transition"><MessageCircle className="w-4 h-4" /> WhatsApp</a>
       </div>
 
       {/* stats */}

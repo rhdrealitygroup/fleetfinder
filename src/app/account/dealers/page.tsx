@@ -170,7 +170,7 @@ export default function DealersPage() {
             <option value="independent">Independent</option>
           </select>
           <button onClick={() => setOnlySelected((v) => !v)}
-            className={`px-3 py-2 rounded-lg text-sm border transition ${onlySelected ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
+            className={`px-3 py-2 rounded-lg text-sm border transition ${onlySelected ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-foreground/30"}`}>
             <Star className="w-3.5 h-3.5 inline mr-1" />My dealers
           </button>
         </div>
@@ -215,7 +215,7 @@ export default function DealersPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium truncate">{d.name}</span>
-                    <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${d.type === "franchise" ? "bg-emerald-500/15 text-emerald-600" : "bg-stone-500/15 text-muted-foreground"}`}>{d.type}</span>
+                    <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${d.type === "franchise" ? "bg-positive/15 text-positive" : "bg-muted text-muted-foreground"}`}>{d.type}</span>
                     {d.group && <span className="text-[11px] text-muted-foreground">· {d.group}</span>}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">
