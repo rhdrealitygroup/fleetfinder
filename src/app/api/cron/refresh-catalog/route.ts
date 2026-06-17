@@ -63,20 +63,27 @@ export async function GET(req: Request) {
     attempted++;
     try {
       const snap = await snapshotModel(make, model, startedAt + BUDGET_MS);
-      if (!snap) continue;
-      const k = (kind: string) => `${make}::${model}::${kind}`.toLowerCase();
-      await db.from("vehicle_catalog").upsert([
-        { key: k("trims"), make, model, kind: "trims", payload: snap.trims, updated_at: now },
-        { key: k("versions"), make, model, kind: "versions", payload: snap.versions, updated_at: now },
-        { key: k("colors"), make, model, kind: "colors", payload: snap.colors, updated_at: now },
-        { key: k("interior_colors"), make, model, kind: "interior_colors", payload: snap.interiorColors, updated_at: now },
-        { key: k("options"), make, model, kind: "options", payload: snap.options, updated_at: now },
-      ], { onConflict: "key" });
-      await db.from("catalog_sync_state").upsert({ key: `${make}::${model}`, updated_at: now });
-      done.push(`${make} ${model}`);
+      if (snap) {
+        const k = (kind: string) => `${make}::${model}::${kind}`.toLowerCase();
+        await db.from("vehicle_catalog").upsert([
+          { key: k("trims"), make, model, kind: "trims", payload: snap.trims, updated_at: now },
+          { key: k("versions"), make, model, kind: "versions", payload: snap.versions, updated_at: now },
+          { key: k("colors"), make, model, kind: "colors", payload: snap.colors, updated_at: now },
+          { key: k("interior_colors"), make, model, kind: "interior_colors", payload: snap.interiorColors, updated_at: now },
+          { key: k("options"), make, model, kind: "options", payload: snap.options, updated_at: now },
+        ], { onConflict: "key" });
+        done.push(`${make} ${model}`);
+      }
     } catch {
-      /* skip this model, continue */
+      /* leave existing data in place; still mark attempted below */
     }
+    // Mark attempted THIS cycle regardless of outcome. A model that returns null
+    // (scarce / no new inventory / transient) must NOT stay pending, or — since
+    // never-seen models sort first — it gets re-attempted on every chained link,
+    // burning each link's budget on repeats and stalling the cycle before it
+    // finishes (this is what halted the run at 258/392). A transient miss simply
+    // keeps its existing rows and refreshes on the next nightly cycle.
+    await db.from("catalog_sync_state").upsert({ key: `${make}::${model}`, updated_at: now });
   }
 
   // Models still UN-ATTEMPTED this cycle (we broke out of the loop on budget).
