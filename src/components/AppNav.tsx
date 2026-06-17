@@ -65,7 +65,7 @@ export function AppNav() {
                 key={l.href}
                 href={l.href}
                 className={`px-3 py-1.5 rounded-md transition inline-flex items-center gap-1.5 ${
-                  active ? "bg-white/10 text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+                  active ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {l.label}

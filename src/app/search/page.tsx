@@ -591,7 +591,7 @@ function SearchPageInner() {
                       const on = features.has(f.value);
                       return (
                         <button key={f.value} onClick={() => toggleFeature(f.value)}
-                          className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
+                          className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-primary/40"}`}>
                           {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}{f.msrp ? <span className="opacity-50 ml-1">${f.msrp.toLocaleString()}</span> : null}
                         </button>
                       );
@@ -608,7 +608,7 @@ function SearchPageInner() {
               const on = features.has(f.value);
               return (
                 <button key={f.value} onClick={() => toggleFeature(f.value)}
-                  className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-white/30"}`}>
+                  className={`px-2 py-1 rounded-md text-[11px] border transition ${on ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground hover:border-primary/40"}`}>
                   {on && <Check className="w-3 h-3 inline mr-1" />}{f.label}
                 </button>
               );
@@ -835,7 +835,7 @@ function SearchPageInner() {
           <div className="relative w-[85%] max-w-xs bg-background border-r border-border h-full overflow-y-auto p-5">
             <div className="flex items-center justify-between mb-5">
               <span className="font-semibold flex items-center gap-2"><SlidersHorizontal className="w-4 h-4" /> Filters</span>
-              <button onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded-md hover:bg-white/10 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
+              <button onClick={() => setFiltersOpen(false)} className="w-8 h-8 rounded-md hover:bg-foreground/5 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
             </div>
             {filterContent}
           </div>
@@ -935,8 +935,8 @@ function VehicleCard({ v, saved, compareOn, onOpen, onSave, onCompare }: { v: Ve
       <div className="flex items-center justify-between mb-2">
         <StatusPill status={v.status} />
         <div className="flex items-center gap-1">
-          <button onClick={(e) => { e.stopPropagation(); onCompare(); }} className={`w-7 h-7 rounded-md flex items-center justify-center transition ${compareOn ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-white/10"}`}><GitCompare className="w-4 h-4" /></button>
-          <button onClick={(e) => { e.stopPropagation(); onSave(); }} className={`w-7 h-7 rounded-md flex items-center justify-center transition ${saved ? "text-amber-400" : "text-muted-foreground hover:text-foreground hover:bg-white/10"}`}><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onCompare(); }} className={`w-7 h-7 rounded-md flex items-center justify-center transition ${compareOn ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"}`}><GitCompare className="w-4 h-4" /></button>
+          <button onClick={(e) => { e.stopPropagation(); onSave(); }} className={`w-7 h-7 rounded-md flex items-center justify-center transition ${saved ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"}`}><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /></button>
         </div>
       </div>
       <div className="relative h-44 rounded-2xl overflow-hidden flex items-center justify-center mb-3" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
@@ -995,7 +995,7 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
       <div className="relative w-full max-w-md bg-card border-l border-border h-full overflow-y-auto">
         <div className="sticky top-0 bg-card/95 backdrop-blur border-b border-border px-5 py-3 flex items-center justify-between">
           <span className="font-semibold">Vehicle details</span>
-          <button onClick={onClose} className="w-8 h-8 rounded-md hover:bg-white/10 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="w-8 h-8 rounded-md hover:bg-foreground/5 flex items-center justify-center text-muted-foreground"><X className="w-5 h-5" /></button>
         </div>
         <div className="relative h-48 flex items-center justify-center border-b border-border" style={{ background: v.image_url ? undefined : `linear-gradient(135deg, hsl(${hue} 28% 82%), hsl(${hue} 24% 90%))` }}>
           {v.image_url ? <Image fill src={v.image_url} alt="" className="object-cover" sizes="480px" /> : <span className="font-heading font-semibold tracking-[0.2em] text-3xl uppercase" style={{ color: `hsl(${hue} 30% 42%)` }}>{v.make}</span>}
@@ -1034,7 +1034,7 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
               <input list="lc-lists" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="List (e.g. Smith family)"
                 className="w-40 rounded-lg border border-border bg-card px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50" />
               <datalist id="lc-lists">{lists.map((l) => <option key={l} value={l} />)}</datalist>
-              <button onClick={() => onSave(listName.trim() || "Saved")} className="px-4 py-2.5 rounded-lg border border-border hover:bg-white/5 text-sm font-medium transition flex items-center gap-2"><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /> {saved ? "Saved" : "Save"}</button>
+              <button onClick={() => onSave(listName.trim() || "Saved")} className="px-4 py-2.5 rounded-lg border border-border hover:bg-foreground/5 text-sm font-medium transition flex items-center gap-2"><Star className="w-4 h-4" fill={saved ? "currentColor" : "none"} /> {saved ? "Saved" : "Save"}</button>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
