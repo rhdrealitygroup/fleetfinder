@@ -17,7 +17,7 @@ export const DEFAULT_LNG = -74.009;
 export const DEFAULT_ZIP = "07755";
 export const RADIUS_MILES = 100; // default radius; Standard tier allows up to 500
 export const MAX_RESULTS = 1500; // Standard tier: start offset caps at 1500
-export const PAGE_SIZE = 100;    // rows per request (start + rows must stay ≤ 1500)
+export const PAGE_SIZE = 50;     // MarketCheck's max rows/request — asking for >50 makes the API ignore it and return its DEFAULT of 10 (the "showing first 10" bug)
 
 export const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 

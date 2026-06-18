@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
-  MAX_RESULTS, PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
+  PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
   resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, estMonthlyCard, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
@@ -15,6 +15,11 @@ import { requireActivePlan } from "@/lib/auth";
 
 // This route can decode many VINs for option filtering; give it headroom.
 export const maxDuration = 60;
+
+// Results fetched per search. MarketCheck/Auto.dev pages are PAGE_SIZE (50) rows,
+// so 150 = 3 pages — enough breadth for brokers without rendering thousands of
+// cards or making 30 sequential upstream calls.
+const SEARCH_LIMIT = 150;
 
 function summarize(body: any) {
   const base = [
@@ -93,7 +98,7 @@ export async function POST(req: Request) {
   async function searchMarketCheck() {
     const out: any[] = [];
     let total = 0;
-    for (let page = 0; page * PAGE_SIZE < MAX_RESULTS; page++) {
+    for (let page = 0; page * PAGE_SIZE < SEARCH_LIMIT; page++) {
       // Stop paging if we're near the function's time budget — a slow upstream over
       // ~15 sequential pages could otherwise blow maxDuration and 504. Keep what we
       // collected so far (the truncated note still fires downstream).
@@ -163,7 +168,7 @@ export async function POST(req: Request) {
   async function searchAutoDev() {
     const out: any[] = [];
     let total = 0;
-    for (let page = 1; (page - 1) * PAGE_SIZE < MAX_RESULTS; page++) {
+    for (let page = 1; (page - 1) * PAGE_SIZE < SEARCH_LIMIT; page++) {
       if (page > 1 && Date.now() > reqStart + 47_000) break; // near time budget → stop paging
       const url = new URL(`${AUTO_DEV_HOST}/listings`);
       url.searchParams.set("retailListing.used", body.car_type === "used" ? "true" : "false");
