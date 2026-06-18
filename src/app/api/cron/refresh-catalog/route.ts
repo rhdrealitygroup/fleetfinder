@@ -24,8 +24,10 @@ const MODELS = Object.entries(CAR_CATALOG).flatMap(([make, models]) =>
 );
 
 // Cap chain depth so a bug (e.g. models that never persist) can't loop forever.
-// MODELS/2 links × a few models each comfortably covers the whole catalog.
-const MAX_LINKS = 120;
+// The trim-specific snapshot (listing sample + VIN decodes) runs ~1–2 models per
+// 40s link, so the full ~392-model catalog needs a few hundred links — set well
+// above that; the real terminator is "all models attempted" (unattempted === 0).
+const MAX_LINKS = 450;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
