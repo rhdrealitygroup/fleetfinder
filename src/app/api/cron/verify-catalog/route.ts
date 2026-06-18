@@ -19,7 +19,7 @@ const MODELS = Object.entries(CAR_CATALOG).flatMap(([make, models]) =>
   (models as string[]).map((model) => ({ make, model })),
 );
 
-const MAX_LINKS = 300; // per-trim queries make models heavier than the snapshot
+const MAX_LINKS = 450; // per-trim queries make models heavier — give the chain room to finish all models
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -33,11 +33,11 @@ export async function GET(req: Request) {
   const cycleStart = +new Date(cycle);
   const link = Number(url.searchParams.get("link")) || 0;
 
-  // First link of a cycle: wipe the prior report so the finished table reflects
-  // only this run.
-  if (link === 0) {
-    await db.from("catalog_discrepancies").delete().lt("checked_at", cycle);
-  }
+  // NON-DESTRUCTIVE: this job only READS vehicle_catalog and writes findings to
+  // catalog_discrepancies. It never deletes/empties the catalog. The report is
+  // refreshed PER MODEL (below) — not wiped up front — so if a run stops short
+  // it only updates the models it actually re-checked and leaves every other
+  // model's prior findings intact (a partial run never empties the report).
 
   const { data: rows } = await db.from("catalog_verify_state").select("key,updated_at");
   const seen = new Map((rows || []).map((r: { key: string; updated_at: string }) => [r.key, r.updated_at]));
@@ -60,7 +60,11 @@ export async function GET(req: Request) {
     attempted++;
     try {
       const discrepancies = await verifyModel(db, make, model, startedAt + BUDGET_MS);
-      if (discrepancies === null) continue; // transient miss — retry next cycle, don't mark done
+      if (discrepancies === null) continue; // transient miss — retry next cycle, don't touch its report
+      // Refresh ONLY this model's findings: clear its prior rows, then write the
+      // current ones (clearing alone means the model is now clean). Other models
+      // are untouched, so a stop-short run never empties their results.
+      await db.from("catalog_discrepancies").delete().eq("make", make).eq("model", model);
       if (discrepancies.length) {
         await db.from("catalog_discrepancies").insert(
           discrepancies.map((d) => ({ ...d, checked_at: now })),
