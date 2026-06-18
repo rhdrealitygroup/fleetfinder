@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
+import { readModelCatalog, buildTrimsFromCatalog } from "@/lib/catalogRead";
 import {
   MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
   isNoiseVariant, resolveModel, fetchWithTimeout,
@@ -43,6 +44,23 @@ export async function POST(req: Request) {
 
   const carType = body.car_type || "new";
   const cacheKey = `trims::${make}::${model}::${carType}`.toLowerCase();
+
+  // DB-FIRST: serve trims (+ version sub-variants) from the nightly catalog
+  // snapshot. Falls through to the live MarketCheck facets below when the
+  // catalog has no trims for this model, or when `fresh` forces a refresh.
+  if (!body.fresh && carType === "new") {
+    const cat = await readModelCatalog(make, model);
+    if (cat && Array.isArray(cat.trims) && cat.trims.length) {
+      const trims = buildTrimsFromCatalog(cat.trims, cat.versions || []);
+      if (trims.length) {
+        return NextResponse.json({
+          trims, cached: true, provider: "catalog",
+          counts: { catalog: trims.length, available: trims.filter((t) => t.available).length },
+        });
+      }
+    }
+  }
+
   if (!body.fresh) {
     const hit = cacheGet<Trim[]>(cacheKey);
     if (hit) return NextResponse.json({ trims: hit, cached: true, provider: "cache" });

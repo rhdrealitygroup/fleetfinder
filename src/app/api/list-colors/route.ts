@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
 import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout, normalizeColorName, isJunkColor } from "@/lib/marketcheck";
+import { readModelCatalog, pickStoredColors } from "@/lib/catalogRead";
 
 export const maxDuration = 60;
 import { cacheGet, cacheSet, DAY, MIN } from "@/lib/memoryCache";
@@ -16,10 +17,23 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();
+  const trim = String(body.trim || "").trim();
   if (!make) return NextResponse.json({ colors: [], error: "make required" }, { status: 400 });
 
   const carType = body.car_type || "new";
   const cacheKey = `colors::${make}::${model}::${carType}`.toLowerCase();
+
+  // DB-FIRST: serve from the nightly catalog snapshot (trim-specific when a trim
+  // is selected). Falls through to the live MarketCheck facet below when the
+  // catalog has no data for this model/trim, or when `fresh` forces a refresh.
+  if (!body.fresh && carType === "new") {
+    const cat = await readModelCatalog(make, model);
+    const stored = cat ? pickStoredColors(cat, "exterior", trim) : null;
+    if (stored && stored.length) {
+      return NextResponse.json({ colors: stored, cached: true, provider: "catalog" });
+    }
+  }
+
   if (!body.fresh) {
     const hit = cacheGet<any[]>(cacheKey);
     if (hit) return NextResponse.json({ colors: hit, cached: true, provider: "cache" });

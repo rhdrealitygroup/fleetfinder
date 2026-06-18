@@ -202,7 +202,7 @@ function SearchPageInner() {
     fetch("/api/list-colors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ make, model, car_type: carType }),
+      body: JSON.stringify({ make, model, car_type: carType, trim }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -213,7 +213,7 @@ function SearchPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [make, model, carType]);
+  }, [make, model, carType, trim]);
 
   // Load make/model-specific interior colors whenever make is set.
   useEffect(() => {
@@ -224,14 +224,14 @@ function SearchPageInner() {
     fetch("/api/list-interior-colors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ make, model, car_type: carType }),
+      body: JSON.stringify({ make, model, car_type: carType, trim }),
     })
       .then((r) => r.json())
       .then((d) => { if (!cancelled) setIntColors(Array.isArray(d.colors) ? d.colors : []); })
       .catch(() => !cancelled && setIntColors([]))
       .finally(() => !cancelled && setIntColorsLoading(false));
     return () => { cancelled = true; };
-  }, [make, model, carType]);
+  }, [make, model, carType, trim]);
 
   // Load make/model-specific options/features whenever make is set.
   useEffect(() => {
@@ -498,7 +498,7 @@ function SearchPageInner() {
         <Field label="Trim">
           <select
             value={trim}
-            onChange={(e) => { setTrim(e.target.value); setVariant(""); }}
+            onChange={(e) => { setTrim(e.target.value); setVariant(""); setColor(""); setIntColor(""); }}
             disabled={trimsLoading && trims.length === 0}
             className={selectCls}
           >
