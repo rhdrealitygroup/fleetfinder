@@ -170,18 +170,39 @@ export function scrubColorCode(raw: unknown): string {
     const bare = t.replace(/[^0-9a-z]/gi, "");
     if (/\d/.test(t) && (/^\d{3,}$/.test(bare) || (/[a-z]/i.test(t) && bare.length >= 2))) s = lead[2];
   }
-  return s
+  s = s
     .replace(/^[0-9]{2,4}\s*\/\s*/, "")              // leading "040/" code prefix → drop
     .replace(/^[0-9]{3,4}(?=[a-z])/i, "")            // leading digit-glue "149white" → "white"
-    .replace(/\s*\([0-9a-z]{2,6}\)\s*$/i, "")        // trailing paren code "(g4j)"
+    .replace(/\s*[[(][^\])]*[\])]\s*$/g, " ")        // trailing "[extra Cost Color]" / "(g4j)" / "(red)"
+    .replace(/\s+paint\s*$/i, "")                    // redundant trailing "Paint" ("Hydro Blue Pearl Paint" → "Hydro Blue Pearl")
     .replace(/\s*[-/]\s*\S*\d\S*\s*$/i, "")          // trailing "- Pw7" / "/Ea03" code
     // trailing short code with BOTH a letter and a digit ("41w","Pe2","M7","47c") —
     // leaves pure numbers ("Area 51") and real words untouched.
     .replace(/\s+(?=[0-9a-z]{1,4}$)(?=[0-9a-z]*[a-z])(?=[0-9a-z]*[0-9])[0-9a-z]{1,4}$/i, "")
     .replace(/\*+/g, " ")
-    .replace(/\s+\d$/, "")                            // trailing lone single digit
     .replace(/\s+/g, " ")
     .trim();
+  // Trailing pure 1–2 digit number ("Wind Chill Pearl 17" → "Wind Chill Pearl"),
+  // but only when 2+ words remain — so a real name like "Area 51" is left intact.
+  const tn = /^(.+\S)\s+\d{1,2}$/.exec(s);
+  if (tn && tn[1].trim().split(/\s+/).length >= 2) s = tn[1].trim();
+  return s;
+}
+
+// Placeholder "colors" that are not real colors — dropped outright.
+const COLOR_PLACEHOLDERS = new Set([
+  "other", "unknown", "special order", "paint to sample", "na", "n a", "tbd",
+  "select", "extra cost color", "color", "exterior color", "interior color",
+  "primer", "undercoat", "audi exclusive special paint color", "custom", "various",
+]);
+// True for a cleaned name that's a placeholder, or a single smushed token that
+// still carries a digit ("Col74000", "0p0p", "J2j2/puregray") — i.e. a code, not
+// a color. Real one-word colors never contain a digit.
+function isPlaceholderOrCode(cleaned: string): boolean {
+  const low = cleaned.toLowerCase();
+  if (COLOR_PLACEHOLDERS.has(low)) return true;
+  if (!/\s/.test(cleaned) && /\d/.test(cleaned)) return true;
+  return false;
 }
 
 // Clean + dedupe a raw exterior/interior color facet into display buckets.
@@ -204,7 +225,7 @@ export function cleanColorFacet(
   for (const c of items || []) {
     const raw = String(c.item || "").trim();
     const cleaned = normalizeColorName(scrubColorCode(c.item));
-    if (!cleaned || isJunkColor(cleaned)) continue;
+    if (!cleaned || isJunkColor(cleaned) || isPlaceholderOrCode(cleaned)) continue;
     const key = dedupKey(cleaned);
     if (!key) continue;
     const cnt = num(c.count);
