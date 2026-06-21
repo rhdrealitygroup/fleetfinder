@@ -173,6 +173,14 @@ No facet equivalent at all (each →0 live; **removed** from the picker): heated
 **Fix:** rewrote `FEATURE_GROUPS` with verified facet strings; removed the 4 unfilterable chips + redundant "Wireless CarPlay" (indistinguishable from "apple carplay"); merged Push-Button/Remote Start (same facet). None of the corrected values contain a comma, so the AND-join is unambiguous.
 **Verification:** every corrected value returns 6-figure+ live inventory (above); both repos `npm run build` clean. E2E on www.lotcompass.com pending merge/deploy.
 
+### F2. Trim picker sent prettified names the `trim` filter can't match → silent zero — FIX-ON-BRANCH (both repos)
+**Area:** `/api/list-trims` (live path) → `trim` filter in `/api/live-search`; FleetFinder `list_trims`.
+**Root cause:** the live trims path returned `prettyTrim(titleCase(rawFacet))` as the trim name, and the UI sends that exact string back as the `trim` filter. The `trim` filter is case-insensitive but **space-sensitive**, and prettyTrim inserts a space for Mercedes-style prefixes (`Gle350` → `GLE 350`). So every Mercedes GLE/GLC/GLS/GLA/GLB/CLA/CLS/EQ/SL numeric trim was unfilterable. It also broke the version→trim attachment (`version.includes(trimName)` fails when the trim has an inserted space).
+**Evidence (live, Mercedes-Benz GLE-Class):** facet value is `GLE350`. `trim=GLE350`→**40**, `trim=gle350`→40 (case-insensitive), `trim=GLE 350`→**0**. Contrast: BMW X5 `trim=40i`/`40I`/`M60i`/`M60I` all match (no space → fine).
+**Why the catalog path was OK:** `catalogSnapshot` stores the raw facet `item` and `buildTrimsFromCatalog` returns it unmodified, so new in-catalog models already round-tripped. The bug only hit the LIVE path (used cars, non-catalog models, `fresh=true`).
+**Fix:** the live path now uses the **raw** facet string as the trim name (dedup by `canonicalTrimKey`, shortest raw = representative), matching the catalog path. Provably round-trips (it's MarketCheck's own string) and repairs version→trim matching. Removed now-unused `prettyTrim`/`titleCase` imports. Mirrored to FleetFinder `list_trims` (no catalog path there). `prettyTrim` is unchanged for result-card display (cosmetic, never round-tripped).
+**Verification:** both repos build clean; live contract proven above. E2E pending merge/deploy.
+
 ---
 
 ## TODO (areas not yet swept this pass)

@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
 import { readModelCatalog, buildTrimsFromCatalog } from "@/lib/catalogRead";
 import {
-  MC_HOST, mcKey, num, titleCase, canonicalTrimKey, parseVariant, prettyTrim,
+  MC_HOST, mcKey, num, canonicalTrimKey, parseVariant,
   isNoiseVariant, resolveModel, fetchWithTimeout,
 } from "@/lib/marketcheck";
 
@@ -121,17 +121,23 @@ export async function POST(req: Request) {
     ]);
 
     // Seed every real trim from the universe (available=false until proven in-stock).
+    // Use the RAW MarketCheck facet string as the trim name — it's what the UI sends
+    // back as the `trim` filter, so it must round-trip exactly. The `trim` filter is
+    // case-insensitive but SPACE-sensitive ("GLE350" matches, "GLE 350" → 0), and the
+    // old prettyTrim(titleCase()) pipeline inserted a space for Mercedes-style prefixes
+    // (Gle350 → "GLE 350"), zeroing every such trim AND breaking the version→trim match
+    // below. The nightly catalog path (buildTrimsFromCatalog) already stores the raw
+    // facet item, so this also makes the live and catalog paths consistent.
     for (const t of universeItems) {
-      const rawName = String(t.item || "");
+      const rawName = String(t.item || "").trim();
       if (!rawName) continue;
       const key = canonicalTrimKey(rawName);
       if (!key) continue; // empty canonical key would collapse distinct trims together
-      const pretty = prettyTrim(titleCase(rawName));
       const existing = byKey.get(key);
       if (existing) {
-        if (pretty && pretty.length < existing.name.length) existing.name = pretty; // cleanest display name
+        if (rawName.length < existing.name.length) existing.name = rawName; // shortest raw = cleanest representative
       } else {
-        byKey.set(key, { name: pretty, count: 0, available: false });
+        byKey.set(key, { name: rawName, count: 0, available: false });
       }
     }
 
@@ -147,7 +153,7 @@ export async function POST(req: Request) {
         existing.available = true;
         existing.count += cnt;
       } else {
-        byKey.set(key, { name: prettyTrim(titleCase(rawName)), count: cnt, available: true });
+        byKey.set(key, { name: rawName.trim(), count: cnt, available: true });
       }
     }
 
