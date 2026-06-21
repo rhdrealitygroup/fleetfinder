@@ -4,11 +4,10 @@
 //   DELETE { id }             → remove one
 // Stored in public.dealers (dealer_key = MarketCheck dealer id).
 
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth";
 import { ensureOrgForUser } from "@/lib/account";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
-import { dumpDealerListings } from "@/lib/inventoryDump";
 
 export const maxDuration = 60;
 
@@ -62,12 +61,14 @@ export async function POST(req: Request) {
       { onConflict: "dealer_id", ignoreDuplicates: true },
     );
   } catch { /* cron's syncTrackedDealers will register it */ }
-  // Run the dump AFTER the response flushes via `after()` — a bare fire-and-forget
-  // promise can be frozen/killed by the platform once the response is sent (and
-  // could leave the per-dealer lock dangling). `after` keeps it alive.
-  after(async () => {
-    try { await dumpDealerListings(id, { name: d.name, city: d.city, state: d.state }); } catch { /* cron backfills */ }
-  });
+  // COST-STOP: the immediate on-select inventory dump is PAUSED, matching the
+  // paused dump-inventory cron. dumpDealerListings pages /search/car/active with
+  // dealer_id, which returns a COUNT but no listings under our entitlement — so it
+  // spent MarketCheck quota writing nothing into the (currently unread) `inventory`
+  // table. The dealer is still registered in tracked_dealers above, so when
+  // auto-desking ships you can restore this by re-enabling the dump via `after()`
+  // AND routing it through /dealerships/inventory (the endpoint that actually
+  // returns per-dealer listings). See lib/inventoryDump.ts.
   return NextResponse.json({ ok: true });
 }
 
