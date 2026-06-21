@@ -10,7 +10,6 @@ import {
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
-import { createServiceRoleClient } from "@/lib/supabase/server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -87,51 +86,23 @@ export async function POST(req: Request) {
   const zip = String(body.zip || "").trim();
   const radius = Math.min(500, Number(body.radius) || RADIUS_MILES);
 
-  // Dealer scoping: MarketCheck's `dealer_id` filter on the standard search
-  // returns a COUNT but NO listings unless the (separately-priced) Dealer
-  // Inventory API is entitled — which is why dealer-scoped searches came back
-  // empty. The reliable filter on the standard endpoint is `source` (the
-  // dealer's website domain), same as the inventory deep-pull. Resolve the
-  // selected dealer IDs to their domains here.
-  let dealerSources: string[] = [];
+  // Dealer scoping: the standard /search/car/active endpoint returns a COUNT but
+  // NO listings for a dealer_id/source filter under our entitlement — which is why
+  // dealer-scoped searches came back empty. The Dealership Inventory Syndication
+  // endpoint (/dealerships/inventory) DOES return per-dealer listings and accepts a
+  // comma-OR dealer_id list (verified: multi-dealer merges sources correctly). It's
+  // separately metered ($1/call), so we route to it ONLY when the search is actually
+  // dealer-scoped; the 1h result cache bounds repeat cost. Dealer IDs are used
+  // directly (exact match) — no fragile website-domain resolution.
   const dealerScoped = Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0;
-  if (marketKey && dealerScoped) {
-    try {
-      const db = createServiceRoleClient();
-      const { data } = await db.from("dealer_catalog").select("website")
-        .in("id", body.dealer_ids.map(String).slice(0, 400));
-      dealerSources = [...new Set((data || [])
-        .map((d: { website?: string }) => String(d.website || "")
-          .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").trim().toLowerCase())
-        .filter(Boolean))];
-    } catch { /* fall through; the empty-guard below prevents an unscoped search */ }
-  }
-  // Guard: a dealer-scoped search whose dealers resolved to NO domains must
-  // return nothing — never silently fall back to an unscoped (all-inventory)
-  // search.
-  if (dealerScoped && !dealerSources.length) {
+  const dealerIds: string[] = dealerScoped
+    ? [...new Set(body.dealer_ids.map((d: unknown) => String(d ?? "").trim()).filter(Boolean) as string[])].sort()
+    : [];
+  // Guard: a dealer-scoped search with NO usable dealer IDs must return nothing —
+  // never silently fall back to an unscoped (all-inventory) search.
+  if (dealerScoped && !dealerIds.length) {
     return NextResponse.json({ results: [], total: 0, provider: "marketcheck", truncated: false,
-      note: " (selected dealers have no resolvable inventory source)", cached: false, query: summarize(body) });
-  }
-
-  // TEMP DEBUG: does the Dealership Inventory Syndication endpoint return listings?
-  if (body._dealerdebug2 && marketKey) {
-    const hit = async (path: string, params: Record<string, string>) => {
-      const u = new URL(`${MC_HOST}${path}`);
-      u.searchParams.set("api_key", marketKey);
-      for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-      const r = await fetchWithTimeout(u.toString()).catch(() => null);
-      if (!r) return { err: "fetch" };
-      if (!r.ok) return { status: r.status, body: (await r.text().catch(() => "")).slice(0, 160) };
-      const d: any = await r.json().catch(() => ({}));
-      return { num_found: d.num_found, listings: (d.listings || []).length, srcFacet: d.facets?.source?.length };
-    };
-    return NextResponse.json({
-      syndication_single: await hit("/dealerships/inventory", { dealer_id: "1007942", rows: "3" }),
-      syndication_multi: await hit("/dealerships/inventory", { dealer_id: "1007942,1008276", rows: "3", facets: "source" }),
-      syndication_source: await hit("/dealerships/inventory", { source: "acuraofbrooklyn.com", rows: "3" }),
-      syndication_new: await hit("/dealerships/inventory", { dealer_id: "1007942", car_type: "new", rows: "3" }),
-    });
+      note: " (no valid dealers selected)", cached: false, query: summarize(body) });
   }
 
   // ── Cache check (1h) ────────────────────────────────────────────────────
@@ -151,18 +122,24 @@ export async function POST(req: Request) {
       // ~15 sequential pages could otherwise blow maxDuration and 504. Keep what we
       // collected so far (the truncated note still fires downstream).
       if (page > 0 && Date.now() > reqStart + 47_000) break;
-      const url = new URL(`${MC_HOST}/search/car/active`);
+      // Dealer-scoped → Dealership Inventory Syndication endpoint (returns per-dealer
+      // listings, $1/call); otherwise the standard active-search endpoint.
+      const url = new URL(`${MC_HOST}${dealerScoped ? "/dealerships/inventory" : "/search/car/active"}`);
       url.searchParams.set("api_key", marketKey);
       url.searchParams.set("car_type", body.car_type || "new");
       // ZIP → local (geocoded), explicit lat/lng → local, neither → nationwide.
       // The Basic MarketCheck tier allows unbounded nationwide queries; on those
-      // we skip radius + distance sort (there's no center to measure from).
-      const hasGeo = !!zip || !!body.latitude;
-      if (zip) {
-        url.searchParams.set("zip", zip);
-      } else if (body.latitude) {
-        url.searchParams.set("latitude", String(body.latitude));
-        url.searchParams.set("longitude", String(body.longitude));
+      // we skip radius + distance sort (there's no center to measure from). Skip geo
+      // entirely for a dealer-scoped search — the selected dealers already define the
+      // location, and the syndication endpoint isn't geo-sorted.
+      const hasGeo = !dealerScoped && (!!zip || !!body.latitude);
+      if (!dealerScoped) {
+        if (zip) {
+          url.searchParams.set("zip", zip);
+        } else if (body.latitude) {
+          url.searchParams.set("latitude", String(body.latitude));
+          url.searchParams.set("longitude", String(body.longitude));
+        }
       }
       if (hasGeo) {
         url.searchParams.set("radius", String(radius));
@@ -186,13 +163,12 @@ export async function POST(req: Request) {
       if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);
       if (body.interior_color) url.searchParams.set("interior_color", body.interior_color);
       if (Array.isArray(body.features) && body.features.length) url.searchParams.set("high_value_features", body.features.join(","));
-      // Scope to the company's selected dealers (MarketCheck OR-list of IDs).
-      // Sort BEFORE slicing so the searched first-200 subset matches the
-      // (sorted) cache key — otherwise an org with >200 dealers could be served a
-      // cached result computed from a different 200-dealer subset.
-      // Filter by dealer website domain (the reliable per-dealer filter); the
-      // MarketCheck `source` OR-list is capped at 200.
-      if (dealerSources.length) url.searchParams.set("source", [...dealerSources].sort().slice(0, 200).join(","));
+      // Scope to the company's selected dealers via the syndication endpoint's
+      // comma-OR dealer_id list (capped at 200). dealerIds is already de-duped and
+      // sorted, so the searched first-200 subset matches the (sorted) cache key —
+      // an org with >200 dealers always searches the SAME first 200, never a
+      // different subset between cache writes.
+      if (dealerScoped) url.searchParams.set("dealer_id", dealerIds.slice(0, 200).join(","));
       url.searchParams.set("rows", String(PAGE_SIZE));
       url.searchParams.set("start", String(page * PAGE_SIZE));
       let res: Response;
@@ -437,8 +413,8 @@ export async function POST(req: Request) {
   const truncated = !narrowed && (total || 0) > results.length;
   // MarketCheck's dealer_id OR-list is capped at 200, so an org with more selected
   // dealers only searches the first 200 — say so instead of silently under-reporting.
-  if (provider === "marketcheck" && dealerSources.length > 200) {
-    note += ` (searching 200 of ${dealerSources.length} selected dealers — narrow your dealer list for full coverage)`;
+  if (provider === "marketcheck" && dealerIds.length > 200) {
+    note += ` (searching 200 of ${dealerIds.length} selected dealers — narrow your dealer list for full coverage)`;
   }
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider, truncated, note: note || undefined };
   // Never persist a rate-limited/partial response — it would pin an empty result.

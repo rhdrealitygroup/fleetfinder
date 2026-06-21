@@ -24,49 +24,102 @@ function mapDealer(x: any) {
   };
 }
 
+const DEALER_TYPES = ["franchise", "independent"] as const;
+const PAGE = 50;
+const CAP = 1500; // MarketCheck Standard-tier offset cap: start + rows must be ≤ 1500.
+
+// Page ONE /dealers/car slice (state+type, optionally +city) up to the 1500
+// offset cap, feeding each dealer to sink(). Returns num_found, clean-completion,
+// rate-limit, and `saturated` (the slice hit the cap with a still-full last page,
+// i.e. more dealers exist than we could page to → the caller should sub-partition).
+async function pageDealers(
+  apiKey: string,
+  baseParams: Record<string, string>,
+  sink: (x: any) => void,
+  overBudget: () => boolean,
+) {
+  let numFound = 0, complete = true, rateLimited = false, saturated = false;
+  for (let start = 0; start + PAGE <= CAP; start += PAGE) {
+    if (overBudget()) { complete = false; break; }
+    const u = new URL(`${MC_HOST}/dealers/car`);
+    u.searchParams.set("api_key", apiKey);
+    for (const [k, v] of Object.entries(baseParams)) u.searchParams.set(k, v);
+    u.searchParams.set("rows", String(PAGE));
+    u.searchParams.set("start", String(start));
+    // Timeout → partial pull (don't advance the cursor) instead of hanging the
+    // whole 60s function on one stuck upstream request.
+    let r: Response;
+    try { r = await fetchWithTimeout(u.toString()); }
+    catch { complete = false; break; }
+    if (r.status === 429) { complete = false; rateLimited = true; break; }
+    if (!r.ok) { complete = false; break; }
+    const d = await r.json();
+    if (start === 0) numFound = Number(d.num_found) || 0;
+    const ds: any[] = d.dealers || [];
+    for (const x of ds) sink(x);
+    if (ds.length < PAGE) return { numFound, complete, rateLimited, saturated: false };
+    // A full last page AT the cap means there are dealers past offset 1500 we
+    // can't reach with this filter — signal the caller to sub-partition by city.
+    if (start + PAGE >= CAP) saturated = true;
+  }
+  return { numFound, complete, rateLimited, saturated };
+}
+
 // Returns the dealers AND whether the pull completed cleanly. A 429/5xx
 // mid-pagination leaves `complete=false` so the caller won't mark the state
 // freshly synced with a partial list (which would hide the rest for a full
 // ~2-week rotation). Collected dealers are still upserted — we just retry the
 // state next run instead of advancing its cursor.
-async function pullState(state: string, apiKey: string, deadline = 0) {
+//
+// Saturated slices (state+type with >1500 dealers, e.g. NY/CA/TX/FL independents)
+// are sub-partitioned by city: every city is far under the 1500 cap, so paging
+// each city reaches the dealers past offset 1500 that the flat query can't. The
+// city work is RESUMABLE — `startCursor` ("<type>|<city>") is where the previous
+// run stopped; we rebuild the same deterministic work list and skip past it.
+// Returns `cursor` = the new "<type>|<city>" to persist (more city work remains)
+// or null (everything pulled / no saturation).
+async function pullState(state: string, apiKey: string, deadline = 0, startCursor: string | null = null) {
   const out = new Map<string, any>();
+  // Cities observed PER TYPE, so a saturated slice partitions over its own cities.
+  const citiesByType: Record<string, Set<string>> = { franchise: new Set(), independent: new Set() };
   let complete = true;
   let rateLimited = false;
+  let cursor: string | null = null;
   // Reserve margin for one in-flight fetch (12s timeout) + the trailing DB write,
   // so the LAST request started before the budget can't run past maxDuration's
   // hard kill. Stop ~13s before the deadline rather than right at it.
   const FETCH_MARGIN_MS = 13_000;
   const overBudget = () => deadline > 0 && Date.now() > deadline - FETCH_MARGIN_MS;
-  for (const type of ["franchise", "independent"]) {
+
+  for (const type of DEALER_TYPES) {
     if (rateLimited || overBudget()) { complete = false; break; }
-    // start + rows must stay within the tier's 1500 offset cap, so stop at 1450.
-    for (let start = 0; start + 50 <= 1500; start += 50) {
-      // Respect the cron's shared budget so a single slow state can't page past
-      // maxDuration and get the whole function hard-killed mid-pull.
-      if (overBudget()) { complete = false; break; }
-      const u = new URL(`${MC_HOST}/dealers/car`);
-      u.searchParams.set("api_key", apiKey);
-      u.searchParams.set("state", state);
-      u.searchParams.set("dealer_type", type);
-      u.searchParams.set("rows", "50");
-      u.searchParams.set("start", String(start));
-      // Timeout → treat as a partial pull (don't advance the cursor) instead of
-      // hanging the whole 60s function on one stuck upstream request.
-      let r: Response;
-      try { r = await fetchWithTimeout(u.toString()); }
-      catch { complete = false; break; }
-      // On a rate-limit, stop and signal the caller to end the batch (don't keep
-      // hammering MarketCheck across the remaining states this run).
-      if (r.status === 429) { complete = false; rateLimited = true; break; }
-      if (!r.ok) { complete = false; break; }
-      const d = await r.json();
-      const ds: any[] = d.dealers || [];
-      for (const x of ds) out.set(String(x.id), mapDealer(x));
-      if (ds.length < 50) break;
+    const sink = (x: any) => {
+      out.set(String(x.id), mapDealer(x));
+      if (x.city) citiesByType[type].add(String(x.city));
+    };
+    // Flat pull (always) — also discovers the city list for this type.
+    const flat = await pageDealers(apiKey, { state, dealer_type: type }, sink, overBudget);
+    if (flat.rateLimited) rateLimited = true;
+    if (!flat.complete) { complete = false; if (rateLimited) break; continue; }
+
+    // Not saturated → the flat pull captured every dealer; nothing to partition.
+    if (!flat.saturated) continue;
+
+    // Saturated → page each observed city (sorted for a deterministic, resumable
+    // order). Resume after startCursor if it targets THIS type.
+    const cityList = [...citiesByType[type]].sort();
+    const resumeCity = startCursor && startCursor.startsWith(`${type}|`)
+      ? startCursor.slice(type.length + 1) : null;
+    for (const city of cityList) {
+      if (resumeCity && city <= resumeCity) continue; // already done in a prior run
+      if (overBudget()) { complete = false; cursor = `${type}|${city}`; break; }
+      const cr = await pageDealers(apiKey, { state, dealer_type: type, city }, sink, overBudget);
+      if (cr.rateLimited) { rateLimited = true; complete = false; cursor = `${type}|${city}`; break; }
+      if (!cr.complete) { complete = false; cursor = `${type}|${city}`; break; }
     }
+    if (cursor || rateLimited) break; // ran out of budget mid-partition → resume next run
   }
-  return { dealers: [...out.values()], complete, rateLimited };
+  return { dealers: [...out.values()], complete, rateLimited, cursor };
 }
 
 export async function GET(req: Request) {
@@ -79,13 +132,22 @@ export async function GET(req: Request) {
   if (!apiKey) return NextResponse.json({ error: "MARKETCHECK_API_KEY not set" }, { status: 500 });
   const db = createServiceRoleClient();
 
-  // Pick the stalest states: never-synced first, then oldest synced_at.
-  const { data: rows } = await db.from("dealer_sync_state").select("state,synced_at");
-  const seen = new Map((rows || []).map((r: any) => [r.state, r.synced_at]));
-  const pending = STATES.filter((s) => !seen.has(s));
-  const ordered = pending.length
-    ? pending
-    : [...seen.entries()].sort((a, b) => +new Date(a[1]) - +new Date(b[1])).map((e) => e[0]);
+  // Pick the next states to refresh, in priority order:
+  //   1. never-synced states (initial population),
+  //   2. states mid city-partition (city_cursor set) — finish them over the next
+  //      few runs so a saturated state's tail completes promptly instead of
+  //      waiting out a full ~2-week rotation,
+  //   3. everyone else, oldest synced_at first.
+  const { data: rows } = await db.from("dealer_sync_state").select("state,synced_at,city_cursor");
+  const synced = new Map((rows || []).map((r: any) => [r.state, r]));
+  const cursors = new Map((rows || []).map((r: any) => [r.state, (r.city_cursor as string) || null]));
+  const neverSynced = STATES.filter((s) => !synced.has(s));
+  const inProgress = STATES.filter((s) => synced.has(s) && cursors.get(s));
+  const rest = [...synced.values()]
+    .filter((r: any) => !r.city_cursor)
+    .sort((a: any, b: any) => +new Date(a.synced_at) - +new Date(b.synced_at))
+    .map((r: any) => r.state);
+  const ordered = [...neverSynced, ...inProgress, ...rest];
   const batchSize = Math.max(1, Number(url.searchParams.get("batch")) || 3);
   const batch = ordered.slice(0, batchSize);
 
@@ -95,23 +157,30 @@ export async function GET(req: Request) {
   const startedAt = Date.now();
   const BUDGET_MS = 45_000;
 
-  const refreshed: { state: string; n: number; complete: boolean }[] = [];
+  const refreshed: { state: string; n: number; complete: boolean; resuming: boolean }[] = [];
   for (const st of batch) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → next run picks up the rest
-    const { dealers, complete, rateLimited } = await pullState(st, apiKey, startedAt + BUDGET_MS);
+    const startCursor = cursors.get(st) || null;
+    const { dealers, complete, rateLimited, cursor } = await pullState(st, apiKey, startedAt + BUDGET_MS, startCursor);
     if (dealers.length) {
       // Upsert without `makes` → existing make tags are preserved on update.
       await db.from("dealer_catalog").upsert(dealers, { onConflict: "id" });
     }
-    // Advance the cursor whenever the state pulled CLEANLY (complete) — even if it
-    // genuinely returned zero dealers. Gating on dealers.length too would leave an
-    // empty-but-complete state permanently "pending", so it sorts first forever and
-    // blocks the rolling refresh of every other state. Only a partial/rate-limited
-    // pull (complete=false) is left to retry next run.
-    if (complete) {
-      await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), count: dealers.length });
+    if (cursor) {
+      // Saturated state, more city work remains. Persist the resume point and
+      // advance synced_at (so it doesn't also count as never-synced); the non-null
+      // city_cursor keeps it in the priority-2 group so the tail finishes over the
+      // next few runs. Don't overwrite `count` with a partial tally.
+      await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), city_cursor: cursor });
+    } else if (complete) {
+      // Fully pulled (flat fit within the cap, or the city partition finished).
+      // Clear any resume cursor and record the count. Advance synced_at even on a
+      // genuinely-empty state so it can't sort first forever and block rotation.
+      await db.from("dealer_sync_state").upsert({ state: st, synced_at: new Date().toISOString(), count: dealers.length, city_cursor: null });
     }
-    refreshed.push({ state: st, n: dealers.length, complete });
+    // else: a flat-pull failure (timeout/429) with no cursor → leave the row as-is
+    // and retry next run.
+    refreshed.push({ state: st, n: dealers.length, complete, resuming: !!cursor });
     if (rateLimited) break; // MarketCheck rate-limited → stop the batch; next run retries
   }
   return NextResponse.json({ ok: true, refreshed });
