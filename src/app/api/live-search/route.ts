@@ -118,7 +118,12 @@ export async function POST(req: Request) {
   async function searchMarketCheck() {
     const out: any[] = [];
     let total = 0;
-    for (let page = 0; page * PAGE_SIZE < SEARCH_LIMIT; page++) {
+    // The Dealership Inventory Syndication endpoint accepts rows up to 1500 and is
+    // metered per CALL, so fetch all SEARCH_LIMIT results in ONE request instead of
+    // 3 paginated 50-row calls — same results at ⅓ the per-search cost. The standard
+    // active-search endpoint still caps rows at 50, so page it as before.
+    const rows = dealerScoped ? SEARCH_LIMIT : PAGE_SIZE;
+    for (let page = 0; page * rows < SEARCH_LIMIT; page++) {
       // Stop paging if we're near the function's time budget — a slow upstream over
       // ~15 sequential pages could otherwise blow maxDuration and 504. Keep what we
       // collected so far (the truncated note still fires downstream).
@@ -174,8 +179,8 @@ export async function POST(req: Request) {
       // an org with >200 dealers always searches the SAME first 200, never a
       // different subset between cache writes.
       if (dealerScoped) url.searchParams.set("dealer_id", dealerIds.slice(0, 200).join(","));
-      url.searchParams.set("rows", String(PAGE_SIZE));
-      url.searchParams.set("start", String(page * PAGE_SIZE));
+      url.searchParams.set("rows", String(rows));
+      url.searchParams.set("start", String(page * rows));
       let res: Response;
       try { res = await fetchWithTimeout(url.toString()); }
       catch { if (out.length > 0) break; throw new Error("MarketCheck request timed out"); }
@@ -191,7 +196,7 @@ export async function POST(req: Request) {
       total = num(data.num_found) || total;
       const list: any[] = data.listings || [];
       out.push(...list);
-      if (list.length < PAGE_SIZE) break;
+      if (list.length < rows) break;
     }
     return { results: out.map(mcListing), total, rateLimited: false };
   }

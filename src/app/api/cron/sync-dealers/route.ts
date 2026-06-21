@@ -156,6 +156,44 @@ export async function GET(req: Request) {
   if (!apiKey) return NextResponse.json({ error: "MARKETCHECK_API_KEY not set" }, { status: 500 });
   const db = createServiceRoleClient();
 
+  // ── Opt-in makes backfill ─────────────────────────────────────────────────
+  // /dealers/car carries no make breakdown, so the picker's make filter is only
+  // precise for dealers we've tagged. This populates `makes` per dealer from the
+  // cheap make facet ($0.002/dealer). It is MANUAL ONLY (never the scheduled cron)
+  // because it spends one call per dealer — call ?backfill_makes=1&state=NJ&limit=250
+  // repeatedly until `remaining` hits 0. Stocked dealers are tagged first.
+  if (url.searchParams.get("backfill_makes")) {
+    const state = (url.searchParams.get("state") || "").toUpperCase();
+    const limit = Math.min(600, Math.max(1, Number(url.searchParams.get("limit")) || 250));
+    let q = db.from("dealer_catalog").select("id,listing_count", { count: "exact" })
+      .or("makes.is.null,makes.eq.{}").gt("listing_count", 0)
+      .order("listing_count", { ascending: false }).limit(limit);
+    if (state) q = q.eq("state", state);
+    const { data: todo, count } = await q;
+    const deadline = Date.now() + 45_000;
+    let tagged = 0;
+    for (const d of todo || []) {
+      if (Date.now() > deadline) break;
+      try {
+        const u = new URL(`${MC_HOST}/search/car/active`);
+        u.searchParams.set("api_key", apiKey);
+        u.searchParams.set("dealer_id", String(d.id));
+        u.searchParams.set("car_type", "new");
+        u.searchParams.set("rows", "0");
+        u.searchParams.set("facets", "make");
+        const r = await fetchWithTimeout(u.toString());
+        if (!r.ok) continue;
+        const j = await r.json();
+        const makes = (j.facets?.make || []).map((t: any) => String(t.item || "").trim()).filter(Boolean);
+        // Store [] sentinel-free: only write a non-empty list, else mark with a
+        // single "—" so we don't re-probe a genuinely makeless dealer forever.
+        await db.from("dealer_catalog").update({ makes: makes.length ? makes : ["—"] }).eq("id", d.id);
+        tagged++;
+      } catch { /* skip; next run retries */ }
+    }
+    return NextResponse.json({ backfill_makes: true, state: state || "ALL", tagged, remaining: Math.max(0, (count || 0) - tagged) });
+  }
+
   // Pick the next states to refresh, in priority order:
   //   1. never-synced states (initial population),
   //   2. states mid city-partition (city_cursor set) — finish them over the next

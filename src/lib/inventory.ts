@@ -1,11 +1,13 @@
 // Shared inventory constants + helpers used across the search UI. Ported from Base44.
 
+// UI body-type labels. The server (mcBodyType) maps these to MarketCheck's facet
+// vocabulary — "Truck"→Pickup, "Van"→Cargo Van,Minivan,Passenger Van — so each
+// option returns inventory instead of a dead end.
 export const BODY_TYPES = ["SUV", "Sedan", "Truck", "Wagon", "Coupe", "Van"];
-export const FUEL_TYPES = ["Gas", "Hybrid", "PHEV", "Electric", "Diesel"];
-export const DRIVETRAINS = ["FWD", "AWD", "RWD", "4WD"];
+// MarketCheck does NOT distinguish AWD from 4WD (both are bucketed "4WD"), so we
+// offer one combined option that the server maps to 4WD. ("AWD" alone returned 0.)
+export const DRIVETRAINS = ["AWD/4WD", "FWD", "RWD"];
 export const STATUSES = ["In Stock", "In Transit", "On Order"];
-
-export const EV_FUELS = new Set(["Electric", "PHEV"]);
 
 export const STATUS_META: Record<string, { color: string; label: string }> = {
   "In Stock": { color: "152 60% 45%", label: "In stock" },

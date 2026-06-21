@@ -75,8 +75,8 @@ export const titleCase = (s: unknown) =>
 export function mcDrivetrain(v: unknown): string {
   const s = String(v ?? "").trim();
   if (!s) return "";
-  if (/^awd$/i.test(s)) return "4WD"; // MarketCheck has no AWD bucket
-  return s; // FWD, RWD, 4WD pass through
+  if (/^(awd|4wd|awd\/4wd)$/i.test(s)) return "4WD"; // MarketCheck has no AWD bucket
+  return s; // FWD, RWD pass through
 }
 export function mcBodyType(v: unknown): string {
   const s = String(v ?? "").trim();

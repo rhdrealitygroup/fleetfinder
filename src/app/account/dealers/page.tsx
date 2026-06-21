@@ -219,7 +219,9 @@ export default function DealersPage() {
                     {d.group && <span className="text-[11px] text-muted-foreground">· {d.group}</span>}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">
-                    {[d.city, d.state].filter(Boolean).join(", ")} {d.zip} · {(d.listing_count || 0).toLocaleString()} in stock
+                    {[d.city, d.state].filter(Boolean).join(", ")} {d.zip} · {(d.listing_count || 0) > 0
+                      ? <span>{(d.listing_count || 0).toLocaleString()} in stock</span>
+                      : <span className="text-amber-600/80">no current inventory</span>}
                   </div>
                   {d.makes && d.makes.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">

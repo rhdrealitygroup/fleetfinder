@@ -21,12 +21,17 @@ const PER = 40;
 const MAKES = [...CATALOG_MAKES].sort((a, b) => a.localeCompare(b));
 
 // ── Static fallback (NJ/NY file) ──
-const FILE = (dealersData as Dealer[]).slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+// Sort stocked dealers first (listing_count desc), then by name — so a dealer with
+// inventory is never buried under alphabetical 0-inventory rows.
+const byStockThenName = (a: Dealer, b: Dealer) =>
+  (Number(b.listing_count) || 0) - (Number(a.listing_count) || 0) || (a.name || "").localeCompare(b.name || "");
+const FILE = (dealersData as Dealer[]).slice().sort(byStockThenName);
 function fromFile(q: string, state: string, type: string, make: string, page: number) {
   let list = FILE;
   if (state) list = list.filter((d) => d.state === state);
   if (type) list = list.filter((d) => d.type === type);
-  if (make) list = list.filter((d) => (d.makes || []).includes(make));
+  // Inclusive make filter: most file rows have no makes tags, so don't hide them.
+  if (make) list = list.filter((d) => !(d.makes && d.makes.length) || d.makes.includes(make));
   if (q) list = list.filter((d) => d.name.toLowerCase().includes(q) || d.city.toLowerCase().includes(q) || (d.group || "").toLowerCase().includes(q) || d.zip.includes(q));
   const total = list.length;
   return { total, page, per: PER, items: list.slice(page * PER, page * PER + PER), makes: MAKES, counts: { all: FILE.length, nj: FILE.filter((d) => d.state === "NJ").length, ny: FILE.filter((d) => d.state === "NY").length }, source: "file" };
@@ -69,11 +74,17 @@ export async function GET(req: Request) {
     const safe = q.replace(/[,()*\\"]/g, " ").replace(/\s+/g, " ").trim();
     if (safe) query = query.or(`name.ilike.%${safe}%,city.ilike.%${safe}%,zip.ilike.%${safe}%,dealer_group.ilike.%${safe}%`);
   }
-    query = query.order("name").range(page * PER, page * PER + PER - 1);
+    // Stocked dealers first so an empty result is obviously the dealer's own empty
+    // inventory, not a buried list — then alphabetical within equal counts.
+    query = query.order("listing_count", { ascending: false }).order("name").range(page * PER, page * PER + PER - 1);
     const { data, count, error } = await query;
     if (error) return NextResponse.json(fromFile(q, state, type, make, page));
 
-    const items = (data || []).map((d: any) => ({ ...d, group: d.dealer_group || "" }));
+    // Strip the "—" sentinel (means "probed, sells no new makes") from display.
+    const items = (data || []).map((d: any) => ({
+      ...d, group: d.dealer_group || "",
+      makes: Array.isArray(d.makes) ? d.makes.filter((m: string) => m && m !== "—") : d.makes,
+    }));
     return NextResponse.json({ total: count || 0, page, per: PER, items, makes: MAKES, counts: { all: head.count }, source: "db" });
   } catch {
     return NextResponse.json(fromFile(q, state, type, make, page));
