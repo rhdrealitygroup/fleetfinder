@@ -1,0 +1,204 @@
+# BUG REGISTRY — LotCompass / FleetFinder
+
+**This is the permanent, append-only ledger of every bug ever found and fixed in this app.** It is shared across all agents and sessions.
+
+## Protocol (every agent MUST follow)
+1. **READ this entire file before auditing or fixing anything.** Every entry is a known failure mode — its **Pattern** field tells you where the same class of bug can re-hide. Hunt those places.
+2. **Append a new `BUG-NNNN` entry the moment you confirm a new bug** (don't wait for the end). Fill fix/commit/evidence when resolved.
+3. **Append-only.** Never edit or delete a prior entry except to update its own Status/Fix/Evidence. Never renumber. IDs are permanent and increasing.
+4. On a merge conflict here, **keep both sides** (union) — never drop an entry.
+5. This is the canonical ledger; `AUDIT_FINDINGS.md` is a per-run working log. Keep them consistent.
+
+## The recurring patterns (memorize these — most bugs are a new face of one of them)
+- **P1 — Provider-value vocabulary mismatch:** any value sent to MarketCheck/Auto.dev (filter label, trim, color, feature, drivetrain, body type, powertrain) must equal a REAL live facet value, or it silently matches nothing → 0 results. Verify every value against the live facet.
+- **P2 — Count ≠ availability:** some endpoints return a `num_found` but no `listings` under our entitlement (e.g. `/search/car/active?dealer_id=`). A non-zero count is not data.
+- **P3 — Plan/tier limits, undocumented:** real caps (pagination offset 1500, rows 50) differ from the generic docs. Verify limits live with our key.
+- **P4 — Unwired/ineffective cache:** in-memory caches don't survive serverless cold starts; DB cache tables can exist but be unconnected. "Cached" in code ≠ cached in prod.
+- **P5 — Sparse-column filtering:** filtering on a partially-populated column silently excludes the un-populated majority.
+- **P6 — Recompute faster than data changes:** expensive cron work on a cadence faster than the underlying data actually changes.
+- **P7 — Producer with no consumer:** a table/pipeline written but read by nothing (spends quota/compute). (Exception: the `inventory`/dump pipeline is intentionally kept for future auto-desking.)
+- **P8 — Raw provider junk stored / un-sanitized into params:** factory-code cruft, typos, comma/bracket/slash tokens that break comma-OR filters downstream.
+- **P9 — Stale client state:** `router.refresh()` doesn't reset `useState`; server-prop changes must be re-synced into client state.
+- **P10 — Unbounded math / missing edge handling:** financial/range math not clamped (negatives, zero, missing MSRP); assumed JSON field paths.
+- **P11 — Identifier mismatch across systems:** our DB strings/ids differ from the provider's (model names, dealer ids, make casing).
+- **P12 — PostgREST quirks:** untagged arrays are `'{}'` not NULL; `.or()` interpolation is injection-prone; array-contains needs `cs.{"value"}`.
+
+---
+
+## Entries
+
+### BUG-0001 — Search returned only the first 10 results
+- **Date:** 2026-06-18  **Severity:** High  **Found by:** owner report → agent
+- **Area:** `live-search` / `lib/marketcheck.ts` (PAGE_SIZE)
+- **Symptom:** every search showed ~10 results regardless of inventory.
+- **Root cause:** `PAGE_SIZE=100` but MarketCheck's max `rows`/request is 50; over-asking made the API silently return its DEFAULT of 10, then the paging loop broke (`10 < 100`).
+- **Pattern (P3):** an API silently ignores an out-of-range param and substitutes a default — verify every `rows`/`limit`/`start`/facet-size range against the live API.
+- **Fix:** `PAGE_SIZE=50`, `SEARCH_LIMIT=150` (3 pages), both provider loops. Commits: fleetfinder-v2 `f7d5490`, fleetfinder `72ad764`.
+- **Evidence:** live search returned 150 results after fix (was 10).
+- **Status:** Fixed & verified live.
+
+### BUG-0002 — Dealer-scoped search returned 0 results
+- **Date:** 2026-06-20  **Severity:** Critical  **Found by:** owner report → agent
+- **Area:** `live-search` dealer path
+- **Symptom:** selecting dealers and searching returned `total>0` but 0 results.
+- **Root cause:** `/search/car/active?dealer_id=` returns a `num_found` COUNT but NO `listings` under our entitlement. (A first fix attempt using `source=domain` ALSO returned count-only — same root cause.) The data only comes from `/dealerships/inventory` (Dealership Inventory Syndication, $1/call), which accepts a comma-OR `dealer_id` list.
+- **Pattern (P2):** count ≠ availability; wrong endpoint for the data shape. Hunt anywhere `.listings` is read after a filtered call.
+- **Fix:** dealer-scoped searches route to `/dealerships/inventory` with comma-OR `dealer_id`; guard for no-valid-ids; geo skipped. Commits: fleetfinder-v2 `3610dcc`, fleetfinder `d1eba8d`.
+- **Evidence:** live: single dealer → 150 results all from that dealer; multi-dealer merges sources; `/search/car/active?dealer_id=…` proven count-only (num_found 193, listings 0).
+- **Status:** Fixed & verified live.
+
+### BUG-0003 — Dealer directory truncated at the 1500 offset cap
+- **Date:** 2026-06-20  **Severity:** High  **Found by:** owner report ("NY/NJ dealers missing") → agent
+- **Area:** `sync-dealers` cron
+- **Symptom:** dense states' dealer lists were short (NY independent stored 1500 of 1906; CA/TX/FL likewise).
+- **Root cause:** MarketCheck Standard-tier caps pagination at `start` offset 1500 (`422 "Subscribed package pagination limit of 1500 rows exceeded"`). The generic docs said 10,000/rows; our plan's real cap is 1500.
+- **Pattern (P3):** plan-specific limits. Hunt every paging loop for silent tail-drop.
+- **Fix:** sub-partition a saturated state+type slice by city (each city < cap), resumable across runs via new `dealer_sync_state.city_cursor`. Migration `0031`. Commit: fleetfinder-v2 `3610dcc`.
+- **Evidence:** live 422 at start=1500 confirmed; city facet + city-filtered pulls verified to reach the tail.
+- **Status:** Fixed & verified.
+
+### BUG-0004 — Filter values returned 0 (drivetrain/body_type vocabulary mismatch)
+- **Date:** 2026-06-21  **Severity:** High  **Found by:** owner report ("no matches") → agent
+- **Area:** `live-search` + `diagnose` (body_type, drivetrain)
+- **Symptom:** picking "AWD", "Truck", or "Van" returned 0 results on every search.
+- **Root cause:** MarketCheck's facet vocabulary differs from UI labels: `drivetrain` = `4WD|FWD|RWD` (no "AWD"; AWD is bucketed `4WD`); `body_type` = `Pickup`/`Cargo Van`/`Minivan`/`Passenger Van`/… (no "Truck"/"Van"). Verified live: `drivetrain=AWD` → 0 vs `4WD` → 2.28M; `body_type=Truck` → 0 vs `Pickup` → 760K.
+- **Pattern (P1):** every UI/catalog value sent to a provider must equal a real facet value. Hunt EVERY filter value the UI can emit.
+- **Fix:** `mcDrivetrain`/`mcBodyType` mappers (AWD→4WD, Truck→Pickup, Van→Cargo Van,Minivan,Passenger Van); UI collapsed to one "AWD/4WD" option; dead `FUEL_TYPES`/`EV_FUELS` removed. Commits: fleetfinder-v2 `2304126`, fleetfinder `c8594da`.
+- **Evidence:** live after deploy: AWD/4WD → 192,989; Truck → 760,205; Van → 117,216.
+- **Status:** Fixed & verified live.
+
+### BUG-0005 — Make filter hid ~80% of dealers
+- **Date:** 2026-06-21  **Severity:** High  **Found by:** owner report ("NJ list incomplete") → agent
+- **Area:** `dealers/catalog` picker
+- **Symptom:** picking a make showed a tiny fraction of dealers (NJ + Honda → 19 of ~1700).
+- **Root cause:** filter used strict `makes @> {make}`, but ~80% of dealers had empty `makes` tags (`'{}'`, not NULL) → all untagged dealers excluded.
+- **Pattern (P5/P12):** sparse-column filtering excludes the un-populated majority; untagged arrays are `'{}'` not NULL.
+- **Fix:** include untagged-but-stocked dealers alongside tagged matches; backfilled NY/NJ makes (2,870 dealers, opt-in `?backfill_makes`) so those states are precise while others keep the inclusive safety net. Commits: fleetfinder-v2 `2304126`,`44cd550`,`eef7996`.
+- **Evidence:** live: NJ Honda 19→1707 (inclusive) → 38 (precise after backfill); CA Honda 1960 (still inclusive, no regression).
+- **Status:** Fixed & verified live.
+
+### BUG-0006 — VIN-decode cache never wired to the DB (the MarketCheck bill driver)
+- **Date:** 2026-06-21  **Severity:** Critical (cost)  **Found by:** owner ($2,177 invoice) → agent
+- **Area:** `lib/marketcheck.ts` decode functions; `vin_decode_cache` table
+- **Symptom:** NeoVIN decodes = 17,594 × $0.08 = $1,407 in 20 days.
+- **Root cause:** decodes were "cached" only in `memoryCache` (per-isolate, in-memory). On Vercel serverless, cold starts + parallel isolates meant the same VINs were re-decoded and re-charged. The DB cache tables (`vin_decode_cache`/`trim_cache`/`color_cache`/`search_cache`) existed but were wired to nothing.
+- **Pattern (P4):** in-memory cache doesn't survive cold starts; schema landed but code never connected.
+- **Fix:** durable DB cache under the memory cache (memory→DB→live), shared by the names+details paths (one decode per VIN, ever). Commits: fleetfinder-v2 `82d1375`, fleetfinder `dffbbb2`.
+- **Evidence:** live: `vin_decode_cache` 0→150 rows on a search; second identical search reused cache (2,254ms vs 5,418ms, only new VINs added).
+- **Status:** Fixed & verified live. NOTE: `trim_cache`/`color_cache`/`search_cache` are STILL unused — candidates for the optimization pass.
+
+### BUG-0007 — Nightly catalog option-decode on churning inventory
+- **Date:** 2026-06-21  **Severity:** High (cost)  **Found by:** agent (during cost diagnosis)
+- **Area:** `refresh-catalog` / `catalogSnapshot`
+- **Symptom:** ~2,352 NeoVIN decodes/night just to rebuild the options catalog, on fresh inventory the cache couldn't help.
+- **Root cause:** the snapshot re-decoded 6 sampled VINs per model every night; available options barely change.
+- **Pattern (P6):** recompute faster than the data changes.
+- **Fix:** only re-decode a model's options when missing or stale; throttled to once a week (`skipOptions` + `OPTIONS_TTL_MS`). Commits: fleetfinder-v2 `82d1375`,`8b4d108`.
+- **Evidence:** code path verified; options row preserved on skip/budget-cut.
+- **Status:** Fixed. (Optimization pass: consider event/model-year-gated instead of weekly.)
+
+### BUG-0008 — On-select dealer dump spent quota writing nothing
+- **Date:** 2026-06-21  **Severity:** Low (cost)  **Found by:** agent
+- **Area:** `dealers/selection` POST `after()` hook
+- **Symptom:** adding a dealer fired `dumpDealerListings` which pages `/search/car/active?dealer_id=` (count-only) → wrote nothing into the unread, cron-paused `inventory` table.
+- **Pattern (P2/P7):** count-only endpoint; producer with no live consumer.
+- **Fix:** paused the on-select dump (kept dealer registration in `tracked_dealers`); restore via `/dealerships/inventory` when auto-desking ships. Commit: fleetfinder-v2 `b17c26d`.
+- **Evidence:** code path; matches the already-paused `dump-inventory` cron.
+- **Status:** Fixed. (Pipeline intentionally KEPT for auto-desking — do not remove.) **UPDATE 2026-06-21: SUPERSEDED by BUG-0019 — owner decided to delete the dump pipeline; the "keep for auto-desking" note and the P7 exception no longer apply.**
+
+### BUG-0009 — Comma-bearing color facet values mis-filter (S4)
+- **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit loop
+- **Area:** pickers (color facets)
+- **Symptom:** color values containing commas broke the comma-OR `exterior_color` filter.
+- **Pattern (P8):** raw provider strings with delimiters break downstream comma-OR params.
+- **Fix:** drop/scrub comma-bearing color facet values. Commit: fleetfinder-v2 `ffdbd12`.
+- **Status:** Fixed (per audit loop).
+
+### BUG-0010 — Diagnose made a guaranteed-null closest-match call for dealer-scoped searches (D1)
+- **Date:** 2026-06-21  **Severity:** Low (cost)  **Found by:** audit loop
+- **Area:** `diagnose`
+- **Root cause:** the closest-match query used `/search/car/active` with `dealer_id` (count-only) → always empty, while still spending a call.
+- **Pattern (P2):** count-only endpoint where listings are needed.
+- **Fix:** skip the closest-match query when dealer-scoped (facet-derived reasons still render). Commits: fleetfinder-v2 `109f346`, fleetfinder mirror.
+- **Evidence:** live: `/search/car/active?dealer_id=…&make=…` count matches syndication count (129), listings 0.
+- **Status:** Fixed (per audit loop).
+
+### BUG-0011 — Lease payment could go negative (L1)
+- **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit loop
+- **Area:** lease calculator
+- **Root cause:** depreciation unbounded → negative monthly payment for edge inputs.
+- **Pattern (P10):** financial math not clamped against edge inputs.
+- **Fix:** clamp depreciation at 0. Commit: fleetfinder-v2 `fac5180`.
+- **Status:** Fixed (per audit loop). (Optimization/audit pass: review ALL lease terms — residual>MSRP, money-factor signs, $0 price, used cars.)
+
+### BUG-0012 — Admin price map stale after refresh (U1)
+- **Date:** 2026-06-21  **Severity:** Low  **Found by:** audit loop
+- **Area:** admin CompaniesTable
+- **Root cause:** `router.refresh()` doesn't reset client `useState`; the price map wasn't re-synced from props.
+- **Pattern (P9):** server-prop changes not re-synced into client state.
+- **Fix:** re-sync from props after refresh. Commit: fleetfinder-v2 `6f5b0a6`.
+- **Status:** Fixed (per audit loop). (Hunt P9 in every client component seeding useState from props.)
+
+### BUG-0013 — Feature chips sent labels MarketCheck doesn't index (F1)
+- **Date:** 2026-06-21  **Severity:** High  **Found by:** audit loop (in-flight)
+- **Area:** feature picker (`FEATURE_GROUPS`) → `high_value_features`
+- **Root cause:** feature `value`s were UI labels (e.g. "sunroof", "navigation system") not real facet strings ("sun/moonroof", "navigation") → 0 results.
+- **Pattern (P1):** provider-value vocabulary mismatch (high_value_features facet).
+- **Fix:** map every feature chip to a verified live facet value; omit features MarketCheck can't filter. Commit: fleetfinder-v2 `38e176c` (verify on merge).
+- **Status:** Fixed (per audit loop). Another instance of P1 — confirms the pattern is broad.
+
+### BUG-0014 — Trim filter didn't round-trip (F2)
+- **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit loop (in-flight)
+- **Area:** `list-trims` / trim filter
+- **Root cause:** the trim string wasn't sent to MarketCheck in the raw form that round-trips through its trim filter.
+- **Pattern (P1/P11):** provider value/identifier mismatch (trim strings).
+- **Fix:** send the raw MarketCheck trim string. Commit: fleetfinder-v2 `35352fd` (verify on merge).
+- **Status:** Fixed (per audit loop).
+
+### BUG-0015 — Catalog stored raw factory-code color/version junk
+- **Date:** 2026-06-20  **Severity:** Med  **Found by:** agent
+- **Area:** `catalogSnapshot` / pickers
+- **Symptom:** colors like "0475 Black Sapphire Metallic", "Nh-731p", "Blk"; version typo "Stamdard Range".
+- **Pattern (P8):** raw provider data persisted without cleaning, surfaces in pickers.
+- **Fix:** `cleanColorFacet` + `scrubColorCode` + `fixVersionName` applied at snapshot write time; SQL cleanup of existing rows. Commits: fleetfinder-v2 `7e7a7321`,`a78d8f1`,`591f7fb`.
+- **Status:** Fixed.
+
+### BUG-0016 — refresh-catalog self-chain stalled (~258/392 models)
+- **Date:** 2026-06-19  **Severity:** Med  **Found by:** agent
+- **Area:** `refresh-catalog` cron
+- **Root cause:** models returning null never advanced `catalog_sync_state`; since never-seen sort first, they were re-attempted every chained link, burning budget before the cycle finished.
+- **Pattern:** self-chaining cron must mark every model attempted-even-on-null or it loops.
+- **Fix:** stamp every attempted model regardless of outcome; raise MAX_LINKS. Commit: fleetfinder-v2 `1c07bc8`.
+- **Status:** Fixed.
+
+### BUG-0017 — Catalog snapshot sampled 10 listings instead of 150 (rows>50 → API default 10)
+- **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit loop (Pass 7)
+- **Area:** `lib/catalogSnapshot.ts` (the trim→color sampler; run nightly by `refresh-catalog`, feeds the trims/colors pickers)
+- **Symptom:** each model's per-trim exterior/interior color lists were built from a tiny sample, so trims showed too few colors.
+- **Root cause:** the sampler used `ROWS=100`. MarketCheck's `/search/car/active` silently ignores a `rows` above 50 and returns its DEFAULT of 10; the loop then broke (`10 < 100`), so only 10 cars per model were sampled instead of the intended 150 (`PAGES=3 × 100`).
+- **Pattern (P3):** same class as BUG-0001 — an out-of-range param is silently replaced by a default. Hunt EVERY `rows`/`limit` > 50 against `/search/car/active`.
+- **Fix:** `ROWS=50` (the real per-page max) → 3×50 = 150 samples, offset within the 1500 cap. Commit: fleetfinder-v2 `a25e942` (LotCompass only — FleetFinder has no nightly catalog system). Re-verify after merge/deploy.
+- **Evidence:** live: `rows=10`→10 listings, `rows=50`→50, `rows=100`→**10** (Toyota RAV4, `/search/car/active`).
+- **Status:** Fixed on branch; verify live after deploy.
+
+### BUG-0018 — Stripe webhook seat true-up had no idempotency key
+- **Date:** 2026-06-21  **Severity:** Low  **Found by:** audit (independent billing/auth review)
+- **Area:** `stripe/webhook` trial→active seat reconciliation
+- **Symptom:** none observed in practice — the gap is an invariant violation, not a live defect.
+- **Root cause:** the two `stripe.subscriptions.update(...)` true-up calls carried no `idempotencyKey`. They are idempotent-by-value (absolute quantity, `proration_behavior:"none"`, guarded by `desired !== currentQty`), so no double-billing was possible — but a redelivered `subscription.updated` event could fire a redundant update, violating the app's "every sub mutation uses an idempotency key" rule.
+- **Pattern:** money-path idempotency invariant; any Stripe write must carry a stable key so retries are no-ops.
+- **Fix:** added `idempotencyKey: seat-trueup-${sub.id}-${desired}` to both calls. Commit: fleetfinder-v2 `a25e942` (LotCompass only — FleetFinder billing is a separate Base44 `manage_billing`).
+- **Evidence:** code review + invariant; quantity is absolute so no over-billing was ever possible. Rest of billing/auth (checkout/cancel/referrals/gate/RLS/`/api`-JSON) reviewed and upheld.
+- **Status:** Fixed on branch.
+
+### BUG-0019 — Inventory dump read the count-only dealer endpoint → captured nothing; pipeline removed
+- **Date:** 2026-06-21  **Severity:** Med (latent)  **Found by:** audit loop (Pass 7) + owner decision
+- **Area:** `lib/inventoryDump.ts`, `cron/dump-inventory`, the `inventory` table
+- **Symptom:** the dump mirrored 0 cars per dealer (and the table was read by nothing anyway).
+- **Root cause:** the dump paged `/search/car/active?dealer_id=` — which returns a `num_found` COUNT but NO `listings` under our entitlement (same truth as BUG-0002) — AND asked for `rows=100` (→ default 10). So it spent quota and stored nothing; the destructive sweep was correctly blocked (deduped=0 fails the coverage guard), so no wrongful deletion ever occurred.
+- **Pattern (P2 + P7):** count ≠ availability (wrong endpoint for the data shape) + producer with no consumer.
+- **Resolution:** **owner decided to DELETE the pipeline** (reverses the earlier "keep for auto-desking" note in BUG-0008/P7). Removed `lib/inventoryDump.ts`, `cron/dump-inventory/route.ts`, the stale on-select dump comments, and dropped the unused `inventory` table (migration). Commit: fleetfinder-v2 (see merge).
+- **Evidence:** live: `/search/car/active?dealer_id=1018518` → `num_found 616, listings 0`; `/dealerships/inventory?dealer_id=1018518` → `616` with listings. Confirms the dump could never have captured data.
+- **Status:** Resolved by removal (verify build + no remaining references on merge).
+
+<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0020. Never edit/delete above. -->

@@ -215,7 +215,7 @@ export async function GET(req: Request) {
 
   // Wall-clock budget so the run finishes within maxDuration (60s) instead of
   // being hard-killed mid-state (which wastes the fetched pages and stalls the
-  // cursor). Mirrors the dump-inventory cron.
+  // cursor).
   const startedAt = Date.now();
   const BUDGET_MS = 45_000;
 

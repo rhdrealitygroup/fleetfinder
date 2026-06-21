@@ -60,15 +60,11 @@ export async function POST(req: Request) {
       { dealer_id: id, name: d.name || null, city: d.city || null, state: d.state || null },
       { onConflict: "dealer_id", ignoreDuplicates: true },
     );
-  } catch { /* cron's syncTrackedDealers will register it */ }
-  // COST-STOP: the immediate on-select inventory dump is PAUSED, matching the
-  // paused dump-inventory cron. dumpDealerListings pages /search/car/active with
-  // dealer_id, which returns a COUNT but no listings under our entitlement — so it
-  // spent MarketCheck quota writing nothing into the (currently unread) `inventory`
-  // table. The dealer is still registered in tracked_dealers above, so when
-  // auto-desking ships you can restore this by re-enabling the dump via `after()`
-  // AND routing it through /dealerships/inventory (the endpoint that actually
-  // returns per-dealer listings). See lib/inventoryDump.ts.
+  } catch { /* best-effort registration; dealer-scoped search reads dealer_ids directly */ }
+  // No inventory dump here: dealer-scoped search reads live from
+  // /dealerships/inventory on demand, so there is no per-dealer mirror to maintain.
+  // (The old dump pipeline paged /search/car/active?dealer_id=, which returns a
+  // count but no listings, and was removed — see BUG-0019.)
   return NextResponse.json({ ok: true });
 }
 
