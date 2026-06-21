@@ -159,6 +159,22 @@ The super-admin companies table re-synced `comped` from refreshed props after a 
 ### UI REVIEWED-OK (guards verified)
 diagnose out-of-order race (`diagSeq`); every picker load — list-models/trims/colors/interior-colors/features + DetailPanel VIN-decode — guarded by per-effect `cancelled` cleanup; dealers catalog (`loadSeq`); `useOrgDealers` GET-vs-mutation (`mutSeq`); `TeamManager` + `CompanyForm` correctly re-sync `useState` from props after refresh (CompanyForm adds a `dirty` guard); search error/empty/loading metadata fully reset on failure; value-flow card/form→params→`useSearchParams` re-key correct; control resets on make/model/trim/car-type change are complete; `BillingActions` overwrites banner from the authoritative cancel response (never tells a charged subscriber "you won't be charged").
 
+---
+
+## PASS 7 (new sweep, 2026-06-21)
+
+### F1. Feature chips sent values MarketCheck doesn't index → silent zero — FIX-ON-BRANCH (both repos)
+**Area:** `/api/live-search` `high_value_features` filter; `FEATURE_GROUPS` (`src/lib/inventory.ts` + FleetFinder `src/lib/inventory.js`).
+**Root cause:** the prior sweep verified the `high_value_features` *mechanism* (exact match, comma=AND) but never checked that the UI chip `value`s exist in the facet vocabulary. Most did not — so selecting a common feature (Sunroof, Navigation, Backup Camera, Blind Spot, …) zeroed the search even with millions in stock. Same contract-mismatch class as AWD/Truck/Van, on the feature filter.
+**Evidence (live `/search/car/active`, `car_type=new`, `rows=0`):**
+`sunroof`→**0** vs `sun/moonroof`→1,482,013 · `navigation system`→**0** vs `navigation`→2,140,715 · `backup camera`→**0** vs `rear parking device`→3,167,881 · `blind spot monitor`→**0** vs `blind spot system`→2,788,138 · `wireless charging`→**0** vs `wireless charging/connection`→1,983,848 · `heads-up display`→**0** vs `head-up display`→556,954 · `wifi hotspot`→**0** vs `wifi network`→2,635,673 · `panoramic sunroof`→**0** vs `panoramic sun/moonroof`→972,075 · `cooled seats`→**0** vs `heated/cooled seats`→924,681 · `surround view camera`→**0** vs `360 view parking device`→1,226,363 · `automatic emergency braking`→**0** vs `anti collision system`→3,147,579 · `parking sensors`→**0** vs `parking distance system`→3,186,628 · `keyless entry`→**0** vs `smart card / smart key`→3,183,590 · `push button start`/`remote start`→**0** vs `keyless start/remote engine start`→3,133,110 · `power liftgate`→**0** vs `power closing liftgate`→1,644,696 · `tow package`→**0** vs `trailer assist`→1,789,268 · `third row seating`→**0** vs `3rd row seats`→650,571.
+Already-correct (kept): apple carplay, android auto, premium speakers, heated seats, leather seats, memory seats, adaptive cruise control, lane keep assist.
+No facet equivalent at all (each →0 live; **removed** from the picker): heated steering wheel, ambient interior lighting, roof rails, running boards.
+**Fix:** rewrote `FEATURE_GROUPS` with verified facet strings; removed the 4 unfilterable chips + redundant "Wireless CarPlay" (indistinguishable from "apple carplay"); merged Push-Button/Remote Start (same facet). None of the corrected values contain a comma, so the AND-join is unambiguous.
+**Verification:** every corrected value returns 6-figure+ live inventory (above); both repos `npm run build` clean. E2E on www.lotcompass.com pending merge/deploy.
+
+---
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.

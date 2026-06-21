@@ -45,48 +45,49 @@ export const PRICE_RANGES = [
   { label: "Over $100k", min: 100000, max: "" },
 ];
 
-// High-value feature picker — same groups as Base44.
+// High-value feature picker. Each `value` is sent verbatim as MarketCheck's
+// `high_value_features` filter, so it MUST be a real facet string from that
+// vocabulary — a label MarketCheck doesn't index (e.g. "sunroof" instead of
+// "sun/moonroof", "navigation system" instead of "navigation") matches NOTHING
+// and the search returns 0 even when millions of cars qualify. Values below are
+// verified live against the high_value_features facet. Features with no facet
+// equivalent at all (heated steering wheel, ambient lighting, roof rails,
+// running boards) are intentionally omitted — MarketCheck cannot filter them.
 export const FEATURE_GROUPS = [
   { title: "Tech & connectivity", items: [
     { label: "Apple CarPlay", value: "apple carplay" },
-    { label: "Wireless CarPlay", value: "wireless apple carplay" },
     { label: "Android Auto", value: "android auto" },
-    { label: "Navigation", value: "navigation system" },
-    { label: "Wireless Charging", value: "wireless charging" },
-    { label: "Heads-Up Display", value: "heads-up display" },
+    { label: "Navigation", value: "navigation" },
+    { label: "Wireless Charging", value: "wireless charging/connection" },
+    { label: "Heads-Up Display", value: "head-up display" },
     { label: "Premium Audio", value: "premium speakers" },
-    { label: "Wi-Fi Hotspot", value: "wifi hotspot" },
+    { label: "Wi-Fi Hotspot", value: "wifi network" },
   ]},
   { title: "Comfort & interior", items: [
     { label: "Heated Seats", value: "heated seats" },
-    { label: "Cooled Seats", value: "cooled seats" },
-    { label: "Heated Steering Wheel", value: "heated steering wheel" },
+    { label: "Cooled Seats", value: "heated/cooled seats" },
     { label: "Leather Seats", value: "leather seats" },
-    { label: "Sunroof", value: "sunroof" },
-    { label: "Panoramic Sunroof", value: "panoramic sunroof" },
+    { label: "Sunroof", value: "sun/moonroof" },
+    { label: "Panoramic Sunroof", value: "panoramic sun/moonroof" },
     { label: "Memory Seats", value: "memory seats" },
-    { label: "Ambient Lighting", value: "ambient interior lighting" },
   ]},
   { title: "Safety & driver assist", items: [
-    { label: "Backup Camera", value: "backup camera" },
+    { label: "Backup Camera", value: "rear parking device" },
     { label: "Adaptive Cruise", value: "adaptive cruise control" },
-    { label: "Blind Spot Monitor", value: "blind spot monitor" },
+    { label: "Blind Spot Monitor", value: "blind spot system" },
     { label: "Lane Keep Assist", value: "lane keep assist" },
-    { label: "360° Camera", value: "surround view camera" },
-    { label: "Auto Emergency Braking", value: "automatic emergency braking" },
-    { label: "Parking Sensors", value: "parking sensors" },
+    { label: "360° Camera", value: "360 view parking device" },
+    { label: "Auto Emergency Braking", value: "anti collision system" },
+    { label: "Parking Sensors", value: "parking distance system" },
   ]},
   { title: "Convenience", items: [
-    { label: "Keyless Entry", value: "keyless entry" },
-    { label: "Push-Button Start", value: "push button start" },
-    { label: "Remote Start", value: "remote start" },
-    { label: "Power Liftgate", value: "power liftgate" },
+    { label: "Keyless Entry", value: "smart card / smart key" },
+    { label: "Push-Button / Remote Start", value: "keyless start/remote engine start" },
+    { label: "Power Liftgate", value: "power closing liftgate" },
   ]},
   { title: "Utility", items: [
-    { label: "Tow Package", value: "tow package" },
-    { label: "3rd-Row Seating", value: "third row seating" },
-    { label: "Roof Rails", value: "roof rails" },
-    { label: "Running Boards", value: "running boards" },
+    { label: "Tow Package", value: "trailer assist" },
+    { label: "3rd-Row Seating", value: "3rd row seats" },
   ]},
 ];
 
