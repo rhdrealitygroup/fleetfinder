@@ -10,6 +10,7 @@ import {
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -86,6 +87,33 @@ export async function POST(req: Request) {
   const zip = String(body.zip || "").trim();
   const radius = Math.min(500, Number(body.radius) || RADIUS_MILES);
 
+  // Dealer scoping: MarketCheck's `dealer_id` filter on the standard search
+  // returns a COUNT but NO listings unless the (separately-priced) Dealer
+  // Inventory API is entitled — which is why dealer-scoped searches came back
+  // empty. The reliable filter on the standard endpoint is `source` (the
+  // dealer's website domain), same as the inventory deep-pull. Resolve the
+  // selected dealer IDs to their domains here.
+  let dealerSources: string[] = [];
+  const dealerScoped = Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0;
+  if (marketKey && dealerScoped) {
+    try {
+      const db = createServiceRoleClient();
+      const { data } = await db.from("dealer_catalog").select("website")
+        .in("id", body.dealer_ids.map(String).slice(0, 400));
+      dealerSources = [...new Set((data || [])
+        .map((d: { website?: string }) => String(d.website || "")
+          .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").trim().toLowerCase())
+        .filter(Boolean))];
+    } catch { /* fall through; the empty-guard below prevents an unscoped search */ }
+  }
+  // Guard: a dealer-scoped search whose dealers resolved to NO domains must
+  // return nothing — never silently fall back to an unscoped (all-inventory)
+  // search.
+  if (dealerScoped && !dealerSources.length) {
+    return NextResponse.json({ results: [], total: 0, provider: "marketcheck", truncated: false,
+      note: " (selected dealers have no resolvable inventory source)", cached: false, query: summarize(body) });
+  }
+
   // ── Cache check (1h) ────────────────────────────────────────────────────
   const ckey = cacheKeyFor(body);
   if (!body.fresh) {
@@ -142,7 +170,9 @@ export async function POST(req: Request) {
       // Sort BEFORE slicing so the searched first-200 subset matches the
       // (sorted) cache key — otherwise an org with >200 dealers could be served a
       // cached result computed from a different 200-dealer subset.
-      if (Array.isArray(body.dealer_ids) && body.dealer_ids.length) url.searchParams.set("dealer_id", [...body.dealer_ids].map(String).sort().slice(0, 200).join(","));
+      // Filter by dealer website domain (the reliable per-dealer filter); the
+      // MarketCheck `source` OR-list is capped at 200.
+      if (dealerSources.length) url.searchParams.set("source", [...dealerSources].sort().slice(0, 200).join(","));
       url.searchParams.set("rows", String(PAGE_SIZE));
       url.searchParams.set("start", String(page * PAGE_SIZE));
       let res: Response;
@@ -387,8 +417,8 @@ export async function POST(req: Request) {
   const truncated = !narrowed && (total || 0) > results.length;
   // MarketCheck's dealer_id OR-list is capped at 200, so an org with more selected
   // dealers only searches the first 200 — say so instead of silently under-reporting.
-  if (provider === "marketcheck" && Array.isArray(body.dealer_ids) && body.dealer_ids.length > 200) {
-    note += ` (searching 200 of ${body.dealer_ids.length} selected dealers — narrow your dealer list for full coverage)`;
+  if (provider === "marketcheck" && dealerSources.length > 200) {
+    note += ` (searching 200 of ${dealerSources.length} selected dealers — narrow your dealer list for full coverage)`;
   }
   const payload = { results, total: narrowed ? results.length : (total || results.length), provider, truncated, note: note || undefined };
   // Never persist a rate-limited/partial response — it would pin an empty result.
