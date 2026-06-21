@@ -136,6 +136,17 @@ proxy/middleware rotates auth cookies onto every redirect (no silent-logout), re
 
 ### Lease REVIEWED-OK: card formula, residual-on-MSRP (not selling price), rent base, MF×2400 APR, all 3 tax methods applied to the right base, profit/`mfReserve`, `dueAtSigning`, finance amortization (with r=0 fallback), single end rounding.
 
+## UI STATE / VALUE-FLOW (Pass 3)
+
+### U1. `CompaniesTable` price map not re-synced from props — FIX-ON-BRANCH (low)
+The super-admin companies table re-synced `comped` from refreshed props after a toggle/delete `router.refresh()` but NOT `price` — the one instance of the documented `router.refresh()`/`useState` invariant being incompletely applied. Symptom (super-admin only): an unsaved price edit lingered, and a price changed in another tab didn't appear after refresh. **Fixed:** added a parallel `price` re-sync effect keyed on `orgs`, guarded by the in-flight `savingPrice` row (mirrors the `comped` pattern). Low blast radius (platform-owner page).
+
+### U2. Optimistic delete/save lacks a seq guard — DOCUMENTED (low/acceptable)
+`customers#del` + `useSavedVehicles` save/remove optimistically mutate then reload only on failure; a rapid delete during a slow in-flight reload could momentarily resurrect a row. No `router.refresh()`, local-only, likely never manifests. Adopt the `mutSeq` ref pattern (already used in `useOrgDealers`) only if it ever surfaces.
+
+### UI REVIEWED-OK (guards verified)
+diagnose out-of-order race (`diagSeq`); every picker load — list-models/trims/colors/interior-colors/features + DetailPanel VIN-decode — guarded by per-effect `cancelled` cleanup; dealers catalog (`loadSeq`); `useOrgDealers` GET-vs-mutation (`mutSeq`); `TeamManager` + `CompanyForm` correctly re-sync `useState` from props after refresh (CompanyForm adds a `dirty` guard); search error/empty/loading metadata fully reset on failure; value-flow card/form→params→`useSearchParams` re-key correct; control resets on make/model/trim/car-type change are complete; `BillingActions` overwrites banner from the authoritative cancel response (never tells a charged subscriber "you won't be charged").
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.

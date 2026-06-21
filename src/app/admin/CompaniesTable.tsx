@@ -44,6 +44,16 @@ export function CompaniesTable({ orgs, membersByOrg }: { orgs: Org[]; membersByO
     setComped((cur) => Object.fromEntries(orgs.map((o) => [o.id, compSavingIds.has(o.id) ? cur[o.id] : !!o.comped])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgs]);
+  // Same for the price map: after another row's toggle/delete fires router.refresh(),
+  // re-sync each price input from the authoritative props — but keep the edited text
+  // for the row whose save is still in flight (savingPrice), so an active save isn't
+  // reverted. Without this, an unsaved edit lingered and a price changed elsewhere
+  // (e.g. another tab) never appeared after refresh. Keyed on `orgs` only.
+  useEffect(() => {
+    setPrice((cur) => Object.fromEntries(orgs.map((o) =>
+      [o.id, savingPrice === o.id ? cur[o.id] : (o.monthly_price_override != null ? String(o.monthly_price_override) : "")])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgs]);
 
   // Grant/revoke complimentary free access (bypasses Stripe; normal app, no admin).
   async function toggleComp(id: string) {
