@@ -51,7 +51,7 @@ export async function GET(req: Request) {
   // we only re-decode when a model's stored options are missing or >30 days old.
   // trims/colors keep refreshing nightly (cheap facets).
   const { data: optRows } = await db.from("vehicle_catalog").select("make,model,updated_at").eq("kind", "options");
-  const OPTIONS_TTL_MS = 30 * 24 * 3600_000;
+  const OPTIONS_TTL_MS = 7 * 24 * 3600_000; // re-decode a model's options at most once a week
   const optionsFresh = new Map((optRows || []).map((r: { make: string; model: string; updated_at: string }) =>
     [`${r.make}::${r.model}`.toLowerCase(), Date.now() - +new Date(r.updated_at) < OPTIONS_TTL_MS]));
   // Pending tonight = never-snapshotted OR not yet refreshed in this cycle.
