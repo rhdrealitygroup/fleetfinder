@@ -578,7 +578,11 @@ export type UnifiedVehicle = {
 
 export function estMonthlyCard(price: number, msrp: number) {
   const residual = (msrp * 58) / 100;
-  return Math.round((price - residual) / 36 + (price + residual) * 0.0015);
+  // Clamp depreciation at 0: a selling price below the residual (a >42%-off new
+  // car) would otherwise yield a NEGATIVE estimate that sorts as "cheapest" and
+  // shows "-$30/mo". A lease payment floors at the rent charge.
+  const depreciation = Math.max(0, (price - residual) / 36);
+  return Math.round(depreciation + (price + residual) * 0.0015);
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

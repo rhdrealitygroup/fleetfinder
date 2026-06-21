@@ -36,6 +36,7 @@ live-search + diagnose forward `body.powertrain_type` verbatim, but no UI sends 
 - Scope: **interior_color only** — exterior_color facet has no comma-bearing values (verified). 
 - **Encoding ruled out (live):** `interior_color="Black, Ebony"` URL-encoded → 896,276 = identical to plain `"Black"`. MarketCheck decodes `%2C` then splits, so escaping can't save it. The only correct remedy is to drop comma-bearing values.
 - **Fix shipped (both repos):** drop any raw facet value containing a comma in the color/interior bucket loops — don't count it, don't offer it — so the picker only shows interiors/colors that filter correctly and whose displayed count matches the filtered result. Applied to all loops: LotCompass `list-interior-colors`, `list-colors` (defensive), `marketcheck.ts#cleanColorFacet` (catalog path — the stored catalog had the same raw variants); FleetFinder `list_interior_colors`, `list_colors`. Tradeoff: the few compound-interior listings (e.g. "Jet Black, Cloth Seat Trim") are no longer pickable by interior — but they were never correctly filterable. You can change the remedy before merge.
+- **GM nuance (Pass 2, verified live):** Chevrolet has 125/300 comma interior values covering **257k of 286k** listings (GM labels interiors "BaseColor, Material Seat Trim"). This looked alarming, but those compound values were NEVER correctly filterable — `interior_color="Jet Black, Cloth Seat Trim"` already split to exact `"Jet Black"`=8,149 — and the base colors (Jet Black/Black/Gray) survive comma-free. So the fix cleans a cluttered picker and makes counts honest **without losing real coverage**. GM interiors remain inherently under-filterable by interior color — a MarketCheck data-labeling limitation, not fixable via the API (would need client-side post-filtering).
 
 ### S5. Confirmed working (REVIEWED-OK): `interior_color` filter (BMW 85,971→20,339 for Black), `exterior_color` comma-OR (Black,Alpine White=11,654), `car_type=used` (BMW=94,514), year/price/miles ranges, `resolveModel` alias table.
 
@@ -120,6 +121,20 @@ proxy/middleware rotates auth cookies onto every redirect (no silent-logout), re
 - Caveat: RLS verified from migration files (ledger 0001–0031), not live `pg_policies`; app-layer `.eq` scoping holds regardless.
 
 ### C3. verify-catalog header comment — FIXED (doc-only) on branch.
+
+## CALCULATOR / LEASE MATH (Pass 2)
+
+### L1. Negative monthly payment possible — FIX-ON-BRANCH
+`computeLease` depreciation `(adjCap - residual$)/term` and `estMonthlyCard` `(price-residual)/36` go negative when the residual exceeds the cap — a >42%-off new car (card shows "-$30/mo" AND sorts as "cheapest" via `monthly_asc`), or an over-large down payment in the calculator ("-$328/mo"). **Fixed:** clamp depreciation at 0 (a lease floors at the rent charge) in LotCompass `lease.ts#computeLease` + `marketcheck.ts#estMonthlyCard`, and FleetFinder `lease.js#computeLease` (covers calculator + card). Normal-case output unchanged.
+
+### L2. Used-car `max_monthly` estimate uses a fabricated residual — DOCUMENTED (intentional)
+`live-search` max_monthly fallback calls `estMonthlyCard(price, msrp||price)`; for used cars with no real MSRP, residual becomes 58% of the *selling price* (the code's own comment calls this "garbage" for the card display, but the filter re-introduces it). This was a DELIBERATE tradeoff (so "Used + under $X/mo" returns inventory instead of dropping every used car). Correct used-lease math needs lender programs (the planned auto-desking feature). **Not changed unilaterally — your call:** exclude used from the $/mo filter, or keep the approximation.
+
+### L3. `lease.ts#estMonthly` is dead code — LOW. Exported but never imported (cards use `estMonthlyCard`). Drift risk; safe to delete. Left in place.
+
+### L4. Calculator has no card→prefill — UX NOTE. Standalone with hardcoded defaults; brokers retype vehicle numbers. Not a bug.
+
+### Lease REVIEWED-OK: card formula, residual-on-MSRP (not selling price), rent base, MF×2400 APR, all 3 tax methods applied to the right base, profit/`mfReserve`, `dueAtSigning`, finance amortization (with r=0 fallback), single end rounding.
 
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).

@@ -59,7 +59,10 @@ export function computeLease(input: LeaseInput): LeaseResult {
   const grossCap = sellingPrice + priceMarkup + acqFee + flatFee;
   const capReduction = cashDown + rebates;
   const adjCap = grossCap - capReduction;
-  const depreciation = term ? (adjCap - residual$) / term : 0;
+  // Clamp at 0: if the residual exceeds the adjusted cap (unrealistic discount, or
+  // an over-large down payment), depreciation would go negative and produce a
+  // nonsensical negative monthly. A real lease floors at the rent charge.
+  const depreciation = term ? Math.max(0, (adjCap - residual$) / term) : 0;
   const rentCharge = (adjCap + residual$) * sellMF;
   const baseMonthly = depreciation + rentCharge;
 
