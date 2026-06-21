@@ -71,6 +71,12 @@ Minor. The unused `inventory_*` indexes align with the "inventory table read by 
 
 ---
 
+## BILLING / AUTH
+
+### B1. `requireActivePlan` gate — REVIEWED-OK
+Matches CLAUDE.md invariants: signed-out→401; super-admin→allow; org-less user is provisioned a trial org, and if provisioning FAILS it returns 503 (transient) rather than failing open to free metered access (correct fail-closed on the cost-leak path); org read uses service-role **after** `auth.getUser()`; card-gated trial (`billingOn && !hasCard` → 402) closes the direct-API bypass; `incomplete` gets grace; catch → fail-open (transient only). 
+- Micro-note (very low): line 108 `if (!org) → ok:true`. With the service-role client `!org` means the org row genuinely doesn't exist (not an RLS blip), so an orphaned membership pointing at a deleted org would get free access. Orgs aren't deleted in normal flow, so this is theoretical. Could tighten to fail-closed on definitive 0-rows. Not acting without confirmation.
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.
