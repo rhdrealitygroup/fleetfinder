@@ -144,16 +144,18 @@
 - **Area:** feature picker (`FEATURE_GROUPS`) → `high_value_features`
 - **Root cause:** feature `value`s were UI labels (e.g. "sunroof", "navigation system") not real facet strings ("sun/moonroof", "navigation") → 0 results.
 - **Pattern (P1):** provider-value vocabulary mismatch (high_value_features facet).
-- **Fix:** map every feature chip to a verified live facet value; omit features MarketCheck can't filter. Commit: fleetfinder-v2 `38e176c` (verify on merge).
-- **Status:** Fixed (per audit loop). Another instance of P1 — confirms the pattern is broad.
+- **Fix:** map every feature chip to a verified live facet value; omit features MarketCheck can't filter. Commits: fleetfinder-v2 `38e176c`, fleetfinder `8de45f0`.
+- **Evidence (live on www.lotcompass.com after deploy):** `features:["sun/moonroof"]` → **106,163** results; the old `features:["sunroof"]` → **0** (bug reproduced + fix proven on the deployed app). Live facet probe: `sun/moonroof`→1,482,013 vs `sunroof`→0.
+- **Status:** Fixed & verified live (merged to main, deployed). Another instance of P1 — confirms the pattern is broad.
 
 ### BUG-0014 — Trim filter didn't round-trip (F2)
 - **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit loop (in-flight)
 - **Area:** `list-trims` / trim filter
 - **Root cause:** the trim string wasn't sent to MarketCheck in the raw form that round-trips through its trim filter.
 - **Pattern (P1/P11):** provider value/identifier mismatch (trim strings).
-- **Fix:** send the raw MarketCheck trim string. Commit: fleetfinder-v2 `35352fd` (verify on merge).
-- **Status:** Fixed (per audit loop).
+- **Fix:** send the raw MarketCheck trim string (what the catalog path already did). Commits: fleetfinder-v2 `35352fd`, fleetfinder `f367afc`.
+- **Evidence (live on www.lotcompass.com after deploy):** Mercedes-Benz GLE `trim:"GLE350"` → **11,803** results (was unfilterable as the space-inserted "GLE 350"). Live facet probe: `trim=GLE350`→40 vs `trim=GLE 350`→0 (space-sensitive).
+- **Status:** Fixed & verified live (merged to main, deployed).
 
 ### BUG-0015 — Catalog stored raw factory-code color/version junk
 - **Date:** 2026-06-20  **Severity:** Med  **Found by:** agent
@@ -178,8 +180,8 @@
 - **Root cause:** the sampler used `ROWS=100`. MarketCheck's `/search/car/active` silently ignores a `rows` above 50 and returns its DEFAULT of 10; the loop then broke (`10 < 100`), so only 10 cars per model were sampled instead of the intended 150 (`PAGES=3 × 100`).
 - **Pattern (P3):** same class as BUG-0001 — an out-of-range param is silently replaced by a default. Hunt EVERY `rows`/`limit` > 50 against `/search/car/active`.
 - **Fix:** `ROWS=50` (the real per-page max) → 3×50 = 150 samples, offset within the 1500 cap. Commit: fleetfinder-v2 `a25e942` (LotCompass only — FleetFinder has no nightly catalog system). Re-verify after merge/deploy.
-- **Evidence:** live: `rows=10`→10 listings, `rows=50`→50, `rows=100`→**10** (Toyota RAV4, `/search/car/active`).
-- **Status:** Fixed on branch; verify live after deploy.
+- **Evidence:** live: `rows=10`→10 listings, `rows=50`→50, `rows=100`→**10** (Toyota RAV4, `/search/car/active`) — confirms >50 silently defaults to 10. Commit `a25e942` deployed; the per-trim color lists repopulate with the fuller 150-car sample on the next nightly `refresh-catalog` run.
+- **Status:** Fixed — merged to main, deployed.
 
 ### BUG-0018 — Stripe webhook seat true-up had no idempotency key
 - **Date:** 2026-06-21  **Severity:** Low  **Found by:** audit (independent billing/auth review)
@@ -188,8 +190,8 @@
 - **Root cause:** the two `stripe.subscriptions.update(...)` true-up calls carried no `idempotencyKey`. They are idempotent-by-value (absolute quantity, `proration_behavior:"none"`, guarded by `desired !== currentQty`), so no double-billing was possible — but a redelivered `subscription.updated` event could fire a redundant update, violating the app's "every sub mutation uses an idempotency key" rule.
 - **Pattern:** money-path idempotency invariant; any Stripe write must carry a stable key so retries are no-ops.
 - **Fix:** added `idempotencyKey: seat-trueup-${sub.id}-${desired}` to both calls. Commit: fleetfinder-v2 `a25e942` (LotCompass only — FleetFinder billing is a separate Base44 `manage_billing`).
-- **Evidence:** code review + invariant; quantity is absolute so no over-billing was ever possible. Rest of billing/auth (checkout/cancel/referrals/gate/RLS/`/api`-JSON) reviewed and upheld.
-- **Status:** Fixed on branch.
+- **Evidence:** code review + invariant; quantity is absolute so no over-billing was ever possible. Rest of billing/auth (checkout/cancel/referrals/gate/RLS/`/api`-JSON) reviewed and upheld. Commit `a25e942` deployed.
+- **Status:** Fixed — merged to main, deployed.
 
 ### BUG-0019 — Inventory dump read the count-only dealer endpoint → captured nothing; pipeline removed
 - **Date:** 2026-06-21  **Severity:** Med (latent)  **Found by:** audit loop (Pass 7) + owner decision
@@ -198,7 +200,7 @@
 - **Root cause:** the dump paged `/search/car/active?dealer_id=` — which returns a `num_found` COUNT but NO `listings` under our entitlement (same truth as BUG-0002) — AND asked for `rows=100` (→ default 10). So it spent quota and stored nothing; the destructive sweep was correctly blocked (deduped=0 fails the coverage guard), so no wrongful deletion ever occurred.
 - **Pattern (P2 + P7):** count ≠ availability (wrong endpoint for the data shape) + producer with no consumer.
 - **Resolution:** **owner decided to DELETE the pipeline** (reverses the earlier "keep for auto-desking" note in BUG-0008/P7). Removed `lib/inventoryDump.ts`, `cron/dump-inventory/route.ts`, the stale on-select dump comments, and dropped the unused `inventory` table (migration). Commit: fleetfinder-v2 (see merge).
-- **Evidence:** live: `/search/car/active?dealer_id=1018518` → `num_found 616, listings 0`; `/dealerships/inventory?dealer_id=1018518` → `616` with listings. Confirms the dump could never have captured data.
-- **Status:** Resolved by removal (verify build + no remaining references on merge).
+- **Evidence:** live MarketCheck: `/search/car/active?dealer_id=1018518` → `num_found 616, listings 0`; `/dealerships/inventory?dealer_id=1018518` → `616` with listings (confirms the dump could never have captured data). Post-deploy: `GET https://www.lotcompass.com/api/cron/dump-inventory` → **404** (route gone); `to_regclass('public.inventory')` → **null** (table dropped, migration 0032); `get_advisors(security)` shows no new issue.
+- **Status:** Resolved by removal — merged to main, deployed & verified live.
 
 <!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0020. Never edit/delete above. -->
