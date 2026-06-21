@@ -181,6 +181,33 @@ No facet equivalent at all (each →0 live; **removed** from the picker): heated
 **Fix:** the live path now uses the **raw** facet string as the trim name (dedup by `canonicalTrimKey`, shortest raw = representative), matching the catalog path. Provably round-trips (it's MarketCheck's own string) and repairs version→trim matching. Removed now-unused `prettyTrim`/`titleCase` imports. Mirrored to FleetFinder `list_trims` (no catalog path there). `prettyTrim` is unchanged for result-card display (cosmetic, never round-tripped).
 **Verification:** both repos build clean; live contract proven above. E2E pending merge/deploy.
 
+### F4. Catalog snapshot sampled 10 listings instead of 150 (rows=100 → API default 10) — FIX-ON-BRANCH (LotCompass only)
+**Area:** `src/lib/catalogSnapshot.ts` (run nightly by `refresh-catalog`; feeds the trims/colors pickers).
+**Root cause:** the trim→color sampler used `ROWS=100`. MarketCheck's `/search/car/active` silently **ignores** a `rows` above 50 and returns its DEFAULT of **10** (verified live: rows=10→10, rows=50→50, rows=100→**10**). So page 0 returned 10, then `listings.length < ROWS` (10<100) broke the loop — the per-trim exterior/interior color associations (`colorsByTrim`) were built from 10 cars per model instead of the intended ~300.
+**Fix:** `ROWS=50` (the real per-page max) → 3×50 = 150 samples, with the offset staying inside the 1500 cap. Build clean.
+**Status:** FIXED on branch (LotCompass only — FleetFinder has no nightly catalog system).
+
+### F3. Inventory dump reads the count-only endpoint → captures 0 listings — CONFIRMED, NEEDS USER DECISION (not fixed)
+**Area:** `src/lib/inventoryDump.ts` (the `inventory` mirror table; `dump-inventory` cron).
+**Root cause:** the dump pages `/search/car/active?dealer_id=...`, but under our entitlement that endpoint returns a **count with NO listings** for a dealer filter (the same D1 truth). Verified live: `/search/car/active?dealer_id=1018518` → `num_found=616, listings=0`, whereas `/dealerships/inventory?dealer_id=1018518` → `616` with listings. It also uses `rows=100` (→ default 10). Net: the dump mirrors nothing; the destructive sweep is correctly blocked (deduped=0 fails the coverage guard), so **no wrongful deletion** — it's simply non-functional.
+**Why NOT auto-fixed:** (1) the `dump-inventory` cron is currently **paused** ("until auto-desking ships") and the `inventory` table is **read by nothing**, so there is no live impact today; (2) the correct endpoint `/dealerships/inventory` is metered at **$1/call**, so running it nightly across every tracked dealer is a real cost decision, not a silent swap. The mission itself flags this as "decide with the user whether to retire it or wire a reader." **Recommendation for the user:** when auto-desking work begins, either (a) retire `inventoryDump` and rebuild on `/dealerships/inventory` with an explicit per-dealer refresh budget, or (b) switch the endpoint + set `MC_PAGE=50, MC_MAX_START=1450` and accept the $1/dealer/run cost. Left untouched pending that call.
+
+### B3. Webhook seat true-up lacked an idempotency key — FIX-ON-BRANCH (LotCompass only)
+**Area:** `src/app/api/stripe/webhook/route.ts` (trial→active seat reconciliation).
+**Root cause:** the two `stripe.subscriptions.update(...)` true-up calls had no idempotency key. They are already idempotent-by-value (quantity is absolute, `proration_behavior:"none"`, guarded by `desired !== currentQty`), so the billed amount was always correct — but a redelivered `subscription.updated` event could fire a redundant update, technically violating the "every sub mutation uses an idempotency key" invariant.
+**Fix:** added `idempotencyKey: seat-trueup-${sub.id}-${desired}` to both calls so a retry is a true no-op. Independent billing/auth review otherwise found all money-path / webhook-ordering / gate-fail-open / RLS / `/api`-JSON invariants upheld.
+**Status:** FIXED on branch (LotCompass billing is Stripe-on-Next; FleetFinder uses a separate Base44 `manage_billing` — not affected).
+
+---
+
+## PASS 7 — areas reviewed clean this pass (no defect)
+- **Model picker** (`list-models`): NEW = static catalog (normalized by `resolveModel`); USED-derived models also pass through `resolveModel`, which returns the real facet string regardless of casing → round-trips. OK.
+- **Color/interior pickers**: search sends raw `variants` (comma-OR), not display names; comma-bearing interior variants dropped (S4). Live OR confirmed. OK.
+- **Dealer-scoped search** (`/dealerships/inventory`): re-verified live (dealer 1018518 → 616, listings returned). D1 holds.
+- **Dealers catalog picker**: inclusive make filter + injection-sanitized `.or()`; static-file fallback fail-safe. OK.
+- **sync-dealers / dump GC / catalog crons**: offset math within 1500 cap, destructive sweeps fail-closed with coverage guards, baseline not poisoned by suspect-low counts, locks have a 3-min TTL + finally release, self-chaining crons terminate (independent cron review). OK.
+- **Billing/auth/multi-tenancy**: idempotency, webhook ordering/atomic-claim, gate fail-open-on-transient / closed-on-canceled, service-role-after-auth, `/api` JSON-not-redirect — all upheld (independent review).
+
 ---
 
 ## TODO (areas not yet swept this pass)

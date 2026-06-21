@@ -61,7 +61,11 @@ export async function snapshotModel(make: string, model: string, deadline = 0, s
   // can't give the joint trim×color distribution, so we tally it from listings.
   const byTrim = new Map<string, { ext: Map<string, number>; int: Map<string, number> }>();
   const sampleVins: string[] = [];
-  const PAGES = 3, ROWS = 100;
+  // ROWS must be <= 50: MarketCheck's /search/car/active silently ignores a rows
+  // value above 50 and returns its DEFAULT of 10, so ROWS=100 collected only 10
+  // listings on page 0 and then broke (10 < 100) — the trim->color tally was built
+  // from 10 cars per model instead of the intended 150. 50 is the real per-page max.
+  const PAGES = 3, ROWS = 50;
   for (let page = 0; page < PAGES; page++) {
     if (deadline && Date.now() > deadline) break;
     const lRes = await fetchWithTimeout(base({ rows: ROWS, start: page * ROWS, fields: "vin,build.trim,exterior_color,interior_color" }).toString()).catch(() => null);

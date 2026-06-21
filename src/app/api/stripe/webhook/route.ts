@@ -150,10 +150,15 @@ export async function POST(req: Request) {
           const seatItem = sub.items.data.find((i: any) => i.price?.id === process.env.STRIPE_PRICE_SEAT);
           const currentQty = seatItem?.quantity || 0;
           if (desired !== currentQty) {
+            // Idempotency key so a redelivered subscription.updated event (Stripe
+            // retries on any non-2xx) can't fire a second true-up: the quantity is
+            // already absolute (idempotent-by-value), and the key makes the retry a
+            // true no-op per the money-path invariant.
+            const idem = { idempotencyKey: `seat-trueup-${sub.id}-${desired}` };
             if (seatItem) {
-              await stripe.subscriptions.update(sub.id, { items: [{ id: seatItem.id, quantity: desired }], proration_behavior: "none" });
+              await stripe.subscriptions.update(sub.id, { items: [{ id: seatItem.id, quantity: desired }], proration_behavior: "none" }, idem);
             } else if (desired > 0) {
-              await stripe.subscriptions.update(sub.id, { items: [{ price: process.env.STRIPE_PRICE_SEAT, quantity: desired }], proration_behavior: "none" });
+              await stripe.subscriptions.update(sub.id, { items: [{ price: process.env.STRIPE_PRICE_SEAT, quantity: desired }], proration_behavior: "none" }, idem);
             }
             // agent_limit is reconciled from the resulting subscription.updated event.
           }
