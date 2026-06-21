@@ -6,7 +6,8 @@ import { NextResponse } from "next/server";
 import {
   MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
   PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
-  resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, estMonthlyCard, type UnifiedVehicle,
+  resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, estMonthlyCard,
+  mcBodyType, mcDrivetrain, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
@@ -156,8 +157,12 @@ export async function POST(req: Request) {
       if (body.price_min || body.price_max) url.searchParams.set("price_range", `${body.price_min || 0}-${body.price_max || 999999}`);
       if (body.miles_max) url.searchParams.set("miles_range", `0-${body.miles_max}`);
       if (body.powertrain_type) url.searchParams.set("powertrain_type", body.powertrain_type);
-      if (body.body_type) url.searchParams.set("body_type", body.body_type);
-      if (body.drivetrain) url.searchParams.set("drivetrain", body.drivetrain);
+      // Map UI labels → MarketCheck facet values ("Truck"→Pickup, "Van"→Cargo
+      // Van/Minivan/Passenger Van, "AWD"→4WD); an unmapped label matches nothing.
+      const bt = mcBodyType(body.body_type);
+      if (bt) url.searchParams.set("body_type", bt);
+      const dt = mcDrivetrain(body.drivetrain);
+      if (dt) url.searchParams.set("drivetrain", dt);
       // exterior_color matches the full color string and accepts a comma-OR
       // list (e.g. "Agate Black,Agate Black Metallic") from the color picker.
       if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);

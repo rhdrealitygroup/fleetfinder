@@ -119,6 +119,30 @@ async function pullState(state: string, apiKey: string, deadline = 0, startCurso
     }
     if (cursor || rateLimited) break; // ran out of budget mid-partition → resume next run
   }
+
+  // Typeless reconciliation: a few dealers can carry an empty dealer_type that the
+  // franchise/independent passes structurally miss. A cheap rows=0 probe gives the
+  // true state total; we only pull the (untyped-inclusive) no-type slice when the
+  // gap exceeds facet-count noise — so the common case (≈12-dealer wobble) costs a
+  // single probe, while a genuine bucket of untyped dealers is recovered.
+  if (complete && !rateLimited && !cursor && !overBudget()) {
+    try {
+      const u0 = new URL(`${MC_HOST}/dealers/car`);
+      u0.searchParams.set("api_key", apiKey);
+      u0.searchParams.set("state", state);
+      u0.searchParams.set("rows", "0");
+      const r0 = await fetchWithTimeout(u0.toString());
+      if (r0.ok) {
+        const trueTotal = Number((await r0.json()).num_found) || 0;
+        const TYPELESS_NOISE = 20; // MarketCheck facet counts wobble by a handful
+        if (trueTotal - out.size > TYPELESS_NOISE) {
+          const sink = (x: any) => { out.set(String(x.id), mapDealer(x)); };
+          const rec = await pageDealers(apiKey, { state }, sink, overBudget);
+          if (!rec.complete) complete = false;
+        }
+      }
+    } catch { /* best-effort: typeless recovery never fails the state sync */ }
+  }
   return { dealers: [...out.values()], complete, rateLimited, cursor };
 }
 

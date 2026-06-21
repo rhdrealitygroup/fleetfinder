@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither, fetchWithTimeout } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither, fetchWithTimeout, mcBodyType, mcDrivetrain } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -44,8 +44,12 @@ export async function POST(req: Request) {
     // Apply body_type/drivetrain as HARD filters too (live-search does) — otherwise
     // a search that returned 0 purely because of body style or drivetrain would be
     // diagnosed against a pool that ignores them and wrongly report "specs are fine".
-    if (b.body_type) url.searchParams.set("body_type", String(b.body_type));
-    if (b.drivetrain) url.searchParams.set("drivetrain", String(b.drivetrain));
+    // Map UI labels → MarketCheck facet values (same as live-search) so the
+    // diagnosis pool isn't itself zeroed by an unmapped "Truck"/"Van"/"AWD".
+    const bt = mcBodyType(b.body_type);
+    if (bt) url.searchParams.set("body_type", bt);
+    const dt = mcDrivetrain(b.drivetrain);
+    if (dt) url.searchParams.set("drivetrain", dt);
     if (b.miles_max) url.searchParams.set("miles_range", `0-${b.miles_max}`);
     if (b.powertrain_type) url.searchParams.set("powertrain_type", String(b.powertrain_type));
     if (b.year_min || b.year_max) url.searchParams.set("year_range", `${b.year_min || 1900}-${b.year_max || new Date().getFullYear() + 1}`);

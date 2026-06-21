@@ -62,6 +62,32 @@ export function phraseMatchEither(a: string, b: string): boolean {
 export const titleCase = (s: unknown) =>
   !s ? "" : String(s).replace(/[a-zA-Z]+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
+// ── UI → MarketCheck filter-value mapping ────────────────────────────────────
+// Our UI labels don't match MarketCheck's facet vocabulary, so sending a label
+// verbatim matches NOTHING and the search returns 0 even when inventory exists.
+// Verified against the live API:
+//   drivetrain facet  = 4WD | FWD | RWD   (there is NO "AWD"; AWD is bucketed 4WD)
+//   body_type  facet  = SUV | Pickup | Sedan | Hatchback | Minivan | Cargo Van |
+//                       Coupe | Convertible | Passenger Van | Wagon | ...
+// So "AWD" → 0, "Truck" → 0, "Van" → ~0. Map them to the real values (comma-OR
+// where one UI label spans several MarketCheck buckets). Unknown values pass
+// through unchanged so a future-correct label still works.
+export function mcDrivetrain(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (/^awd$/i.test(s)) return "4WD"; // MarketCheck has no AWD bucket
+  return s; // FWD, RWD, 4WD pass through
+}
+export function mcBodyType(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  const map: Record<string, string> = {
+    truck: "Pickup",
+    van: "Cargo Van,Minivan,Passenger Van",
+  };
+  return map[s.toLowerCase()] || s; // SUV, Sedan, Wagon, Coupe, ... pass through
+}
+
 // Ensure a URL is clickable. Providers sometimes return bare domains or
 // protocol-relative paths.
 export function normalizeUrl(raw: unknown): string {

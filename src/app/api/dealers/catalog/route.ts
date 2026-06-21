@@ -53,7 +53,16 @@ export async function GET(req: Request) {
     let query = supabase.from("dealer_catalog").select("id,name,street,city,state,zip,phone,type,dealer_group,website,listing_count,makes", { count: "exact" });
     if (state) query = query.eq("state", state);
     if (type) query = query.eq("type", type);
-    if (make) query = query.contains("makes", [make]);
+    if (make) {
+      // Most dealers have NO make tags (only ~20% are tagged), so a strict
+      // `makes @> {make}` hid ~78% of the directory whenever a make was picked —
+      // the "list is incomplete" symptom. Include untagged dealers (null or empty
+      // makes) alongside the tagged matches so the filter narrows without hiding.
+      // Sanitize to letters/digits/space/&/- so the value can't break out of the
+      // PostgREST .or() filter (injection guard).
+      const safeMake = make.replace(/[^a-zA-Z0-9 &-]/g, "").trim();
+      if (safeMake) query = query.or(`makes.cs.{"${safeMake}"},makes.is.null,makes.eq.{}`);
+    }
     if (q) {
     // Strip PostgREST filter metacharacters so a query like "a,id.eq.x" can't
     // break out of the intended ilike clauses (filter injection).
