@@ -34,6 +34,7 @@ export async function POST(req: Request) {
   const wantTrim = String(b.trim || "").trim();
   const wantVariant = String(b.variant || "").trim();
   const maxMonthly = Number(b.max_monthly) || 0;
+  const dealerScoped = Array.isArray(b.dealer_ids) && b.dealer_ids.length > 0;
 
   // ── Base pool: hard constraints only (no trim/color/options) ───────────────
   function withHard(url: URL) {
@@ -147,7 +148,14 @@ export async function POST(req: Request) {
 
     // ── Closest match: query the "wants" minus options, decode top candidates ──
     let closest: any = null;
-    if (optionNames.length) {
+    // A dealer-scoped pool only returns listings via /dealerships/inventory;
+    // /search/car/active (used by withHard) returns a COUNT but no listings for a
+    // dealer_id filter, so any closest-match query here is guaranteed empty. Skip
+    // it for dealer-scoped searches — the facet-derived reasons + "search all
+    // dealers" fix still render — instead of burning a MarketCheck call on a null.
+    if (dealerScoped) {
+      // closest stays null — no fetchable listings on this endpoint when scoped
+    } else if (optionNames.length) {
       const cUrl = new URL(`${MC_HOST}/search/car/active`);
       withHard(cUrl);
       if (wantTrim && trimOk) cUrl.searchParams.set("trim", wantTrim);
