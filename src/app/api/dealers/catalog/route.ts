@@ -30,8 +30,10 @@ function fromFile(q: string, state: string, type: string, make: string, page: nu
   let list = FILE;
   if (state) list = list.filter((d) => d.state === state);
   if (type) list = list.filter((d) => d.type === type);
-  // Inclusive make filter: most file rows have no makes tags, so don't hide them.
-  if (make) list = list.filter((d) => !(d.makes && d.makes.length) || d.makes.includes(make));
+  // Inclusive make filter: a tagged match, or a still-untagged dealer that has
+  // inventory (zero-inventory untagged dealers can't sell the make → excluded).
+  if (make) list = list.filter((d) => (d.makes || []).includes(make)
+    || (!(d.makes && d.makes.length) && (Number(d.listing_count) || 0) > 0));
   if (q) list = list.filter((d) => d.name.toLowerCase().includes(q) || d.city.toLowerCase().includes(q) || (d.group || "").toLowerCase().includes(q) || d.zip.includes(q));
   const total = list.length;
   return { total, page, per: PER, items: list.slice(page * PER, page * PER + PER), makes: MAKES, counts: { all: FILE.length, nj: FILE.filter((d) => d.state === "NJ").length, ny: FILE.filter((d) => d.state === "NY").length }, source: "file" };
@@ -66,7 +68,12 @@ export async function GET(req: Request) {
       // Sanitize to letters/digits/space/&/- so the value can't break out of the
       // PostgREST .or() filter (injection guard).
       const safeMake = make.replace(/[^a-zA-Z0-9 &-]/g, "").trim();
-      if (safeMake) query = query.or(`makes.cs.{"${safeMake}"},makes.is.null,makes.eq.{}`);
+      // Match tagged dealers of this make, PLUS still-untagged dealers that have
+      // inventory (they might sell it — we just haven't backfilled their makes).
+      // A zero-inventory untagged dealer definitely can't, so it's excluded —
+      // which keeps a backfilled state (NY/NJ) precise without regressing the
+      // not-yet-tagged states to "hides everything".
+      if (safeMake) query = query.or(`makes.cs.{"${safeMake}"},and(listing_count.gt.0,makes.is.null),and(listing_count.gt.0,makes.eq.{})`);
     }
     if (q) {
     // Strip PostgREST filter metacharacters so a query like "a,id.eq.x" can't
