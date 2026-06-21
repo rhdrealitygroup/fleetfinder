@@ -72,6 +72,13 @@ export async function POST(req: Request) {
     const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
     for (const c of facetItems) {
       const raw = String(c.item || "").trim();
+      // A raw interior_color facet value containing a comma (e.g. "Jet Black,
+      // Cloth Seat Trim") can't be represented in the comma-OR interior_color
+      // param: MarketCheck splits it into separate exact-match OR terms (even when
+      // URL-encoded — verified live), so the bucket returns the WRONG cars and its
+      // count never matches. These compound values aren't filterable at all, so
+      // drop them entirely rather than offer a broken option.
+      if (raw.includes(",")) continue;
       const cleaned = cleanName(c.item);
       if (!cleaned || isJunkColor(cleaned)) continue; // drop code-like junk tokens
       const key = dedupKey(cleaned);

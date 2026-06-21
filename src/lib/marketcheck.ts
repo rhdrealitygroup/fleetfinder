@@ -250,6 +250,12 @@ export function cleanColorFacet(
   const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
   for (const c of items || []) {
     const raw = String(c.item || "").trim();
+    // A raw value with a comma can't be sent in the comma-OR exterior/interior
+    // color param (MarketCheck splits it into separate exact-match OR terms even
+    // URL-encoded), so the stored variant would mis-filter. Drop it so the
+    // persisted catalog matches what the live picker offers. (Interior facets
+    // carry these, e.g. "Jet Black, Cloth Seat Trim"; exterior are comma-free.)
+    if (raw.includes(",")) continue;
     const cleaned = normalizeColorName(scrubColorCode(c.item));
     if (!cleaned || isJunkColor(cleaned) || isPlaceholderOrCode(cleaned)) continue;
     const key = dedupKey(cleaned);

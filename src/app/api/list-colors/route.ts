@@ -77,6 +77,12 @@ export async function POST(req: Request) {
     const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
     for (const c of facetItems) {
       const raw = String(c.item || "").trim();
+      // Defensive: a raw value with a comma can't be represented in the comma-OR
+      // exterior_color param (MarketCheck splits it into separate OR terms even
+      // when URL-encoded), so it would match the wrong cars. Exterior facets are
+      // empirically comma-free, but a dealer free-text color ("Red, White Stripe")
+      // would break — drop it rather than mis-filter.
+      if (raw.includes(",")) continue;
       const cleaned = cleanName(c.item);
       if (!cleaned || isJunkColor(cleaned)) continue; // drop code-like junk ("Dr", "M7", "9b")
       const key = dedupKey(cleaned);

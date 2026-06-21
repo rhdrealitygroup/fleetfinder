@@ -4,8 +4,10 @@
 // model has been checked for the cycle, then stops. Secret-gated (CRON_SECRET).
 //
 // Manual run (dashboard "Run" or):  GET /api/cron/verify-catalog?secret=...
-// Each fresh cycle clears the previous report first, so when the chain finishes
-// the table holds exactly the current run's findings. Read it with:
+// Each model's prior findings are cleared as that model is re-checked (per-model,
+// inside the loop) — not wiped up front — so a stop-short run never empties
+// unrelated models; when the chain finishes the table holds the cycle's findings.
+// Read it with:
 //   select issue, count(*) from catalog_discrepancies group by issue;
 
 import { NextResponse } from "next/server";

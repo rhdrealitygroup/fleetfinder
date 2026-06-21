@@ -34,7 +34,8 @@ live-search + diagnose forward `body.powertrain_type` verbatim, but no UI sends 
 `list-interior-colors` stores the RAW facet value in `variants` (line 84); the UI joins variants with commas into the `interior_color` param. MarketCheck's `interior_color` filter is **exact-match per term, comma = OR**. So a facet value that itself contains a comma is silently mis-split.
 - Live proof: `interior_color="Jet Black, Cloth Seat Trim"` → **10,608**, NOT the bucket's 97,379. It splits to `"Jet Black"`(exact)=10,608 OR `"Cloth Seat Trim"`=0. So selecting that interior returns the WRONG ~10k set and misses the intended ~97k.
 - Scope: **interior_color only** — exterior_color facet has no comma-bearing values (verified). 
-- No clean API remedy (MarketCheck can't escape a comma in the value). Options, each a tradeoff for user to pick: (a) drop comma-bearing facet values from the picker (loses those buckets); (b) bucket by base color + accept they can't be filtered exactly; (c) post-filter interior client-side (cost/complexity). **Needs product decision — surfaced, not auto-fixed.**
+- **Encoding ruled out (live):** `interior_color="Black, Ebony"` URL-encoded → 896,276 = identical to plain `"Black"`. MarketCheck decodes `%2C` then splits, so escaping can't save it. The only correct remedy is to drop comma-bearing values.
+- **Fix shipped (both repos):** drop any raw facet value containing a comma in the color/interior bucket loops — don't count it, don't offer it — so the picker only shows interiors/colors that filter correctly and whose displayed count matches the filtered result. Applied to all loops: LotCompass `list-interior-colors`, `list-colors` (defensive), `marketcheck.ts#cleanColorFacet` (catalog path — the stored catalog had the same raw variants); FleetFinder `list_interior_colors`, `list_colors`. Tradeoff: the few compound-interior listings (e.g. "Jet Black, Cloth Seat Trim") are no longer pickable by interior — but they were never correctly filterable. You can change the remedy before merge.
 
 ### S5. Confirmed working (REVIEWED-OK): `interior_color` filter (BMW 85,971→20,339 for Black), `exterior_color` comma-OR (Black,Alpine White=11,654), `car_type=used` (BMW=94,514), year/price/miles ranges, `resolveModel` alias table.
 
@@ -77,6 +78,48 @@ Minor. The unused `inventory_*` indexes align with the "inventory table read by 
 ### B1. `requireActivePlan` gate — REVIEWED-OK
 Matches CLAUDE.md invariants: signed-out→401; super-admin→allow; org-less user is provisioned a trial org, and if provisioning FAILS it returns 503 (transient) rather than failing open to free metered access (correct fail-closed on the cost-leak path); org read uses service-role **after** `auth.getUser()`; card-gated trial (`billingOn && !hasCard` → 402) closes the direct-API bypass; `incomplete` gets grace; catch → fail-open (transient only). 
 - Micro-note (very low): line 108 `if (!org) → ok:true`. With the service-role client `!org` means the org row genuinely doesn't exist (not an RLS blip), so an orphaned membership pointing at a deleted org would get free access. Orgs aren't deleted in normal flow, so this is theoretical. Could tighten to fail-closed on definitive 0-rows. Not acting without confirmation.
+
+### B2. Referral payout has no minimum-charge threshold — REVIEWED (by-design question)
+Money paths audited in depth (webhook, checkout, cancel, portal, update-seats, referrals, account). **All invariants hold:** raw-body signature verify; webhook DERIVES state (no increments); out-of-order guard via `last_sub_event_at` + same-second re-fetch; atomic claim of `stripe_subscription_id` (loser cancels) prevents double-subscribe; `trial_used` blocks trial farming; idempotency keys on every Stripe mutation (checkout/customer/price/update-seats FROM→TO/referral credits); double-sub guards (DB + Stripe live-list); service-role only after `auth.getUser()`; all `/api/*` return JSON. Referral credits idempotent via `ref-referee-${id}`/`ref-referrer-${id}` keys (Stripe dedups even under concurrent webhooks). 
+- Only lever for your call: `onRefereePaid` gates on `amountPaid>0` but no MINIMUM — a referee who pays any tiny prorated invoice earns the referrer the full $50. Likely intended; flagging as a money lever, not a bug.
+
+## CRONS / INVENTORY
+
+### C1. The `inventory` dump pipeline is DEAD (write-only, no reader) — OPEN (retire-or-wire decision)
+Grep-confirmed: the only `.from("inventory")` calls in `src/` are inside `inventoryDump.ts` (sweep/upsert/decode-update + a self-read of its own undecoded rows). `live-search` + `diagnose` never read `inventory`; pickers read `vehicle_catalog`; `dealers/catalog` reads `dealer_catalog`. So `dump-inventory` cron + the `after()` hook in `dealers/selection` + the whole decode/sweep machinery write a table **nothing consumes**. This actively spends MarketCheck quota + Postgres writes for zero benefit, and matches the advisor's 4 unused `inventory_*` indexes (DB6). Severity MED (cost waste, not a correctness bug). **Decision needed:** retire (drop the cron in `vercel.json`, the `dealers/selection` after() hook, the decode RPC) OR wire a reader (the planned auto-desking feature). Per the audit brief this was explicitly a "decide with user" item.
+
+### C2. Cron/destructive invariants — REVIEWED-OK
+All 5 cron routes check `CRON_SECRET`. Destructive sweep in `inventoryDump.ts` fails CLOSED: `numFoundSuspect` skips the sweep AND preserves the `listing_count` baseline; `readAll` returns null on any page error and aborts GC on partial reads; truncated(>1500)/failed fetches never sweep. Serverless budget honored (maxDuration=60, 47s/45s deadlines, 13s fetch margin). Self-chaining (refresh/verify) bounded by per-cycle gating + MAX_LINKS + unattempted-terminator + models-marked-attempted-even-on-null. sync-dealers preserves `makes` (upsert omits it), handles the 1500 offset cap via city-partition + `city_cursor`, reconciles typeless dealers behind a cheap rows=0 probe, and doesn't overwrite count when saturated.
+
+### C3. `verify-catalog` header comment is wrong — FIX-ON-BRANCH (doc-only)
+Lines 7-8 claim "Each fresh cycle clears the previous report first"; the code actually deletes per-model inside the loop (safer). Trivial comment correction.
+
+## PICKERS / VIN
+
+### P1. color comma bug — see S4 (FIX-ON-BRANCH). Also affected the stored-catalog path (`cleanColorFacet`), now fixed.
+
+### P2. `list-styles` route is DEAD — REVIEWED (safe to delete)
+`/vehicle/style/{year}/{make}/{model}` returns `HTTP 404 "no Route matched"` for current models (verified live: 2025/Toyota/RAV4), so the route always errors — AND it's referenced by **no UI code** (grep). Pure dead code: never called, would fail if it were. Harmless (uncalled). Recommend deleting the route file; left in place this pass to keep changes focused.
+
+### P3. `cleanColorFacet` dedupKey over-aggressive — LOW
+`marketcheck.ts` dedupKey strips any trailing digit-bearing token before keying, which could merge distinct color names ending in a digit. Colors rarely do; low frequency. Noted, not changed.
+
+### P4. `list-trims` DB-first parity — LOW/MED
+DB path emits only `available:true` trims; the live path additionally unions an unscoped "universe" of dimmed/unavailable trims. Shape divergence (DB mode shows fewer trims). Acceptable; noted.
+
+### P5. `decode-vin` fallback only on 404 — LOW
+NeoVIN `429`/`5xx` returns 502 without trying the basic `/decode/car/{vin}/specs` fallback (which only fires on 404). Minor resilience gap.
+
+### Picker REVIEWED-OK
+All plan-gated; short-TTL on empty; `resolveModel` never poisons cache on fallback; `model` comma-OR list is intended; trim variant chips + `option_names` arrays are intended OR (no comma bug — that's interior/exterior color only).
+
+## GATING / MULTI-TENANCY / ADMIN
+
+### G1. REVIEWED-OK — no HIGH/MED findings
+proxy/middleware rotates auth cookies onto every redirect (no silent-logout), returns **401 JSON for `/api/*`** (never HTML 302), onboarding force-redirect skips `/api/*`+`/auth/*`+`/onboarding`. Every org-scoped route (customers/team/saved/dealers selection+removal) scopes reads AND writes to the caller's org/user; `team` DELETE and removal-request PATCH re-verify the row's `org_id` before a service-role write (no cross-org id-spoof). `admin/*` + `stripe/setup-products` gated on `SUPER_ADMIN_EMAILS`. Service-role client used only after `auth.getUser()`. Injection guards present (`.eq()` values parameterized; `.or()` strings static). Role checks (owner/admin/agent) on every mutation.
+- Caveat: RLS verified from migration files (ledger 0001–0031), not live `pg_policies`; app-layer `.eq` scoping holds regardless.
+
+### C3. verify-catalog header comment — FIXED (doc-only) on branch.
 
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
