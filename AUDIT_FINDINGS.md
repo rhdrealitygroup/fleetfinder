@@ -17,6 +17,17 @@ Baseline live MarketCheck facts (probed 2026-06-21, `car_type=new`):
 
 ---
 
+## CONVERGENCE — 6 passes, ended on 3 consecutive clean
+- **Pass 1** (fixes): D1 diagnose dealer-scope, S4 color comma, C3 verify-catalog comment. Billing/auth/crons/gating reviewed clean. Supabase advisors analyzed (DB1 intentional).
+- **Pass 2** (fix): L1 lease negative-payment clamp. S4 validated against GM interiors live; NeoVIN decode path verified.
+- **Pass 3** (fix): U1 CompaniesTable price re-sync. UI race-guards all verified; live contract regression clean.
+- **Pass 4 — CLEAN**: audited the owner's concurrent perf commits (durable VIN-decode cache + weekly re-decode) — correct, no poisoning, fails-closed. Combined filters + `rows` cap + S4 sanity re-probed live.
+- **Pass 5 — CLEAN**: inventoryDump destructive-sweep × durable-cache (independent agent) — all guards hold. `MODEL_ALIASES` verified live (every alias resolves, bare names ~0).
+- **Pass 6 — CLEAN**: independent auth/middleware/Stripe-webhook security second-opinion — no exploit across all 5 categories. Re-flagged B1; closed as unreachable (FK cascade). Edge probes (trim/0-result/special-char) clean. No new commits.
+- **Net: 5 bugs fixed (D1/S4/C3/L1/U1), all deployed; 0 high-severity security/money defects. Decisions deferred to owner: C1, L2, P2, DB3/4, U2.**
+
+---
+
 ## SEARCH — filter value contracts
 
 ### S1. body_type / drivetrain / van label mapping — CONFIRMED-FIXED
@@ -78,7 +89,7 @@ Minor. The unused `inventory_*` indexes align with the "inventory table read by 
 
 ### B1. `requireActivePlan` gate — REVIEWED-OK
 Matches CLAUDE.md invariants: signed-out→401; super-admin→allow; org-less user is provisioned a trial org, and if provisioning FAILS it returns 503 (transient) rather than failing open to free metered access (correct fail-closed on the cost-leak path); org read uses service-role **after** `auth.getUser()`; card-gated trial (`billingOn && !hasCard` → 402) closes the direct-API bypass; `incomplete` gets grace; catch → fail-open (transient only). 
-- Micro-note (very low): line 108 `if (!org) → ok:true`. With the service-role client `!org` means the org row genuinely doesn't exist (not an RLS blip), so an orphaned membership pointing at a deleted org would get free access. Orgs aren't deleted in normal flow, so this is theoretical. Could tighten to fail-closed on definitive 0-rows. Not acting without confirmation.
+- Micro-note (very low) — **CLOSED as unreachable.** Line 108 `if (!org) → ok:true` would grant free access to an orphaned membership→deleted-org. Flagged independently by two audits (Pass 1 + Pass 6 security second-opinion). **Reachability proof:** `memberships.org_id references organizations(id) ON DELETE CASCADE` (migration 0001:42), and `deleteCompany` deletes the org so memberships cascade away atomically — no dangling state can exist. The only trigger is a sub-second race (membership read, then org deleted+cascaded before the org read) granting ONE request of free access. Negligible; the transient-tolerant fail-open is correct. **No change** to the live auth gate.
 
 ### B2. Referral payout has no minimum-charge threshold — REVIEWED (by-design question)
 Money paths audited in depth (webhook, checkout, cancel, portal, update-seats, referrals, account). **All invariants hold:** raw-body signature verify; webhook DERIVES state (no increments); out-of-order guard via `last_sub_event_at` + same-second re-fetch; atomic claim of `stripe_subscription_id` (loser cancels) prevents double-subscribe; `trial_used` blocks trial farming; idempotency keys on every Stripe mutation (checkout/customer/price/update-seats FROM→TO/referral credits); double-sub guards (DB + Stripe live-list); service-role only after `auth.getUser()`; all `/api/*` return JSON. Referral credits idempotent via `ref-referee-${id}`/`ref-referrer-${id}` keys (Stripe dedups even under concurrent webhooks). 
