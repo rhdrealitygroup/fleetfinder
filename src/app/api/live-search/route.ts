@@ -114,6 +114,44 @@ export async function POST(req: Request) {
       note: " (selected dealers have no resolvable inventory source)", cached: false, query: summarize(body) });
   }
 
+  // TEMP DEBUG: probe which MarketCheck dealer param actually returns listings.
+  if (body._dealerdebug && marketKey && dealerSources.length) {
+    const probe = async (extra: Record<string, string>) => {
+      const u = new URL(`${MC_HOST}/search/car/active`);
+      u.searchParams.set("api_key", marketKey);
+      u.searchParams.set("car_type", "new");
+      u.searchParams.set("source", dealerSources.join(","));
+      u.searchParams.set("rows", "3");
+      for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, v);
+      const r = await fetchWithTimeout(u.toString()).catch(() => null);
+      if (!r) return { err: "fetch" };
+      if (!r.ok) return { status: r.status, body: (await r.text().catch(() => "")).slice(0, 200) };
+      const d: any = await r.json().catch(() => ({}));
+      return { num_found: d.num_found, listings: (d.listings || []).length };
+    };
+    const did = async (extra: Record<string, string>) => {
+      const u = new URL(`${MC_HOST}/search/car/active`);
+      u.searchParams.set("api_key", marketKey);
+      u.searchParams.set("car_type", "new");
+      u.searchParams.set("dealer_id", "1007942");
+      u.searchParams.set("rows", "3");
+      for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, v);
+      const r = await fetchWithTimeout(u.toString()).catch(() => null);
+      if (!r || !r.ok) return { status: r?.status };
+      const d: any = await r.json().catch(() => ({}));
+      return { num_found: d.num_found, listings: (d.listings || []).length };
+    };
+    return NextResponse.json({
+      host: MC_HOST, sources: dealerSources,
+      source_plain: await probe({}),
+      source_owned: await probe({ owned: "true" }),
+      source_nodedup: await probe({ nodedup: "true" }),
+      source_include_non_vin: await probe({ include_non_vin_listings: "true" }),
+      dealer_id_plain: await did({}),
+      dealer_id_owned: await did({ owned: "true" }),
+    });
+  }
+
   // ── Cache check (1h) ────────────────────────────────────────────────────
   const ckey = cacheKeyFor(body);
   if (!body.fresh) {
