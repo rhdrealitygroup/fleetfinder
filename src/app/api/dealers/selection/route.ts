@@ -52,19 +52,9 @@ export async function POST(req: Request) {
     // Re-selecting a previously deselected dealer.
     await db.from("dealers").update({ selected: true }).eq("org_id", ctx.org).eq("dealer_key", id);
   }
-  // Register the dealer for the dump pipeline now (fast), then kick an immediate
-  // best-effort dump WITHOUT blocking the response — a slow/large dealer must not
-  // hang the "add dealer" click. The 6h cron backfills if this gets cut short.
-  try {
-    await db.from("tracked_dealers").upsert(
-      { dealer_id: id, name: d.name || null, city: d.city || null, state: d.state || null },
-      { onConflict: "dealer_id", ignoreDuplicates: true },
-    );
-  } catch { /* best-effort registration; dealer-scoped search reads dealer_ids directly */ }
-  // No inventory dump here: dealer-scoped search reads live from
+  // Nothing else to do on select: dealer-scoped search reads live from
   // /dealerships/inventory on demand, so there is no per-dealer mirror to maintain.
-  // (The old dump pipeline paged /search/car/active?dealer_id=, which returns a
-  // count but no listings, and was removed — see BUG-0019.)
+  // (The old dump pipeline + its tracked_dealers registry were removed — BUG-0019.)
   return NextResponse.json({ ok: true });
 }
 

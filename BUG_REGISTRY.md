@@ -203,4 +203,14 @@
 - **Evidence:** live MarketCheck: `/search/car/active?dealer_id=1018518` → `num_found 616, listings 0`; `/dealerships/inventory?dealer_id=1018518` → `616` with listings (confirms the dump could never have captured data). Post-deploy: `GET https://www.lotcompass.com/api/cron/dump-inventory` → **404** (route gone); `to_regclass('public.inventory')` → **null** (table dropped, migration 0032); `get_advisors(security)` shows no new issue.
 - **Status:** Resolved by removal — merged to main, deployed & verified live.
 
-<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0020. Never edit/delete above. -->
+### BUG-0020 — `tracked_dealers` vestige: written on dealer-add, read by nothing
+- **Date:** 2026-06-21  **Severity:** Low  **Found by:** agent (follow-up to BUG-0019)
+- **Area:** `dealers/selection` POST; `tracked_dealers` table
+- **Symptom:** after BUG-0019 removed the dump pipeline, `dealers/selection` still upserted every added dealer into `tracked_dealers`, which now had no reader.
+- **Root cause:** the on-select registration write outlived the pipeline it fed.
+- **Pattern (P7):** producer with no consumer (the last remaining piece of the deleted pipeline).
+- **Fix:** removed the `tracked_dealers` upsert from `dealers/selection`; dropped the `tracked_dealers` table (migration `0033`). Dealer-scoped search reads live from `/dealerships/inventory`; the org's selected dealers live in `dealers` (unaffected). Commit: fleetfinder-v2 (this change).
+- **Evidence:** `to_regclass('public.tracked_dealers')` → null; build clean; no remaining code refs (`grep tracked_dealers src` empty).
+- **Status:** Fixed & verified.
+
+<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0021. Never edit/delete above. -->
