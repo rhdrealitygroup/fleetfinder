@@ -6,7 +6,12 @@ import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTim
 // Snapshot one model's catalog (trims, sub-variants, colors, options) for the
 // nightly dump. Self-contained (used by the cron) — cheap facets + a small VIN
 // decode sample. Not the live UI path; this is the persistent moat snapshot.
-export async function snapshotModel(make: string, model: string, deadline = 0) {
+// skipOptions: the per-VIN NeoVIN option decode is the only expensive part of a
+// snapshot ($0.08/VIN × 6). A model's available options barely change, so the
+// cron passes skipOptions=true when the stored options are still fresh — we then
+// return options:null and the caller preserves the existing options row instead
+// of paying to re-decode nightly. (trims/colors stay on the nightly cadence.)
+export async function snapshotModel(make: string, model: string, deadline = 0, skipOptions = false) {
   const apiKey = mcKey();
   if (!apiKey) return null;
   // Out of the cron's shared budget before we even start → skip (retried next run)
@@ -45,7 +50,9 @@ export async function snapshotModel(make: string, model: string, deadline = 0) {
   // Out of budget after the facets call → return the facet data (the main value)
   // and skip the heavier listing sample rather than risk a hard-kill.
   if (deadline && Date.now() > deadline) {
-    return { trims, versions, colors, interiorColors, colorsByTrim: {}, interiorColorsByTrim: {}, options: [], found: num(fd.num_found) };
+    // options:null → preserve the existing options row (don't wipe it to empty on
+    // a budget cut, and don't pay to re-decode).
+    return { trims, versions, colors, interiorColors, colorsByTrim: {}, interiorColorsByTrim: {}, options: null as { name: string; msrp: number; count: number }[] | null, found: num(fd.num_found) };
   }
 
   // Sample real listings to learn the TRIM → COLOR associations (so each trim
@@ -89,18 +96,24 @@ export async function snapshotModel(make: string, model: string, deadline = 0) {
     if (int.length) interiorColorsByTrim[key] = int;
   }
 
-  // Options: union named build-sheet options from the sampled VINs.
-  const map = new Map<string, { name: string; msrp: number; count: number }>();
-  for (const v of sampleVins) {
-    if (deadline && Date.now() > deadline) break; // stop decoding if we're out of budget
-    for (const o of await decodeVinOptionDetails(v)) {
-      const k = o.name.toLowerCase();
-      const cur = map.get(k);
-      if (cur) { cur.count += 1; if (o.msrp > cur.msrp) cur.msrp = o.msrp; }
-      else map.set(k, { name: o.name, msrp: o.msrp, count: 1 });
+  // Options: union named build-sheet options from the sampled VINs. Each decode
+  // is a paid NeoVIN call, so when the caller says the stored options are still
+  // fresh we skip this entirely and return null (caller keeps the existing row).
+  type OptAgg = { name: string; msrp: number; count: number };
+  let options: OptAgg[] | null = null;
+  if (!skipOptions) {
+    const map = new Map<string, OptAgg>();
+    for (const v of sampleVins) {
+      if (deadline && Date.now() > deadline) break; // stop decoding if we're out of budget
+      for (const o of await decodeVinOptionDetails(v)) {
+        const k = o.name.toLowerCase();
+        const cur = map.get(k);
+        if (cur) { cur.count += 1; if (o.msrp > cur.msrp) cur.msrp = o.msrp; }
+        else map.set(k, { name: o.name, msrp: o.msrp, count: 1 });
+      }
     }
+    options = [...map.values()].sort((a, b) => b.count - a.count || b.msrp - a.msrp);
   }
-  const options = [...map.values()].sort((a, b) => b.count - a.count || b.msrp - a.msrp);
 
   return { trims, versions, colors, interiorColors, colorsByTrim, interiorColorsByTrim, options, found: num(fd.num_found) };
 }

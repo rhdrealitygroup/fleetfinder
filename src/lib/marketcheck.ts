@@ -687,75 +687,110 @@ export function adListing(l: any): UnifiedVehicle {
   };
 }
 
-// Decode a VIN to the lowercase names of its installed options/packages/
-// features — for filtering search results by package ("Premium Package",
-// "Tow", etc.). Cached 30 days per VIN (build never changes).
-// throwOnError: callers that must distinguish a HARD failure (429/5xx/timeout)
-// from a genuinely empty option list pass true (the dump's decodeUndecoded does,
-// so it doesn't permanently mark a VIN decoded-with-no-options after a transient
-// blip). Search/diagnose pass false and treat a failed decode as "no options".
-export async function decodeVinOptionNames(vin: string, throwOnError = false): Promise<string[]> {
+// ── NeoVIN decode with a DURABLE, shared cache ───────────────────────────────
+// A NeoVIN /specs decode costs $0.08/call and a VIN's build never changes, so it
+// should be decoded ONCE — ever. The in-memory cache only survives within a warm
+// serverless isolate, so on Vercel the same VINs were re-decoded across cold
+// starts and parallel instances (the #1 driver of the MarketCheck bill). Layer a
+// DB-backed cache (public.vin_decode_cache) UNDER the memory cache so a VIN is
+// charged once globally and shared across every instance + cold start. We cache
+// the small parsed slice both callers need, so "names" and "details" share a
+// single decode (previously the same VIN could be charged twice).
+type NeovinParsed = { details: { code: string; name: string; msrp: number; type: string }[]; hvf: string[]; feats: string[] };
+
+function neovinDbCfg(): { url: string; key: string } | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return url && key ? { url, key } : null;
+}
+
+async function neovinDbGet(vin: string): Promise<NeovinParsed | null> {
+  const cfg = neovinDbCfg();
+  if (!cfg) return null;
+  try {
+    const r = await fetchWithTimeout(
+      `${cfg.url}/rest/v1/vin_decode_cache?vin=eq.${vin}&select=payload,expires_at`,
+      { headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}` }, cache: "no-store" }, 4000);
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (row?.payload && row.expires_at && new Date(row.expires_at).getTime() > Date.now()) {
+      return row.payload as NeovinParsed;
+    }
+  } catch { /* best-effort cache; fall through to live decode */ }
+  return null;
+}
+
+async function neovinDbSet(vin: string, payload: NeovinParsed): Promise<void> {
+  const cfg = neovinDbCfg();
+  if (!cfg) return;
+  try {
+    await fetchWithTimeout(`${cfg.url}/rest/v1/vin_decode_cache?on_conflict=vin`, {
+      method: "POST",
+      headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify({ vin, payload, provider: "marketcheck-neovin", expires_at: new Date(Date.now() + DAY * 30).toISOString() }),
+      cache: "no-store",
+    }, 4000);
+  } catch { /* best-effort; a write miss just means we may decode again later */ }
+}
+
+// Decode (or fetch from cache) the NeoVIN build for a VIN. memory → DB → live.
+// On a live decode the result is written to BOTH caches so it's charged once.
+async function neovinSpecs(vin: string, throwOnError = false): Promise<NeovinParsed | null> {
   const v = String(vin || "").toUpperCase().trim();
-  if (v.length !== 17) return [];
-  const ck = `vinopts::${v}`;
-  const hit = cacheGet<string[]>(ck);
-  if (hit) return hit;
+  if (v.length !== 17) return null;
+  const ck = `vinspecs::${v}`;
+  const mem = cacheGet<NeovinParsed>(ck);
+  if (mem) return mem;
+  const cached = await neovinDbGet(v);
+  if (cached) { cacheSet(ck, cached, DAY * 30); return cached; }
   const apiKey = mcKey();
-  if (!apiKey) { if (throwOnError) throw new Error("MarketCheck key not configured"); return []; }
+  if (!apiKey) { if (throwOnError) throw new Error("MarketCheck key not configured"); return null; }
   try {
     const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
     u.searchParams.set("api_key", apiKey);
     const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
-    if (!r.ok) { if (throwOnError) throw new Error(`decode ${r.status}`); return []; }
+    if (!r.ok) { if (throwOnError) throw new Error(`decode ${r.status}`); return null; }
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const d: any = await r.json();
-    const details = Array.isArray(d.installed_options_details) ? d.installed_options_details : [];
-    const hvf = Array.isArray(d.high_value_features) ? d.high_value_features : [];
-    const feats = Array.isArray(d.features) ? d.features : [];
-    const names = [...details.map((x: any) => x.name || ""), ...hvf, ...feats]
-      .filter(Boolean)
-      .map((s: string) => String(s).toLowerCase());
-    cacheSet(ck, names, DAY * 30);
-    return names;
+    const parsed: NeovinParsed = {
+      details: (Array.isArray(d.installed_options_details) ? d.installed_options_details : [])
+        .map((x: any) => ({ code: String(x.code || ""), name: String(x.name || "").trim(), msrp: num(x.msrp || x.sale_price), type: String(x.type || "") }))
+        .filter((o: { name: string }) => o.name),
+      hvf: (Array.isArray(d.high_value_features) ? d.high_value_features : []).map((s: any) => String(s)),
+      feats: (Array.isArray(d.features) ? d.features : []).map((s: any) => String(s)),
+    };
+    cacheSet(ck, parsed, DAY * 30);
+    await neovinDbSet(v, parsed); // durable, shared across instances + cold starts
+    return parsed;
   } catch (e) {
     if (throwOnError) throw e;
-    return [];
+    return null;
   }
+}
+
+// Decode a VIN to the lowercase names of its installed options/packages/
+// features — for filtering search results by package ("Premium Package", "Tow",
+// etc.). throwOnError: callers that must distinguish a HARD failure
+// (429/5xx/timeout) from a genuinely empty option list pass true (the dump's
+// decodeUndecoded does). Search/diagnose pass false and treat a failure as "no
+// options". The decode is cached durably — see neovinSpecs.
+export async function decodeVinOptionNames(vin: string, throwOnError = false): Promise<string[]> {
+  const parsed = await neovinSpecs(vin, throwOnError);
+  if (!parsed) return [];
+  return [...parsed.details.map((x) => x.name), ...parsed.hvf, ...parsed.feats]
+    .filter(Boolean)
+    .map((s) => s.toLowerCase());
 }
 
 export type VinOption = { code: string; name: string; msrp: number; type: string };
 
 // Detailed factory build-sheet options for a VIN (named + priced), e.g.
-// "UltraView Sunroof" / $1450. Cached 30d. Powers the per-model option catalog.
+// "UltraView Sunroof" / $1450. Powers the per-model option catalog. Shares the
+// same durable decode as decodeVinOptionNames — one charge per VIN, ever.
 export async function decodeVinOptionDetails(vin: string): Promise<VinOption[]> {
-  const v = String(vin || "").toUpperCase().trim();
-  if (v.length !== 17) return [];
-  const ck = `vinoptdet::${v}`;
-  const hit = cacheGet<VinOption[]>(ck);
-  if (hit) return hit;
-  const apiKey = mcKey();
-  if (!apiKey) return [];
-  try {
-    const u = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
-    u.searchParams.set("api_key", apiKey);
-    const r = await fetchWithTimeout(u.toString(), { cache: "no-store" });
-    if (!r.ok) return [];
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const d: any = await r.json();
-    const details = Array.isArray(d.installed_options_details) ? d.installed_options_details : [];
-    const out: VinOption[] = details
-      .map((x: any) => ({
-        code: String(x.code || ""),
-        name: String(x.name || "").trim(),
-        msrp: num(x.msrp || x.sale_price),
-        type: String(x.type || ""),
-      }))
-      .filter((o: VinOption) => o.name);
-    cacheSet(ck, out, DAY * 30);
-    return out;
-  } catch {
-    return [];
-  }
+  const parsed = await neovinSpecs(vin, false);
+  return parsed ? parsed.details : [];
 }
 
 export function mcKey() {

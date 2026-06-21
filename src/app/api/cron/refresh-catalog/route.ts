@@ -46,6 +46,14 @@ export async function GET(req: Request) {
 
   const { data: rows } = await db.from("catalog_sync_state").select("key,updated_at");
   const seen = new Map((rows || []).map((r: { key: string; updated_at: string }) => [r.key, r.updated_at]));
+  // Per-model options freshness: the VIN-option decode ($0.08/VIN × 6/model) is
+  // the only costly part of a snapshot, and available options barely change, so
+  // we only re-decode when a model's stored options are missing or >30 days old.
+  // trims/colors keep refreshing nightly (cheap facets).
+  const { data: optRows } = await db.from("vehicle_catalog").select("make,model,updated_at").eq("kind", "options");
+  const OPTIONS_TTL_MS = 30 * 24 * 3600_000;
+  const optionsFresh = new Map((optRows || []).map((r: { make: string; model: string; updated_at: string }) =>
+    [`${r.make}::${r.model}`.toLowerCase(), Date.now() - +new Date(r.updated_at) < OPTIONS_TTL_MS]));
   // Pending tonight = never-snapshotted OR not yet refreshed in this cycle.
   // Order never-seen first, then oldest, so a partial night still makes progress.
   const pending = MODELS
@@ -64,7 +72,8 @@ export async function GET(req: Request) {
     if (Date.now() - startedAt > BUDGET_MS) break; // out of time → chain continues the cycle
     attempted++;
     try {
-      const snap = await snapshotModel(make, model, startedAt + BUDGET_MS);
+      const skipOptions = optionsFresh.get(`${make}::${model}`.toLowerCase()) === true;
+      const snap = await snapshotModel(make, model, startedAt + BUDGET_MS, skipOptions);
       if (snap) {
         const k = (kind: string) => `${make}::${model}::${kind}`.toLowerCase();
         await db.from("vehicle_catalog").upsert([
@@ -74,8 +83,13 @@ export async function GET(req: Request) {
           { key: k("interior_colors"), make, model, kind: "interior_colors", payload: snap.interiorColors, updated_at: now },
           { key: k("colors_by_trim"), make, model, kind: "colors_by_trim", payload: snap.colorsByTrim ?? {}, updated_at: now },
           { key: k("interior_colors_by_trim"), make, model, kind: "interior_colors_by_trim", payload: snap.interiorColorsByTrim ?? {}, updated_at: now },
-          { key: k("options"), make, model, kind: "options", payload: snap.options, updated_at: now },
         ], { onConflict: "key" });
+        // snap.options is null when the decode was skipped (fresh) or budget-cut —
+        // leave the existing options row untouched rather than wiping it to empty.
+        if (snap.options != null) {
+          await db.from("vehicle_catalog").upsert(
+            [{ key: k("options"), make, model, kind: "options", payload: snap.options, updated_at: now }], { onConflict: "key" });
+        }
         done.push(`${make} ${model}`);
       }
     } catch {
