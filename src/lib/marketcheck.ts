@@ -6,15 +6,10 @@ import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
 import { CAR_CATALOG } from "@/lib/carCatalog";
 
 export const MC_HOST = "https://api.marketcheck.com/v2";
-export const AUTO_DEV_HOST = "https://api.auto.dev";
 
 // Search is nationwide: agents enter any customer ZIP for local inventory, and
 // a blank search scans the whole country (MarketCheck Basic tier allows
-// unbounded nationwide queries). These lat/lng/zip defaults are now only used
-// by the Auto.dev fallback, which still requires a center point.
-export const DEFAULT_LAT = 40.2606;
-export const DEFAULT_LNG = -74.009;
-export const DEFAULT_ZIP = "07755";
+// unbounded nationwide queries).
 export const RADIUS_MILES = 100; // default radius; Standard tier allows up to 500
 export const MAX_RESULTS = 1500; // Standard tier: start offset caps at 1500
 export const PAGE_SIZE = 50;     // MarketCheck's max rows/request — asking for >50 makes the API ignore it and return its DEFAULT of 10 (the "showing first 10" bug)
@@ -99,28 +94,6 @@ export function normalizeUrl(raw: unknown): string {
   if (s.startsWith("/")) return "";
   if (/^[\w.-]+\.[a-z]{2,}/i.test(s)) return "https://" + s;
   return "";
-}
-
-// Derive a base color (Black/White/Red/…) from a marketing name.
-export function normalizeBaseColor(raw: unknown): string {
-  if (!raw) return "";
-  const s = String(raw).toLowerCase();
-  const map: Record<string, string> = {
-    black: "Black", onyx: "Black", obsidian: "Black", ebony: "Black", midnight: "Black",
-    white: "White", pearl: "White", snowflake: "White", glacier: "White", arctic: "White", ivory: "White",
-    silver: "Silver", platinum: "Silver", lunar: "Silver", chrome: "Silver",
-    gray: "Gray", grey: "Gray", graphite: "Gray", magnetic: "Gray", shadow: "Gray", granite: "Gray",
-    red: "Red", crimson: "Red", scarlet: "Red", ruby: "Red", garnet: "Red", cherry: "Red", barcelona: "Red", rallye: "Red",
-    blue: "Blue", navy: "Blue", azure: "Blue", cobalt: "Blue", indigo: "Blue", marina: "Blue", riptide: "Blue",
-    green: "Green", olive: "Green", forest: "Green", emerald: "Green", sage: "Green",
-    brown: "Brown", bronze: "Brown", mocha: "Brown", chocolate: "Brown", chestnut: "Brown",
-    beige: "Beige", tan: "Beige", sand: "Beige", desert: "Beige", khaki: "Beige",
-    yellow: "Yellow", gold: "Yellow",
-    orange: "Orange", copper: "Orange",
-    purple: "Purple", violet: "Purple", plum: "Purple",
-  };
-  for (const key of Object.keys(map)) if (s.includes(key)) return map[key];
-  return titleCase(raw);
 }
 
 export function normalizeFeature(s: unknown): string {
@@ -654,59 +627,6 @@ export function mcListing(l: any): UnifiedVehicle {
   };
 }
 
-// Auto.dev listing → unified shape.
-export function adListing(l: any): UnifiedVehicle {
-  const v = l.vehicle || {};
-  const r = l.retailListing || {};
-  const price = num(r.price);
-  const realMsrp = num(v.msrp || r.msrp);
-  const msrp = realMsrp || price;
-  // Auto.dev rarely exposes a true MSRP → only estimate when one is present and
-  // the car is new (residual is a % of MSRP). Otherwise emit 0 (UI hides it)
-  // rather than a misleading number that feeds the payment filter.
-  const isNew = r.used === false || String(r.condition || v.condition || "").toLowerCase() === "new";
-  const estMonthly = realMsrp > 0 && realMsrp >= price && isNew ? estMonthlyCard(price, realMsrp) : 0;
-  const rawFeats = Array.isArray(v.features) ? v.features
-    : Array.isArray(r.features) ? r.features
-    : Array.isArray(v.high_value_features) ? v.high_value_features : [];
-  const features = rawFeats.map(normalizeFeature).filter(Boolean);
-  return {
-    vin: (l.vin || "").toUpperCase(),
-    year: num(v.year),
-    make: titleCase(v.make),
-    model: titleCase(v.model),
-    trim: titleCase(v.trim),
-    version: String(v.version || v.trim || ""),
-    price, msrp, est_monthly: estMonthly,
-    body_type: titleCase(v.bodyStyle),
-    fuel_type: titleCase(v.fuel),
-    drivetrain: v.drivetrain || "",
-    exterior_color: titleCase(v.exteriorColor || r.exteriorColor),
-    base_color: titleCase(v.baseExteriorColor || normalizeBaseColor(v.exteriorColor || r.exteriorColor)),
-    mileage: num(r.miles),
-    dealer_name: titleCase(r.dealer),
-    dealer_key: (r.dealer || "").toLowerCase().replace(/[^a-z0-9]+/g, "") + ".com",
-    city: titleCase(r.city),
-    state: (r.state || "").toUpperCase(),
-    latitude: num(r.latitude || r.lat || r.dealerLatitude),
-    longitude: num(r.longitude || r.lng || r.dealerLongitude),
-    listing_url: normalizeUrl(r.vdp),
-    dealer_url: normalizeUrl(r.dealerUrl || r.dealerWebsite || ""),
-    image_url: r.primaryImage || "",
-    photo_gallery: Array.isArray(r.images) ? r.images.slice(0, 30)
-      : Array.isArray(r.photos) ? r.photos.slice(0, 30)
-      : (r.primaryImage ? [r.primaryImage] : []),
-    photo_count: Number(r.imageCount || r.images?.length || 0),
-    monroney_url: normalizeUrl(r.monroneyUrl || r.windowSticker || ""),
-    inventory_type: String(r.condition || (r.used ? "used" : "new")).toLowerCase(),
-    is_cpo: !!(r.certified || r.cpo),
-    raw_options: Array.isArray(v.options) ? v.options : Array.isArray(r.options) ? r.options : [],
-    status: "In Stock",
-    days_listed: num(r.daysOnMarket),
-    features,
-  };
-}
-
 // ── NeoVIN decode with a DURABLE, shared cache ───────────────────────────────
 // A NeoVIN /specs decode costs $0.08/call and a VIN's build never changes, so it
 // should be decoded ONCE — ever. The in-memory cache only survives within a warm
@@ -718,6 +638,28 @@ export function adListing(l: any): UnifiedVehicle {
 // single decode (previously the same VIN could be charged twice).
 type NeovinParsed = { details: { code: string; name: string; msrp: number; type: string }[]; hvf: string[]; feats: string[] };
 
+// NeoVIN returns `high_value_features` and `features` as an OBJECT keyed by
+// STANDARD/OPTIONAL (each a list of {category, description, …}), NOT a flat
+// array — so the old `Array.isArray(...) ? … : []` always yielded [], dropping
+// the entire high-value-feature vocabulary the "must-have options" filter
+// matches against (BUG-0026). Flatten the dict-of-category-arrays (or a legacy
+// array) and pull each entry's display string so e.g. "Sun/Moonroof",
+// "Premium Speakers", "Apple CarPlay" reach decodeVinOptionNames.
+function flattenNeovinFeatureGroup(v: any): string[] {
+  const out: string[] = [];
+  const push = (it: any) => {
+    if (it == null) return;
+    if (typeof it === "string") { if (it.trim()) out.push(it.trim()); return; }
+    const s = String(it.description || it.name || it.feature_type || "").trim();
+    if (s) out.push(s);
+  };
+  if (Array.isArray(v)) v.forEach(push);
+  else if (v && typeof v === "object") for (const arr of Object.values(v)) {
+    if (Array.isArray(arr)) arr.forEach(push);
+  }
+  return out;
+}
+
 // Parse the small search/diagnose slice (installed option names + high-value
 // features) from a raw NeoVIN /specs response. Exported so decode-vin can prime
 // this cache from the SAME raw decode it already fetched for the build sheet —
@@ -727,8 +669,8 @@ export function parseNeovinParsed(d: any): NeovinParsed {
     details: (Array.isArray(d?.installed_options_details) ? d.installed_options_details : [])
       .map((x: any) => ({ code: String(x.code || ""), name: String(x.name || "").trim(), msrp: num(x.msrp || x.sale_price), type: String(x.type || "") }))
       .filter((o: { name: string }) => o.name),
-    hvf: (Array.isArray(d?.high_value_features) ? d.high_value_features : []).map((s: any) => String(s)),
-    feats: (Array.isArray(d?.features) ? d.features : []).map((s: any) => String(s)),
+    hvf: flattenNeovinFeatureGroup(d?.high_value_features),
+    feats: flattenNeovinFeatureGroup(d?.features),
   };
 }
 
@@ -981,7 +923,4 @@ export async function decodeVinBuildSheet(vin: string, fresh = false): Promise<V
 
 export function mcKey() {
   return process.env.MARKETCHECK_API_KEY || "";
-}
-export function autoDevKey() {
-  return process.env.AUTO_DEV_API_KEY || "";
 }

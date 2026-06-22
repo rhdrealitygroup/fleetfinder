@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**LotCompass** (dir/legacy name "fleetfinder-v2") — multi-tenant SaaS for car-leasing brokers: cross-brand, VIN-deduped lease-inventory search + lease calculator + zero-result diagnoser. RHD Reality Group. Pricing: **$100/mo per company + $15/mo per agent seat, 14-day trial, no card at signup.** Stack: Next.js 16 / React 19 on Vercel · Supabase (Postgres+Auth) · Stripe (LIVE subs) · Tailwind v4 · MarketCheck (primary) + Auto.dev (fallback). **README.md is stale ("Phase 1") — trust the code.**
+**LotCompass** (dir/legacy name "fleetfinder-v2") — multi-tenant SaaS for car-leasing brokers: cross-brand, VIN-deduped lease-inventory search + lease calculator + zero-result diagnoser. RHD Reality Group. Pricing: **$100/mo per company + $15/mo per agent seat, 14-day trial, no card at signup.** Stack: Next.js 16 / React 19 on Vercel · Supabase (Postgres+Auth) · Stripe (LIVE subs) · Tailwind v4 · MarketCheck (sole inventory provider). **README.md is stale ("Phase 1") — trust the code.**
 
 ## Commands
 
@@ -27,7 +27,7 @@ npm run dev     # localhost:3000
 1. `src/proxy.ts` → `lib/supabase/middleware.ts#updateSession`: refreshes the auth cookie, sends signed-out users to `/login` (**401 JSON for `/api/*`**), forces onboarding (`user_metadata.onboarded`). Redirects must copy rotated auth cookies (`redirectTo`) or users get logged out.
 2. `lib/auth.ts#requireActivePlan`: the real subscription enforcement on paid/metered routes.
 
-**Search** (`/api/live-search`, `/diagnose`, `/list-*`): MarketCheck primary, Auto.dev fallback. Auto.dev can't filter dealer_id/interior_color/powertrain_type/zip-without-coords → those force MarketCheck-only (`autoDevCantHonor`). VIN-deduped, NeoVIN option decode, all under a wall-clock budget (see Invariants).
+**Search** (`/api/live-search`, `/diagnose`, `/list-*`): MarketCheck is the sole inventory provider (the Auto.dev fallback was removed — its entitlement lacked mainstream makes, returning 0 for most searches). Dealer-scoped searches use `/dealerships/inventory` (comma-OR dealer_id, $1/call); everything else uses `/search/car/active`. VIN-deduped, NeoVIN option decode, all under a wall-clock budget (see Invariants).
 
 **Inventory dump** (`lib/inventoryDump.ts`) + Vercel crons (`vercel.json`, auth via `CRON_SECRET`): mirrors selected dealers into `inventory`. The destructive sweep is guarded (see Invariants).
 
@@ -49,4 +49,4 @@ Project ref **`vbacqlizbzcxesiwifcv`**. Apply changes via the **Supabase MCP** (
 
 ## Env
 
-Keys are in `.env.example` (Supabase, Stripe live keys + price ids, MarketCheck/Auto.dev, `SUPER_ADMIN_EMAILS`, `CRON_SECRET`). `SUPER_ADMIN_EMAILS` = `rhdrealitygroup@gmail.com` — controls platform-owner access; change deliberately.
+Keys are in `.env.example` (Supabase, Stripe live keys + price ids, MarketCheck, `SUPER_ADMIN_EMAILS`, `CRON_SECRET`). `SUPER_ADMIN_EMAILS` = `rhdrealitygroup@gmail.com` — controls platform-owner access; change deliberately.

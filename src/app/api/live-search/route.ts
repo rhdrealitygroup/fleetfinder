@@ -4,8 +4,8 @@
 
 import { NextResponse } from "next/server";
 import {
-  MC_HOST, AUTO_DEV_HOST, DEFAULT_LAT, DEFAULT_LNG, RADIUS_MILES,
-  PAGE_SIZE, num, mcListing, adListing, mcKey, autoDevKey,
+  MC_HOST, RADIUS_MILES,
+  PAGE_SIZE, num, mcListing, mcKey,
   resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, estMonthlyCard,
   mcBodyType, mcDrivetrain, type UnifiedVehicle,
 } from "@/lib/marketcheck";
@@ -72,10 +72,9 @@ export async function POST(req: Request) {
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));
-  const autoKey = autoDevKey();
   const marketKey = mcKey();
-  if (!autoKey && !marketKey) {
-    return NextResponse.json({ error: "No search API key configured" }, { status: 500 });
+  if (!marketKey) {
+    return NextResponse.json({ error: "MarketCheck API key not configured" }, { status: 500 });
   }
 
   // Resolve to MarketCheck's model string so brands like RAM (catalog "1500"
@@ -201,146 +200,23 @@ export async function POST(req: Request) {
     return { results: out.map(mcListing), total, rateLimited: false };
   }
 
-  async function searchAutoDev() {
-    const out: any[] = [];
-    let total = 0;
-    for (let page = 1; (page - 1) * PAGE_SIZE < SEARCH_LIMIT; page++) {
-      if (page > 1 && Date.now() > reqStart + 47_000) break; // near time budget → stop paging
-      const url = new URL(`${AUTO_DEV_HOST}/listings`);
-      url.searchParams.set("retailListing.used", body.car_type === "used" ? "true" : "false");
-      if (body.vin) url.searchParams.set("vin", String(body.vin).toUpperCase().trim());
-      if (body.make) url.searchParams.set("vehicle.make", body.make);
-      if (body.model) url.searchParams.set("vehicle.model", body.model);
-      if (body.trim) url.searchParams.set("vehicle.trim", body.trim);
-      if (body.year_min || body.year_max) url.searchParams.set("vehicle.year", `${body.year_min || 1900}-${body.year_max || new Date().getFullYear() + 1}`);
-      if (body.price_min || body.price_max) url.searchParams.set("retailListing.price", `${body.price_min || 0}-${body.price_max || 999999}`);
-      if (body.miles_max) url.searchParams.set("retailListing.miles", `0-${body.miles_max}`);
-      // Auto.dev's bodyStyle accepts our raw labels ("Truck"/"Van") natively, so
-      // send it raw — applying the MarketCheck mapper here would break it (Auto.dev
-      // returns 0 for "Cargo Van"). Drivetrain, however, shares MarketCheck's
-      // vocabulary (4WD/FWD/RWD, no "AWD") and is honored, so the combined UI label
-      // "AWD/4WD" matches nothing unless mapped — same mcDrivetrain as the MC path.
-      if (body.body_type) url.searchParams.set("vehicle.bodyStyle", body.body_type);
-      const adDt = mcDrivetrain(body.drivetrain);
-      if (adDt) url.searchParams.set("vehicle.drivetrain", adDt);
-      if (body.exterior_color) url.searchParams.set("vehicle.exteriorColor", body.exterior_color);
-      // Auto.dev needs real coordinates — it has no ZIP param. Only constrain by
-      // location when explicit lat/lng exist; a ZIP-only search is handled by
-      // autoDevCantHonor above (we never reach a serving Auto.dev call for it), so
-      // here a missing lat/lng means a true nationwide search → no center/radius.
-      const hasGeo = !!(body.latitude && body.longitude);
-      if (hasGeo) {
-        url.searchParams.set("latitude", String(body.latitude || DEFAULT_LAT));
-        url.searchParams.set("longitude", String(body.longitude || DEFAULT_LNG));
-        url.searchParams.set("radius", String(radius));
-      }
-      url.searchParams.set("limit", String(PAGE_SIZE));
-      url.searchParams.set("page", String(page));
-      let res: Response;
-      try { res = await fetchWithTimeout(url.toString(), { headers: { Authorization: `Bearer ${autoKey}` } }); }
-      catch { if (out.length > 0) break; throw new Error("Auto.dev request timed out"); }
-      if (res.status === 429) return { results: out.map(adListing), total, rateLimited: true };
-      if (!res.ok) {
-        if (out.length > 0) break; // keep what we have past page 0
-        const b = await res.text().catch(() => "");
-        throw new Error(`Auto.dev ${res.status}: ${b.slice(0, 150)}`);
-      }
-      const data = await res.json();
-      total = num(data.total || data?.meta?.total) || total;
-      const list: any[] = data.data || data.listings || [];
-      out.push(...list);
-      if (list.length < PAGE_SIZE) break;
-    }
-    return { results: out.map(adListing), total, rateLimited: false };
-  }
-
   let results: UnifiedVehicle[] = [];
   let total = 0;
-  let provider = "";
+  const provider = "marketcheck";
   let note = "";
   let rateLimited = false;
-  let mcTried = false; // did we already attempt MarketCheck? (don't retry it in the catch)
-  // Prefer MarketCheck whenever we have a key: it geocodes ZIPs natively AND
-  // (on the Basic tier) handles unbounded nationwide queries. Auto.dev is the
-  // fallback, used only if MarketCheck is unavailable or rate-limited.
-  const preferMarketCheck = !!marketKey;
-  // Filters Auto.dev cannot honor (no API param + no client-side post-filter):
-  // dealer scope, interior color, AND a ZIP with no resolved lat/lng (Auto.dev has
-  // no ZIP param and we have no geocoder, so it would silently center on the
-  // default NJ coords). For any of these, don't serve/cache an Auto.dev result.
-  const autoDevCantHonor = (Array.isArray(body.dealer_ids) && body.dealer_ids.length > 0)
-    || !!body.interior_color
-    || !!body.powertrain_type
-    || (!!body.zip && !(body.latitude && body.longitude));
+  // MarketCheck is the sole inventory provider. The Auto.dev fallback was removed:
+  // our entitlement's dataset lacked the mainstream makes brokers search (e.g.
+  // make=Toyota/Honda → 0 listings), so it returned empty for most real queries —
+  // worse than surfacing a clear rate-limit/unavailable message. A 429 returns an
+  // empty result (not a throw); we annotate it as rate-limited rather than letting
+  // the UI read it as "no inventory" and send the agent chasing filters that are fine.
   try {
-    if (preferMarketCheck) {
-      mcTried = true;
-      const r = await searchMarketCheck();
-      results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
-      if (r.rateLimited) {
-        // A 429 returns empty rather than throwing, so fall back to Auto.dev when
-        // available — otherwise the UI shows a rate-limit as "no inventory" and
-        // sends the agent chasing filters that are actually fine.
-        // BUT NOT when the search needs a filter Auto.dev can't honor: dealer_id
-        // (no dealer filter) or interior_color (no interior filter + no client-side
-        // post-filter). Falling back there would return inventory that ignores the
-        // filter and cache it under the filter-specific key. Keep rateLimited=true
-        // (so nothing is cached) and just surface the rate-limit note.
-        if (autoKey && !autoDevCantHonor) {
-          try {
-            const r2 = await searchAutoDev();
-            results = r2.results; total = r2.total; provider = "auto.dev"; rateLimited = r2.rateLimited;
-            note = " (marketcheck rate-limited, used auto.dev)";
-          } catch { note = " (inventory service rate-limited — try again shortly)"; }
-        } else {
-          note = " (inventory service rate-limited — try again shortly)";
-        }
-      }
-    } else if (autoKey) {
-      // Auto.dev-only deployment (no MarketCheck key). Auto.dev can't filter by
-      // dealer_id or interior_color and we have no post-filter for them, so for
-      // such a search return nothing with a clear note rather than silently
-      // serving (and caching) an unfiltered set.
-      if (autoDevCantHonor) {
-        results = []; total = 0; provider = "auto.dev"; rateLimited = true;
-        note = " (this filter needs MarketCheck — not available in this configuration)";
-      } else {
-        const r = await searchAutoDev();
-        results = r.results; total = r.total; provider = "auto.dev"; rateLimited = r.rateLimited;
-        if (r.rateLimited) note = " (inventory service rate-limited — try again shortly)";
-      }
-    } else if (marketKey) {
-      mcTried = true;
-      const r = await searchMarketCheck();
-      results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
-    }
+    const r = await searchMarketCheck();
+    results = r.results; total = r.total; rateLimited = r.rateLimited;
+    if (r.rateLimited) note = " (inventory service rate-limited — try again shortly)";
   } catch (e) {
-    // Cross-provider fallback on a HARD failure (timeout/5xx/malformed), not just
-    // a 429. If MarketCheck threw and Auto.dev can honor this search, use it
-    // (mirrors the rate-limit fallback). If Auto.dev threw and MarketCheck exists,
-    // try MarketCheck. Otherwise surface the error.
-    if (provider !== "auto.dev" && autoKey && !autoDevCantHonor) {
-      try {
-        const r = await searchAutoDev();
-        results = r.results; total = r.total; provider = "auto.dev"; rateLimited = r.rateLimited;
-        note = " (marketcheck unavailable, used auto.dev)";
-      } catch {
-        return NextResponse.json({ error: (e as Error).message }, { status: 502 });
-      }
-    } else if (provider !== "marketcheck" && marketKey && !mcTried) {
-      // Only retry MarketCheck if we HADN'T already tried it (i.e. Auto.dev was the
-      // failing primary). Re-running the MarketCheck that just hard-failed — e.g. on
-      // a dealer-scoped/interior search where Auto.dev can't help — is pointless.
-      try {
-        const r = await searchMarketCheck();
-        results = r.results; total = r.total; provider = "marketcheck"; rateLimited = r.rateLimited;
-        note = " (auto.dev failed, used marketcheck)";
-      } catch (e2) {
-        return NextResponse.json({ error: (e2 as Error).message }, { status: 502 });
-      }
-    } else {
-      return NextResponse.json({ error: (e as Error).message }, { status: 502 });
-    }
+    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
 
   // Post-filter by selected range/config variant (e.g. "Extended Range"),

@@ -369,3 +369,56 @@ implementing and merging. LotCompass-only (FleetFinder has no snapshot and decod
 - Catalog crons: refresh/verify/health self-chaining; inventoryDump reader gap.
 - Billing/auth: Stripe webhook idempotency/ordering, requireActivePlan fail-open/closed, referrals idempotency, proxy gating.
 - UI flows end-to-end on live lotcompass.com.
+
+---
+
+# RUN 2 — audit/v2-correctness fresh sweep (2026-06-22, Opus 4.8 agent)
+
+Anti-assumption doctrine re-applied: re-verified the provider-vocabulary seam against the LIVE
+MarketCheck API rather than trusting prior "verified" comments. (Tooling note: the correct MarketCheck
+facet syntax is `field|0|size|1`; an earlier `field|1|size` truncated the top values and falsely made
+SUV/4WD/Combustion look absent — direct count checks proved 4WD→3.9M, SUV→3.3M, Combustion→4.86M all
+valid; the mcBodyType/mcDrivetrain mappers and all 25 FEATURE_GROUPS facet values are correct.)
+
+**BUG-0026 (FIXED) — NeoVIN high_value_features/features parsed as array, but the API returns a dict
+→ the "must-have options" filter matched nothing.** `parseNeovinParsed` used
+`Array.isArray(d.high_value_features) ? … : []`, but NeoVIN `/specs` returns `high_value_features`
+and `features` as objects keyed by `STANDARD`/`OPTIONAL` (strings in `.description`). So `hvf`/`feats`
+were ALWAYS empty (proven: 0/152 rows in `vin_decode_cache`), and `decodeVinOptionNames` only ever
+returned `installed_options_details` NAMES ("moonroof", "jbl premium audio"). Any feature chip in the
+high_value_features vocabulary ("sun/moonroof", "premium speakers", "apple carplay", "heated seats", …)
+— every generic FEATURE_GROUPS chip + the `list-features` facet-supplement chips for low-build-sheet
+models — therefore matched nothing → ~0 results. Fix: `flattenNeovinFeatureGroup()` flattens the
+dict-of-category-arrays (or legacy array) and pulls `.description`. LIVE re-verify on VIN
+`2T36DRBV5TW017839`: hvf 0→47, feats 0→249; FEATURE_GROUPS chip matches on that RAV4 went 0/25 → 18/25
+(the 7 unmatched are genuinely not equipped). Applied to BOTH repos (`fleetfinder-v2/src/lib/marketcheck.ts`
++ `fleetfinder/base44/functions/_shared/mc.ts`). v2 build exit 0; ff `deno check` clean on
+decode_vin/diagnose/list_features (live_search fails only on a pre-existing missing `@base44/sdk` dep).
+Existing cached rows refresh lazily on the 30-day TTL (not force-re-decoded — would cost $0.08 each).
+
+**Phase-2 note (not a correctness bug):** the `live-search` `body.features` → `high_value_features`
+search-param path (route line ~175) is dead — no client sends `features`; the UI sends `option_names`
+(VIN-decode path). The free `high_value_features` search filter could replace many paid decodes — defer
+to optimization.
+
+## RUN 2 — areas verified CLEAN this pass (live evidence) + non-bug observations
+
+Live provider-vocabulary seam (correct facet syntax `field|0|size|1`):
+- **body_type**: SUV→3.33M, Sedan/Wagon/Coupe pass-through valid; Truck→Pickup(1.27M), Van→Cargo Van/Minivan/Passenger Van — all map correctly. **drivetrain**: AWD/4WD→4WD(3.9M), FWD/RWD valid. **powertrain**: Combustion→4.86M, HEV/MHEV/BEV/PHEV valid.
+- **high_value_features**: all 25 FEATURE_GROUPS values exist in the live facet (verified against the full 129-value facet).
+- **Range params**: year_range/price_range/miles_range all filter correctly on `/search/car/active`.
+- **Dealer-scoped `/dealerships/inventory`**: rows=150 returns 150 in ONE call (no 50-cap, unlike active-search); honors make/body_type/drivetrain/car_type filters; multi-dealer comma-OR merges (531+767→1298). No P3/P2 regression.
+- **MODEL_ALIASES (P11)**: sampled 11 aliases live — Ram 1500 Pickup,Classic→154k; RAV4 Plug-in Hybrid→6952; Kona EV→512; 718,Boxster→1629; ID. Buzz→685; RS 5 set→427; HUMMER EV→2676; Hardtop 2 Door→3448; M3 Sedan→1391; Niro→6319; Murcilago→35. All resolve to live inventory.
+
+Code seams verified clean:
+- **Auth/billing**: `requireActivePlan` (401/super-admin/card-gated-trial-fails-closed-402/fail-open-only-on-throw), service-role only after `auth.getUser()`. Stripe webhook (event-time ordering, same-second re-fetch, foreign-sub guard, atomic `stripe_subscription_id` claim, idempotent seat true-up, `trial_used`, comp reconcile) — all invariants hold.
+- **Crons**: all four gate on `CRON_SECRET` (fail-closed 401). `catalogSnapshot` ROWS=50 (BUG-0017). verify-catalog (BUG-0021) + refresh-catalog (BUG-0016) stamp every model attempted — no early `continue`. No `rows>50` anywhere.
+- **Access (proxy/middleware)**: `/api/*`→401 JSON when signed out; rotated auth cookies copied onto redirects; onboarding gate excludes `/api`,`/auth`; getUser fail-open.
+- **P9 stale-state**: CompanyForm + CompaniesTable (BUG-0012) correctly resync from props via a `dirty` guard.
+- **list-trims** sends the raw facet trim string (BUG-0014); **list-colors/list-interior-colors** use the shared `cleanColorFacet` (BUG-0024); list-models/list-features facet syntax correct.
+- **dealers/catalog** make filter is inclusive (tagged OR untagged-but-stocked) with PostgREST injection guards (BUG-0005).
+
+Observations (NOT fixed — documented for owner):
+1. **Auto.dev fallback dataset lacks mainstream makes.** Our Auto.dev entitlement returns 0 for `vehicle.make=Toyota/Honda/Chevrolet` (param works — `=Kia`→101, `=Volvo`→41743 — but the dataset is missing the top-volume makes). So the Auto.dev fallback is ineffective for most real broker searches; when MarketCheck is rate-limited/down it returns "0 results" for a Toyota search rather than a true count. Fallback-only (MarketCheck is primary and healthy), degrades with a note. Recommend: owner decide whether Auto.dev is worth keeping as a fallback, or surface "service unavailable" instead of empty when the fallback can't cover the make. Severity Low-Med (fallback-only).
+2. **Advisors (pre-existing, reviewed):** security — `rls_enabled_no_policy` INFO on service-role-only cache/state tables (by design); WARN `my_org_ids()`/`my_admin_org_ids()` SECURITY DEFINER executable by anon/authenticated — both are `auth.uid()`-scoped (anon→empty, no params, pinned search_path) so the exposure is benign, and `authenticated` EXECUTE is REQUIRED for RLS policy evaluation; a `REVOKE … FROM PUBLIC` hygiene change touches RLS so deferred to owner (fail-closed rule). WARN leaked-password-protection is an Auth dashboard toggle. Performance — `auth_rls_initplan` (use `(select auth.fn())`), `multiple_permissive_policies` (customers/dealers), one unindexed FK — all Phase-2 optimization, no correctness impact.
+3. **list-colors live fallback isn't trim-scoped** (display-only): when a trim is selected AND the model isn't in the nightly snapshot, the live exterior/interior color list shows colors across all trims (filtering still correct via raw `variants`). Rare path; Phase-2 nicety.
