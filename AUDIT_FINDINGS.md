@@ -236,7 +236,24 @@ explicit warning comment about this exact stall.
 - **Feature chips**: v2 sends model-specific AND generic chips as `option_names` → client-side NeoVIN
   decode phraseMatch (vocabulary-agnostic), NOT the high_value_features facet filter. No P1 mismatch.
 
+**BUG-0022 (FIXED) — Auto.dev fallback sent raw "AWD/4WD" → 0.** The Auto.dev path sent
+`body.drivetrain` raw to `vehicle.drivetrain`. Live probe: Auto.dev shares MarketCheck's drivetrain
+vocab (4WD/FWD/RWD) and HONORS the filter (`AWD/4WD`→0, `4WD`→5), so the combined UI label matched
+nothing during a MarketCheck rate-limit fallback. Fix: apply `mcDrivetrain` on the Auto.dev path
+(both repos). body_type left RAW — verified Auto.dev accepts `Truck`/`Van` natively but returns 0 for
+`Cargo Van`, so the MC mapper must NOT be applied there. Build-gated + mirrored to FleetFinder.
+
+**Live round-trip seams re-verified (picker→search, the #1 historical break point):**
+- exterior_color: RAV4 facet `Storm Cloud`=5614 → search `exterior_color=Storm Cloud`=5614 (exact). OK.
+- trim: RAV4 facet `XLE`=11578 → search `trim=XLE`=11578 (raw round-trips). OK.
+- resolveModel alias: RAM `1500`→`Ram 1500 Pickup,Ram 1500 Classic`=94347 vs bare `1500`=0. Alias works.
+- Auto.dev exterior_color: real marketing names (`Storm Cloud`, `Midnight Black Metallic`) all return
+  results on Auto.dev → color filter parity is fine on the fallback (no fix needed).
+
 **Observations (not fixed — not live defects):**
+- Auto.dev path `total` reads `data.total||meta.total`, but the live response nests listings under
+  `data.data` with no top-level total → Auto.dev fallback reports total=results.length (no "showing N
+  of M" banner). Cosmetic, fallback-only. Phase-2 candidate.
 - `list-styles/route.ts` sends RAW `body.model` (skips resolveModel), but the route has NO UI caller
   (dead code) — latent only. Phase-2 cleanup or wire-up.
 - `lease.ts` clamps depreciation but not rentCharge; a negative money-factor input yields a negative
