@@ -264,6 +264,28 @@ nothing during a MarketCheck rate-limit fallback. Fix: apply `mcDrivetrain` on t
 
 ---
 
+## PASS 9 (branch audit/v2-correctness) — Pass 2 of the v2 sweep
+
+**BUG-0023 (DEFERRED, documented) — decode-vin memory-only cache → cold-start re-charge + double-decode.**
+`decode-vin/route.ts` calls NeoVIN `/specs` directly and caches only in `memoryCache` (key `vin::VIN`),
+NOT the durable `vin_decode_cache` that BUG-0006 added to `neovinSpecs`. The two paths also store
+different payloads under different keys, so the same $0.08 decode is paid twice (build-sheet view +
+option search) and re-charged on cold starts. Same P4 pattern as the $2,177 BUG-0006 but lower volume.
+Durable fix needs a small schema decision (existing table is one-payload-per-VIN) → deferred for owner
+sign-off per the no-scope-creep / cost-posture rules. Proposal recorded in BUG_REGISTRY.
+
+**Areas re-verified clean this pass:**
+- **dealers/catalog**: BUG-0005 inclusive-make filter intact (`makes.cs.{}` + untagged-with-inventory via
+  `makes.is.null`/`makes.eq.{}`); `.or()` injection guards on both make and q. OK.
+- **dealers/selection**: GET via RLS client; POST/DELETE service-role after auth; DELETE owner/admin-gated,
+  soft-deselect; no tracked_dealers vestige (BUG-0019/0020 clean). OK.
+- **dealers/removal-requests**: org-scoped, role-gated PATCH, dedupe, only-pending guard. OK.
+- **UI client-state (P9)**: full sweep of all 18 "use client" components — every prop-seeded component
+  subject to in-place `router.refresh()` (TeamManager, CompaniesTable, CompanyForm, ReferralPanel) has a
+  resync effect; the rest own their fetch (loadSeq/mutSeq guards) or full-reload on mutation. No P9 bug.
+
+---
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.

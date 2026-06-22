@@ -233,4 +233,14 @@
 - **Evidence (live Auto.dev with our key):** `vehicle.drivetrain=AWD/4WD` → 0 listings; `vehicle.drivetrain=4WD` → 5. `vehicle.bodyStyle=Cargo Van` → 0 but `=Truck` → 5 and `=Van` → 5 (so body_type stays raw). `vehicle.drivetrain=FWD/RWD` already valid raw.
 - **Status:** Fixed & verified (live Auto.dev probe + build-gate).
 
-<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0023. Never edit/delete above. -->
+### BUG-0023 — decode-vin uses a memory-only cache → cold-start re-charge + double-decode
+- **Date:** 2026-06-21  **Severity:** Med (cost)  **Found by:** audit/v2-correctness (Pass 2)
+- **Area:** `src/app/api/decode-vin/route.ts`
+- **Symptom:** viewing a VIN's build sheet re-charges the $0.08 NeoVIN decode on every serverless cold start, and a VIN that is BOTH viewed (build sheet) and searched-with-options is decoded twice — two separate $0.08 charges for the same `/decode/car/neovin/{vin}/specs` call.
+- **Root cause:** decode-vin calls MarketCheck directly (line 88-90) and caches the result only in `memoryCache` (key `vin::VIN`, in-isolate only). It does NOT use the durable `vin_decode_cache` DB layer that BUG-0006 added to `neovinSpecs`. Worse, the two paths store DIFFERENT parsed payloads (decode-vin's full build sheet vs `neovinSpecs`' `NeovinParsed` slice under key `vinspecs::VIN`), so neither memory nor DB cache is shared — the same upstream decode is paid for twice.
+- **Pattern (P4):** in-memory cache doesn't survive serverless cold starts; same class as BUG-0006 (the $2,177 bill driver). Lower volume here (build-sheet view is a deliberate click, not bulk search), so Med not Critical.
+- **Proposed fix (NOT applied — needs a schema decision):** cache the RAW NeoVIN `/specs` response once per VIN in a durable store and have BOTH consumers parse their slice from it (decode-vin → full build sheet; `neovinSpecs` → `NeovinParsed`). The existing `vin_decode_cache` is one-jsonb-payload-per-VIN (`on_conflict=vin`), so this needs either an added `build_sheet jsonb` column or a shared raw-payload column + both parsers — a migration. Deferred per the no-scope-creep / cost-posture rules.
+- **Evidence:** code — decode-vin uses only `cacheGet/cacheSet` (memoryCache) at lines 78-82, 99, 108; `neovinSpecs` (marketcheck.ts) uses `vinspecs::` memory key + `vin_decode_cache` DB rows with the `NeovinParsed` payload. Keys and payloads differ → no sharing. Both POST to the same `/decode/car/neovin/{vin}/specs` endpoint.
+- **Status:** Open — Deferred (owner sign-off: needs a small migration / caching decision). Documented with proposal.
+
+<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0024. Never edit/delete above. -->
