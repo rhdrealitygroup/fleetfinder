@@ -286,6 +286,35 @@ sign-off per the no-scope-creep / cost-posture rules. Proposal recorded in BUG_R
 
 ---
 
+## PASS 10 (branch audit/v2-correctness) — remaining API routes + final value-class checks
+
+**BUG-0024 (DEFERRED) — color picker DB-vs-live cleaning divergence.** Snapshot uses exterior-tuned
+`cleanColorFacet` for both ext+int; live routes hand-roll (ext: no scrub; int: material-aware). Display
+-only (variants preserved → filtering correct, proven by the live round-trip). Proposed: mode-aware
+shared cleaner used by snapshot + both live routes. Deferred (changes nightly-job stored names).
+
+**Remaining API routes audited (referral/customers/saved/team/me/account/admin) — no defects:**
+auth + 401/402-JSON, org/role-scoped tenancy, service-role-after-auth, PostgREST injection guards, and
+money-path idempotency (account/finalize stripe-sub claim is null-guarded; onboard referral is
+UNIQUE-backed; admin/companies cancels Stripe before delete with rollback + fail-closed on null count)
+all upheld. Three NITS (not logged as bugs): saved POST may write org_id=null on provisioning failure
+(harmless — saved is user-scoped by user_id); admin/promos coupon create lacks an idempotency key
+(super-admin manual, non-billing); customers email/phone unvalidated (own-row only). Phase-2 hygiene.
+
+**Last UI→provider value class verified live (make strings, incl. casing/hyphens/spaces):**
+Mercedes-Benz 88,257 · Land Rover 24,201 · Alfa Romeo 1,188 · MINI 10,427 · GMC 148,649 · RAM 159,461 ·
+Mazda 117,174 — all valid. Combined with prior live checks (body_type, drivetrain, powertrain, color &
+trim round-trips, model aliases), EVERY value the UI can send to MarketCheck is now confirmed against the
+live facet vocabulary.
+
+### Run summary (branch audit/v2-correctness)
+- **Fixed + build-gated:** BUG-0021 (verify-catalog self-chain stall), BUG-0022 (Auto.dev drivetrain map; mirrored to FleetFinder).
+- **Deferred (owner sign-off, documented with proposal):** BUG-0023 (decode-vin durable cache), BUG-0024 (color cleaner unification).
+- **Verified clean:** all search filters, diagnose, every picker, all crons, full billing/auth/multi-tenancy, UI client-state (P9), and all remaining API routes.
+- **Completion bar:** the two deferred items are open pending owner decisions, so a "zero-findings" clean streak can't be certified until they're resolved/accepted. The two code defects are fixed; the whole checklist has been walked once end-to-end with live evidence.
+
+---
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.
