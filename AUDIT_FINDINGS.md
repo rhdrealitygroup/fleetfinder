@@ -322,10 +322,14 @@ live facet vocabulary.
   shows no NEW issue (the table's `rls_enabled_no_policy` INFO is pre-existing + by-design service-role).
 - decode-vin rewrite is field-compatible with its only UI consumer (search/page.tsx reads
   packages[].name, options[].name, interior_color — all present in VinBuildSheet). No regression.
-- POST-DEPLOY LIVE RE-VERIFY: **pending** — the Claude-in-Chrome extension is disconnected, so the
-  authenticated same-origin checks (decode-vin 2nd call → provider:"cache"; a live-fallback color
-  picker shows the unified cleaned names) couldn't be run this session. Site is live (HTTP 200) and
-  /api/decode-vin is correctly auth-gated (401 JSON). To finish: reconnect Chrome.
+- POST-DEPLOY LIVE RE-VERIFY: **DONE** (authed owner on www.lotcompass.com).
+  - BUG-0023: VIN `2T36DRBV3TW019251` → decode call 1 `provider:"marketcheck-neovin"` (3 pkgs/5 opts,
+    508ms), call 2 `provider:"cache"` (172ms). DB row after: `has_build_sheet=true AND has_payload=true`
+    from ONE decode → durable build-sheet cache + search-slice prime both confirmed live.
+  - BUG-0024: `list-colors`/`list-interior-colors` (fresh:true → live cleaner) return clean names with
+    raw `variants` preserved (Ash Softex nv:2, Black nv:4) — both routes now share `cleanColorFacet`.
+  - BUG-0022/0021 are fallback/cron paths (not UI-triggerable); verified by code + the earlier live
+    Auto.dev drivetrain probe and verifyModel-contract check.
 
 ## PASS 11 (branch audit/v2-correctness) — implemented the two deferred fixes (owner sign-off)
 
