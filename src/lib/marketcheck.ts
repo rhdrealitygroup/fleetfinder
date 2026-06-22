@@ -718,6 +718,28 @@ export function adListing(l: any): UnifiedVehicle {
 // single decode (previously the same VIN could be charged twice).
 type NeovinParsed = { details: { code: string; name: string; msrp: number; type: string }[]; hvf: string[]; feats: string[] };
 
+// NeoVIN returns `high_value_features` and `features` as an OBJECT keyed by
+// STANDARD/OPTIONAL (each a list of {category, description, …}), NOT a flat
+// array — so the old `Array.isArray(...) ? … : []` always yielded [], dropping
+// the entire high-value-feature vocabulary the "must-have options" filter
+// matches against (BUG-0026). Flatten the dict-of-category-arrays (or a legacy
+// array) and pull each entry's display string so e.g. "Sun/Moonroof",
+// "Premium Speakers", "Apple CarPlay" reach decodeVinOptionNames.
+function flattenNeovinFeatureGroup(v: any): string[] {
+  const out: string[] = [];
+  const push = (it: any) => {
+    if (it == null) return;
+    if (typeof it === "string") { if (it.trim()) out.push(it.trim()); return; }
+    const s = String(it.description || it.name || it.feature_type || "").trim();
+    if (s) out.push(s);
+  };
+  if (Array.isArray(v)) v.forEach(push);
+  else if (v && typeof v === "object") for (const arr of Object.values(v)) {
+    if (Array.isArray(arr)) arr.forEach(push);
+  }
+  return out;
+}
+
 // Parse the small search/diagnose slice (installed option names + high-value
 // features) from a raw NeoVIN /specs response. Exported so decode-vin can prime
 // this cache from the SAME raw decode it already fetched for the build sheet —
@@ -727,8 +749,8 @@ export function parseNeovinParsed(d: any): NeovinParsed {
     details: (Array.isArray(d?.installed_options_details) ? d.installed_options_details : [])
       .map((x: any) => ({ code: String(x.code || ""), name: String(x.name || "").trim(), msrp: num(x.msrp || x.sale_price), type: String(x.type || "") }))
       .filter((o: { name: string }) => o.name),
-    hvf: (Array.isArray(d?.high_value_features) ? d.high_value_features : []).map((s: any) => String(s)),
-    feats: (Array.isArray(d?.features) ? d.features : []).map((s: any) => String(s)),
+    hvf: flattenNeovinFeatureGroup(d?.high_value_features),
+    feats: flattenNeovinFeatureGroup(d?.features),
   };
 }
 
