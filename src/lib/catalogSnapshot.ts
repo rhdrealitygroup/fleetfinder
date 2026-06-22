@@ -42,8 +42,8 @@ export async function snapshotModel(make: string, model: string, deadline = 0, s
   const versions = (fd.facets?.version || []).map((t: any) => ({ name: fixVersionName(t.item), count: num(t.count) }));
   // Scrub factory paint-code cruft + dedupe so the stored catalog matches the
   // cleaned names the live picker shows (raw values preserved in `variants`).
-  const colors = cleanColorFacet(fd.facets?.exterior_color || []);
-  const interiorColors = cleanColorFacet(fd.facets?.interior_color || []);
+  const colors = cleanColorFacet(fd.facets?.exterior_color || [], "exterior");
+  const interiorColors = cleanColorFacet(fd.facets?.interior_color || [], "interior");
   // No facet data at all → treat as a transient miss, don't overwrite good data.
   if (!trims.length && !versions.length && !colors.length) return null;
 
@@ -89,13 +89,13 @@ export async function snapshotModel(make: string, model: string, deadline = 0, s
   }
   // Clean each trim's color tallies through the same code-scrub/dedup as the
   // model-level lists. Stored keyed by trim's display name (prettyTrim).
-  const toFacet = (m: Map<string, number>) => cleanColorFacet([...m.entries()].map(([item, count]) => ({ item, count })));
+  const toFacet = (m: Map<string, number>, mode: "exterior" | "interior") => cleanColorFacet([...m.entries()].map(([item, count]) => ({ item, count })), mode);
   const colorsByTrim: Record<string, ReturnType<typeof cleanColorFacet>> = {};
   const interiorColorsByTrim: Record<string, ReturnType<typeof cleanColorFacet>> = {};
   for (const [trim, slot] of byTrim) {
     const key = prettyTrim(titleCase(trim));
-    const ext = toFacet(slot.ext);
-    const int = toFacet(slot.int);
+    const ext = toFacet(slot.ext, "exterior");
+    const int = toFacet(slot.int, "interior");
     if (ext.length) colorsByTrim[key] = ext;
     if (int.length) interiorColorsByTrim[key] = int;
   }

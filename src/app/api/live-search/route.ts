@@ -215,8 +215,14 @@ export async function POST(req: Request) {
       if (body.year_min || body.year_max) url.searchParams.set("vehicle.year", `${body.year_min || 1900}-${body.year_max || new Date().getFullYear() + 1}`);
       if (body.price_min || body.price_max) url.searchParams.set("retailListing.price", `${body.price_min || 0}-${body.price_max || 999999}`);
       if (body.miles_max) url.searchParams.set("retailListing.miles", `0-${body.miles_max}`);
+      // Auto.dev's bodyStyle accepts our raw labels ("Truck"/"Van") natively, so
+      // send it raw — applying the MarketCheck mapper here would break it (Auto.dev
+      // returns 0 for "Cargo Van"). Drivetrain, however, shares MarketCheck's
+      // vocabulary (4WD/FWD/RWD, no "AWD") and is honored, so the combined UI label
+      // "AWD/4WD" matches nothing unless mapped — same mcDrivetrain as the MC path.
       if (body.body_type) url.searchParams.set("vehicle.bodyStyle", body.body_type);
-      if (body.drivetrain) url.searchParams.set("vehicle.drivetrain", body.drivetrain);
+      const adDt = mcDrivetrain(body.drivetrain);
+      if (adDt) url.searchParams.set("vehicle.drivetrain", adDt);
       if (body.exterior_color) url.searchParams.set("vehicle.exteriorColor", body.exterior_color);
       // Auto.dev needs real coordinates — it has no ZIP param. Only constrain by
       // location when explicit lat/lng exist; a ZIP-only search is handled by

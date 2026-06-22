@@ -210,6 +210,129 @@ No facet equivalent at all (each →0 live; **removed** from the picker): heated
 
 ---
 
+## PASS 8 (branch audit/v2-correctness) — new finding + areas re-verified
+
+**BUG-0021 (FIXED) — verify-catalog self-chain re-attempts null models every link.**
+`verify-catalog/route.ts:65` did `continue` on a `null` (transient-miss) result, skipping the
+`catalog_verify_state` stamp at the loop's end. Since `pending` is recomputed per link as
+"updated_at < cycleStart", an unstamped model stays pending and is re-attempted on every chained
+link of the cycle (up to MAX_LINKS=450), burning budget and stalling the cycle. Same class as
+BUG-0016. Fix: always stamp attempted; on null, keep the existing report (skip delete/insert) but
+still mark attempted so it refreshes next cycle, not next link. Build-gated clean. LotCompass-only
+(FleetFinder has no catalog cron). Evidence: refresh-catalog already stamps unconditionally with an
+explicit warning comment about this exact stall.
+
+**Areas re-verified clean this pass (live API + code):**
+- **powertrain_type facet** = Combustion/HEV/MHEV/BEV/PHEV/FCEV/EREV (live). v2 search UI emits NO
+  powertrain field, so no mismatch. FleetFinder `FUEL_TYPES`/`EV_FUELS` are dead (never imported).
+- **body_type facet** (live) = SUV/Pickup/Sedan/Hatchback/Minivan/Coupe/Cargo Van/Convertible/Wagon/
+  Passenger Van… UI {SUV,Sedan,Truck,Wagon,Coupe,Van}: Truck→Pickup, Van→Cargo Van,Minivan,Passenger
+  Van; SUV/Sedan/Wagon/Coupe pass through and are all real. OK.
+- **drivetrain facet** (live) = 4WD/FWD/RWD. UI {AWD/4WD→4WD, FWD, RWD} all real. OK.
+- **Sort keys**: applied CLIENT-SIDE over fetched ≤150 results (search/page.tsx:343); only "distance"
+  uses API order. Consistent. OK.
+- **diagnose**: applies mcBodyType/mcDrivetrain, skips null closest-match when dealer-scoped, decode
+  loop bounded. OK.
+- **Feature chips**: v2 sends model-specific AND generic chips as `option_names` → client-side NeoVIN
+  decode phraseMatch (vocabulary-agnostic), NOT the high_value_features facet filter. No P1 mismatch.
+
+**BUG-0022 (FIXED) — Auto.dev fallback sent raw "AWD/4WD" → 0.** The Auto.dev path sent
+`body.drivetrain` raw to `vehicle.drivetrain`. Live probe: Auto.dev shares MarketCheck's drivetrain
+vocab (4WD/FWD/RWD) and HONORS the filter (`AWD/4WD`→0, `4WD`→5), so the combined UI label matched
+nothing during a MarketCheck rate-limit fallback. Fix: apply `mcDrivetrain` on the Auto.dev path
+(both repos). body_type left RAW — verified Auto.dev accepts `Truck`/`Van` natively but returns 0 for
+`Cargo Van`, so the MC mapper must NOT be applied there. Build-gated + mirrored to FleetFinder.
+
+**Live round-trip seams re-verified (picker→search, the #1 historical break point):**
+- exterior_color: RAV4 facet `Storm Cloud`=5614 → search `exterior_color=Storm Cloud`=5614 (exact). OK.
+- trim: RAV4 facet `XLE`=11578 → search `trim=XLE`=11578 (raw round-trips). OK.
+- resolveModel alias: RAM `1500`→`Ram 1500 Pickup,Ram 1500 Classic`=94347 vs bare `1500`=0. Alias works.
+- Auto.dev exterior_color: real marketing names (`Storm Cloud`, `Midnight Black Metallic`) all return
+  results on Auto.dev → color filter parity is fine on the fallback (no fix needed).
+
+**Observations (not fixed — not live defects):**
+- Auto.dev path `total` reads `data.total||meta.total`, but the live response nests listings under
+  `data.data` with no top-level total → Auto.dev fallback reports total=results.length (no "showing N
+  of M" banner). Cosmetic, fallback-only. Phase-2 candidate.
+- `list-styles/route.ts` sends RAW `body.model` (skips resolveModel), but the route has NO UI caller
+  (dead code) — latent only. Phase-2 cleanup or wire-up.
+- `lease.ts` clamps depreciation but not rentCharge; a negative money-factor input yields a negative
+  monthly. Dealer-controlled internal calculator (GIGO, no money path); card path already clamped
+  (BUG-0011). Left unchanged to avoid scope creep.
+- `sync-dealers` city sub-partition ignores `cr.saturated`; a single city >1500 dealers of one type
+  would drop the tail. No US city approaches that — latent only. Documented.
+
+---
+
+## PASS 9 (branch audit/v2-correctness) — Pass 2 of the v2 sweep
+
+**BUG-0023 (DEFERRED, documented) — decode-vin memory-only cache → cold-start re-charge + double-decode.**
+`decode-vin/route.ts` calls NeoVIN `/specs` directly and caches only in `memoryCache` (key `vin::VIN`),
+NOT the durable `vin_decode_cache` that BUG-0006 added to `neovinSpecs`. The two paths also store
+different payloads under different keys, so the same $0.08 decode is paid twice (build-sheet view +
+option search) and re-charged on cold starts. Same P4 pattern as the $2,177 BUG-0006 but lower volume.
+Durable fix needs a small schema decision (existing table is one-payload-per-VIN) → deferred for owner
+sign-off per the no-scope-creep / cost-posture rules. Proposal recorded in BUG_REGISTRY.
+
+**Areas re-verified clean this pass:**
+- **dealers/catalog**: BUG-0005 inclusive-make filter intact (`makes.cs.{}` + untagged-with-inventory via
+  `makes.is.null`/`makes.eq.{}`); `.or()` injection guards on both make and q. OK.
+- **dealers/selection**: GET via RLS client; POST/DELETE service-role after auth; DELETE owner/admin-gated,
+  soft-deselect; no tracked_dealers vestige (BUG-0019/0020 clean). OK.
+- **dealers/removal-requests**: org-scoped, role-gated PATCH, dedupe, only-pending guard. OK.
+- **UI client-state (P9)**: full sweep of all 18 "use client" components — every prop-seeded component
+  subject to in-place `router.refresh()` (TeamManager, CompaniesTable, CompanyForm, ReferralPanel) has a
+  resync effect; the rest own their fetch (loadSeq/mutSeq guards) or full-reload on mutation. No P9 bug.
+
+---
+
+## PASS 10 (branch audit/v2-correctness) — remaining API routes + final value-class checks
+
+**BUG-0024 (DEFERRED) — color picker DB-vs-live cleaning divergence.** Snapshot uses exterior-tuned
+`cleanColorFacet` for both ext+int; live routes hand-roll (ext: no scrub; int: material-aware). Display
+-only (variants preserved → filtering correct, proven by the live round-trip). Proposed: mode-aware
+shared cleaner used by snapshot + both live routes. Deferred (changes nightly-job stored names).
+
+**Remaining API routes audited (referral/customers/saved/team/me/account/admin) — no defects:**
+auth + 401/402-JSON, org/role-scoped tenancy, service-role-after-auth, PostgREST injection guards, and
+money-path idempotency (account/finalize stripe-sub claim is null-guarded; onboard referral is
+UNIQUE-backed; admin/companies cancels Stripe before delete with rollback + fail-closed on null count)
+all upheld. Three NITS (not logged as bugs): saved POST may write org_id=null on provisioning failure
+(harmless — saved is user-scoped by user_id); admin/promos coupon create lacks an idempotency key
+(super-admin manual, non-billing); customers email/phone unvalidated (own-row only). Phase-2 hygiene.
+
+**Last UI→provider value class verified live (make strings, incl. casing/hyphens/spaces):**
+Mercedes-Benz 88,257 · Land Rover 24,201 · Alfa Romeo 1,188 · MINI 10,427 · GMC 148,649 · RAM 159,461 ·
+Mazda 117,174 — all valid. Combined with prior live checks (body_type, drivetrain, powertrain, color &
+trim round-trips, model aliases), EVERY value the UI can send to MarketCheck is now confirmed against the
+live facet vocabulary.
+
+### Run summary (branch audit/v2-correctness)
+- **Fixed + build-gated:** BUG-0021 (verify-catalog self-chain stall), BUG-0022 (Auto.dev drivetrain map; mirrored to FleetFinder).
+- **Deferred (owner sign-off, documented with proposal):** BUG-0023 (decode-vin durable cache), BUG-0024 (color cleaner unification).
+- **Verified clean:** all search filters, diagnose, every picker, all crons, full billing/auth/multi-tenancy, UI client-state (P9), and all remaining API routes.
+- **Completion bar:** the two deferred items are open pending owner decisions, so a "zero-findings" clean streak can't be certified until they're resolved/accepted. The two code defects are fixed; the whole checklist has been walked once end-to-end with live evidence.
+
+---
+
+## PASS 11 (branch audit/v2-correctness) — implemented the two deferred fixes (owner sign-off)
+
+**BUG-0023 (NOW FIXED) — decode-vin durable cache.** Added `vin_decode_cache.build_sheet` (migration
+0034). `lib/marketcheck#decodeVinBuildSheet` caches the full build sheet durably (memory→DB→live) and
+primes the search slice (`payload`) from the same raw decode, so a viewed-then-searched VIN is decoded
+once. `neovinSpecs` (the $2,177 BUG-0006 fix) left intact apart from a pure `parseNeovinParsed`
+extraction. Migration applied; `get_advisors(security)` clean (no new advisory). Build passes.
+
+**BUG-0024 (NOW FIXED) — color cleaner unification.** `cleanColorFacet(items, mode)` is now mode-aware;
+both live picker routes and the nightly snapshot use it, so DB-served and live-fallback color lists are
+identical. Variants preserved → filtering unaffected (re-confirmed Storm Cloud round-trip). Stored rows
+adopt the new cleaning on the next nightly refresh.
+
+Both were previously deferred for owner sign-off (cost posture / migration); the owner approved
+implementing and merging. LotCompass-only (FleetFinder has no snapshot and decodes VINs via Base44).
+
+---
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.
