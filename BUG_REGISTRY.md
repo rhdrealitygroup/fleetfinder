@@ -223,4 +223,14 @@
 - **Evidence:** code: refresh-catalog/route.ts marks `catalog_sync_state` unconditionally after the try/catch (lines ~104) with an explicit comment about this exact stall; verify-catalog/route.ts:65 `continue` bypasses its line-80 upsert. (FleetFinder has no catalog cron — LotCompass-only.)
 - **Status:** Fixed & verified (build-gated). Re-verify on next monthly run that `catalog_verify_state` advances for null models.
 
-<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0022. Never edit/delete above. -->
+### BUG-0022 — Auto.dev fallback sent the raw "AWD/4WD" drivetrain label → 0 results
+- **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit/v2-correctness (Pass 1)
+- **Area:** `src/app/api/live-search/route.ts` `searchAutoDev()` (the Auto.dev fallback path)
+- **Symptom:** during a MarketCheck rate-limit/hard-failure, a search with the "AWD/4WD" drivetrain filter falls back to Auto.dev and returns 0 — the agent sees "no inventory" for a filter that is actually fine, exactly when the primary provider is briefly down.
+- **Root cause:** the MarketCheck path maps the UI label via `mcDrivetrain` ("AWD/4WD"→"4WD"), but the Auto.dev path sent `body.drivetrain` RAW to `vehicle.drivetrain`. Auto.dev uses the SAME drivetrain vocabulary as MarketCheck (4WD/FWD/RWD, no "AWD") and HONORS the filter, so the combined UI label "AWD/4WD" matches nothing.
+- **Pattern (P1 + #21 Auto.dev parity):** any UI label sent to a provider must equal that provider's real vocabulary; the fallback path must apply the SAME value mappers as the primary. Hunt every Auto.dev param for an unmapped UI label.
+- **Fix:** apply `mcDrivetrain(body.drivetrain)` on the Auto.dev path (same as MarketCheck). `body_type` is left RAW on Auto.dev deliberately — verified live that Auto.dev's bodyStyle accepts "Truck"/"Van" natively (returns results), whereas MarketCheck's "Cargo Van" returns 0 on Auto.dev, so the MarketCheck mapper must NOT be applied there. Commit: fleetfinder-v2 (this branch). Mirror: FleetFinder `live_search` has the same Auto.dev fallback — apply there too.
+- **Evidence (live Auto.dev with our key):** `vehicle.drivetrain=AWD/4WD` → 0 listings; `vehicle.drivetrain=4WD` → 5. `vehicle.bodyStyle=Cargo Van` → 0 but `=Truck` → 5 and `=Van` → 5 (so body_type stays raw). `vehicle.drivetrain=FWD/RWD` already valid raw.
+- **Status:** Fixed & verified (live Auto.dev probe + build-gate).
+
+<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0023. Never edit/delete above. -->
