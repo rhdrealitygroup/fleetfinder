@@ -3,7 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout, normalizeColorName, isJunkColor } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, resolveModel, fetchWithTimeout, cleanColorFacet } from "@/lib/marketcheck";
 import { readModelCatalog, pickStoredColors } from "@/lib/catalogRead";
 
 export const maxDuration = 60;
@@ -57,49 +57,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ colors: [], error: `MarketCheck ${res.status}: ${b.slice(0, 150)}` }, { status: 502 });
     }
     const data = await res.json();
-    const facetItems: any[] = data.facets?.exterior_color || [];
-
-    // Expand truncated/abbreviated dealer spellings ("Agate Blk Met" →
-    // "Agate Black Metallic") so variants collapse into one bucket.
-    const cleanName = (raw: string) => normalizeColorName(raw);
-    const dedupKey = (name: string) => String(name || "")
-      .toLowerCase()
-      .replace(/\s+(metallic|pearl|pearl-?coat|clear-?coat|tricoat|tri-?coat|mica)\s*$/i, "")
-      .replace(/\s+(i{1,3}|iv|v|vi)\s*$/i, "")
-      .replace(/[^a-z0-9 ]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    // Each bucket merges spelling variants (e.g. "Agate Black" +
-    // "Agate Black Metallic") under one display name, but keeps the RAW facet
-    // values in `variants` so search can filter MarketCheck exactly — it matches
-    // the full color string and accepts a comma-separated OR list.
-    const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
-    for (const c of facetItems) {
-      const raw = String(c.item || "").trim();
-      // Defensive: a raw value with a comma can't be represented in the comma-OR
-      // exterior_color param (MarketCheck splits it into separate OR terms even
-      // when URL-encoded), so it would match the wrong cars. Exterior facets are
-      // empirically comma-free, but a dealer free-text color ("Red, White Stripe")
-      // would break — drop it rather than mis-filter.
-      if (raw.includes(",")) continue;
-      const cleaned = cleanName(c.item);
-      if (!cleaned || isJunkColor(cleaned)) continue; // drop code-like junk ("Dr", "M7", "9b")
-      const key = dedupKey(cleaned);
-      if (!key) continue;
-      const cnt = num(c.count);
-      const prev = buckets.get(key);
-      if (prev) {
-        prev.count += cnt;
-        if (cleaned.length > prev.name.length) prev.name = cleaned;
-        if (raw && !prev.variants.includes(raw)) prev.variants.push(raw);
-      } else {
-        buckets.set(key, { name: cleaned, count: cnt, variants: raw ? [raw] : [] });
-      }
-    }
-    const colors = [...buckets.values()]
-      .filter((c) => c.name.length > 0)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // Clean + dedupe via the SAME helper the nightly snapshot uses, so the live
+    // fallback list and the DB-served list are identical (BUG-0024). Raw facet
+    // values are preserved in `variants` for exact MarketCheck filtering.
+    const colors = cleanColorFacet(data.facets?.exterior_color || [], "exterior");
 
     cacheSet(cacheKey, colors, colors.length ? DAY : MIN);
     return NextResponse.json({ colors, cached: false, provider: "marketcheck" });

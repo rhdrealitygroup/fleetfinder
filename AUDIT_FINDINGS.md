@@ -315,6 +315,24 @@ live facet vocabulary.
 
 ---
 
+## PASS 11 (branch audit/v2-correctness) — implemented the two deferred fixes (owner sign-off)
+
+**BUG-0023 (NOW FIXED) — decode-vin durable cache.** Added `vin_decode_cache.build_sheet` (migration
+0034). `lib/marketcheck#decodeVinBuildSheet` caches the full build sheet durably (memory→DB→live) and
+primes the search slice (`payload`) from the same raw decode, so a viewed-then-searched VIN is decoded
+once. `neovinSpecs` (the $2,177 BUG-0006 fix) left intact apart from a pure `parseNeovinParsed`
+extraction. Migration applied; `get_advisors(security)` clean (no new advisory). Build passes.
+
+**BUG-0024 (NOW FIXED) — color cleaner unification.** `cleanColorFacet(items, mode)` is now mode-aware;
+both live picker routes and the nightly snapshot use it, so DB-served and live-fallback color lists are
+identical. Variants preserved → filtering unaffected (re-confirmed Storm Cloud round-trip). Stored rows
+adopt the new cleaning on the next nightly refresh.
+
+Both were previously deferred for owner sign-off (cost posture / migration); the owner approved
+implementing and merging. LotCompass-only (FleetFinder has no snapshot and decodes VINs via Base44).
+
+---
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.

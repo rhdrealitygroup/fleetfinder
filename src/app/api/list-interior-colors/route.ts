@@ -4,7 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, resolveModel, fetchWithTimeout, normalizeColorName, isJunkColor } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, resolveModel, fetchWithTimeout, cleanColorFacet } from "@/lib/marketcheck";
 import { readModelCatalog, pickStoredColors } from "@/lib/catalogRead";
 
 export const maxDuration = 60;
@@ -57,43 +57,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ colors: [], error: `MarketCheck ${res.status}: ${b.slice(0, 150)}` }, { status: 502 });
     }
     const data = await res.json();
-    const facetItems: any[] = data.facets?.interior_color || [];
-
-    const cleanName = (raw: string) => normalizeColorName(raw).replace(/\s+(interior|int\.?)$/i, "").trim();
-    const dedupKey = (name: string) => String(name || "")
-      .toLowerCase()
-      .replace(/\s+(leather|leatherette|cloth|vinyl|premium|perforated)\s*$/i, "")
-      .replace(/[^a-z0-9 ]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    // Bucket spelling variants under one display name, keep RAW facet values in
-    // `variants` so search can filter MarketCheck exactly (comma-OR list).
-    const buckets = new Map<string, { name: string; count: number; variants: string[] }>();
-    for (const c of facetItems) {
-      const raw = String(c.item || "").trim();
-      // A raw interior_color facet value containing a comma (e.g. "Jet Black,
-      // Cloth Seat Trim") can't be represented in the comma-OR interior_color
-      // param: MarketCheck splits it into separate exact-match OR terms (even when
-      // URL-encoded — verified live), so the bucket returns the WRONG cars and its
-      // count never matches. These compound values aren't filterable at all, so
-      // drop them entirely rather than offer a broken option.
-      if (raw.includes(",")) continue;
-      const cleaned = cleanName(c.item);
-      if (!cleaned || isJunkColor(cleaned)) continue; // drop code-like junk tokens
-      const key = dedupKey(cleaned);
-      if (!key) continue;
-      const cnt = num(c.count);
-      const prev = buckets.get(key);
-      if (prev) {
-        prev.count += cnt;
-        if (cleaned.length > prev.name.length) prev.name = cleaned;
-        if (raw && !prev.variants.includes(raw)) prev.variants.push(raw);
-      } else {
-        buckets.set(key, { name: cleaned, count: cnt, variants: raw ? [raw] : [] });
-      }
-    }
-    const colors = [...buckets.values()].filter((c) => c.name.length > 0).sort((a, b) => a.name.localeCompare(b.name));
+    // Clean + dedupe via the SAME helper the nightly snapshot uses (interior mode:
+    // collapses trim-material qualifiers + " Interior" suffix), so the live
+    // fallback list matches the DB-served list (BUG-0024). Comma-bearing compound
+    // values (e.g. "Jet Black, Cloth Seat Trim") are dropped inside the helper —
+    // they can't be represented in the comma-OR interior_color param. Raw values
+    // are preserved in `variants` for exact MarketCheck filtering.
+    const colors = cleanColorFacet(data.facets?.interior_color || [], "interior");
 
     cacheSet(cacheKey, colors, colors.length ? DAY : MIN);
     return NextResponse.json({ colors, cached: false, provider: "marketcheck" });

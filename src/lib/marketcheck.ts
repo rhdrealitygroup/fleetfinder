@@ -236,11 +236,27 @@ function isPlaceholderOrCode(cleaned: string): boolean {
 // bucketing) PLUS the factory-code scrub, so the persisted catalog matches what
 // the live picker shows. Keeps the RAW facet values in `variants` for exact
 // MarketCheck filtering later.
+// `mode` tunes the dedup so exterior and interior facets collapse on the RIGHT
+// suffix: exterior finishes (Metallic/Pearl/Clear-Coat) vs interior trim-material
+// qualifiers ("Black Leather"/"Gray Cloth") + a trailing " Interior". Used by BOTH
+// the nightly snapshot AND the live picker routes so DB-served and live-fallback
+// color lists are identical by construction (BUG-0024 — was two divergent code
+// paths). `variants` (raw facet values) are preserved verbatim either way, so
+// MarketCheck filtering is unaffected by the display cleaning.
 export function cleanColorFacet(
   items: { item?: unknown; count?: unknown }[],
+  mode: "exterior" | "interior" = "exterior",
 ): { name: string; count: number; variants: string[] }[] {
+  const isInterior = mode === "interior";
+  const cleanOne = (raw: unknown): string => {
+    let s = normalizeColorName(scrubColorCode(raw));
+    if (isInterior) s = s.replace(/\s+(interior|int\.?)\s*$/i, "").trim();
+    return s;
+  };
   const dedupKey = (name: string) => name.toLowerCase()
-    .replace(/\s+(metallic|pearl|pearl-?coat|clear-?coat|tricoat|tri-?coat|mica)\s*$/i, "")
+    .replace(isInterior
+      ? /\s+(leather|leatherette|cloth|vinyl|premium|perforated|suede|alcantara)\s*$/i
+      : /\s+(metallic|pearl|pearl-?coat|clear-?coat|tricoat|tri-?coat|mica)\s*$/i, "")
     .replace(/\s+(i{1,3}|iv|v|vi)\s*$/i, "")
     .replace(/\s+[0-9a-z]{0,3}[0-9][0-9a-z]{0,3}$/i, "") // trailing residual code/number → collapse variants
     .replace(/[^a-z0-9 ]+/g, " ")
@@ -256,7 +272,7 @@ export function cleanColorFacet(
     // persisted catalog matches what the live picker offers. (Interior facets
     // carry these, e.g. "Jet Black, Cloth Seat Trim"; exterior are comma-free.)
     if (raw.includes(",")) continue;
-    const cleaned = normalizeColorName(scrubColorCode(c.item));
+    const cleaned = cleanOne(c.item);
     if (!cleaned || isJunkColor(cleaned) || isPlaceholderOrCode(cleaned)) continue;
     const key = dedupKey(cleaned);
     if (!key) continue;
@@ -702,6 +718,20 @@ export function adListing(l: any): UnifiedVehicle {
 // single decode (previously the same VIN could be charged twice).
 type NeovinParsed = { details: { code: string; name: string; msrp: number; type: string }[]; hvf: string[]; feats: string[] };
 
+// Parse the small search/diagnose slice (installed option names + high-value
+// features) from a raw NeoVIN /specs response. Exported so decode-vin can prime
+// this cache from the SAME raw decode it already fetched for the build sheet —
+// one charge per VIN shared across both consumers (BUG-0023).
+export function parseNeovinParsed(d: any): NeovinParsed {
+  return {
+    details: (Array.isArray(d?.installed_options_details) ? d.installed_options_details : [])
+      .map((x: any) => ({ code: String(x.code || ""), name: String(x.name || "").trim(), msrp: num(x.msrp || x.sale_price), type: String(x.type || "") }))
+      .filter((o: { name: string }) => o.name),
+    hvf: (Array.isArray(d?.high_value_features) ? d.high_value_features : []).map((s: any) => String(s)),
+    feats: (Array.isArray(d?.features) ? d.features : []).map((s: any) => String(s)),
+  };
+}
+
 function neovinDbCfg(): { url: string; key: string } | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -757,13 +787,7 @@ async function neovinSpecs(vin: string, throwOnError = false): Promise<NeovinPar
     if (!r.ok) { if (throwOnError) throw new Error(`decode ${r.status}`); return null; }
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const d: any = await r.json();
-    const parsed: NeovinParsed = {
-      details: (Array.isArray(d.installed_options_details) ? d.installed_options_details : [])
-        .map((x: any) => ({ code: String(x.code || ""), name: String(x.name || "").trim(), msrp: num(x.msrp || x.sale_price), type: String(x.type || "") }))
-        .filter((o: { name: string }) => o.name),
-      hvf: (Array.isArray(d.high_value_features) ? d.high_value_features : []).map((s: any) => String(s)),
-      feats: (Array.isArray(d.features) ? d.features : []).map((s: any) => String(s)),
-    };
+    const parsed = parseNeovinParsed(d);
     cacheSet(ck, parsed, DAY * 30);
     await neovinDbSet(v, parsed); // durable, shared across instances + cold starts
     return parsed;
@@ -795,6 +819,164 @@ export type VinOption = { code: string; name: string; msrp: number; type: string
 export async function decodeVinOptionDetails(vin: string): Promise<VinOption[]> {
   const parsed = await neovinSpecs(vin, false);
   return parsed ? parsed.details : [];
+}
+
+// ── Full VIN build sheet (the decode-vin route) with the SAME durable cache ───
+// decode-vin (the per-card "view build sheet" action) used to decode straight to
+// MarketCheck and cache only in-memory — so it re-charged the $0.08 NeoVIN call on
+// every serverless cold start (P4, same class as BUG-0006) and a VIN that was both
+// viewed AND option-searched got decoded twice. Now the full build sheet is cached
+// durably in vin_decode_cache.build_sheet (shared per-VIN row), and a live decode
+// also primes the search slice (payload) so a later option-search reuses it —
+// one charge per VIN, ever. (BUG-0023)
+export type VinBuildSheet = {
+  vin: string; year: number; make: string; model: string; trim: string; msrp: number;
+  transmission: string; drivetrain: string; engine: string; fuel_type: string;
+  body_type: string; doors: number; seating: number; interior_color: string;
+  electric_range: number; city_mpg: number; highway_mpg: number;
+  packages: { code: string; name: string; msrp: number }[];
+  options: { code: string; name: string; msrp: number }[];
+  raw_count: number;
+};
+
+export function parseVinBuildSheet(vin: string, raw: any): VinBuildSheet {
+  const build = raw?.build || raw || {};
+  // NeoVIN's real per-VIN factory options live in installed_options_details
+  // (named, with MSRP). installed_equipment is a category dict, not the options
+  // list — so prefer the details array.
+  const installed: any[] = Array.isArray(raw?.installed_options_details) ? raw.installed_options_details
+    : Array.isArray(raw?.installed_equipment) ? raw.installed_equipment
+    : Array.isArray(build.installed_equipment) ? build.installed_equipment
+    : Array.isArray(raw?.options) ? raw.options : [];
+  const packages: { code: string; name: string; msrp: number }[] = [];
+  const options: { code: string; name: string; msrp: number }[] = [];
+  for (const item of installed) {
+    const name = item.name || item.description || item.option_name || "";
+    if (!name) continue;
+    const code = item.code || item.option_code || item.oem_code || "";
+    const category = String(item.category || item.option_type || "").toLowerCase();
+    const isPackage = /package|pkg|group|edition/i.test(name) || /package|pkg|group/i.test(category);
+    const entry = { code, name: titleCase(name).replace(/\bPkg\b/g, "Package"), msrp: num(item.msrp || item.price || item.sale_price) };
+    if (isPackage) packages.push(entry); else options.push(entry);
+  }
+  const interior = raw?.interior_color || {};
+  const interior_color = interior.name || interior.base || titleCase(build.interior_color) || "";
+  return {
+    vin,
+    year: num(build.year), make: titleCase(build.make), model: titleCase(build.model),
+    trim: titleCase(build.trim || build.style), msrp: num(raw?.msrp || raw?.combined_msrp || build.base_msrp || build.msrp),
+    transmission: titleCase(build.transmission), drivetrain: build.drivetrain || "",
+    engine: titleCase(build.engine), fuel_type: titleCase(build.fuel_type),
+    body_type: titleCase(build.body_type), doors: num(build.doors),
+    seating: num(build.seating_capacity || build.std_seating || build.seating),
+    interior_color,
+    electric_range: num(raw?.electric_range),
+    city_mpg: num(build.city_mpg || raw?.city_mpg), highway_mpg: num(build.highway_mpg || raw?.highway_mpg),
+    packages, options, raw_count: installed.length,
+  };
+}
+
+export function parseVinBasicDecode(vin: string, raw: any): VinBuildSheet {
+  const b = raw?.build || raw || {};
+  return {
+    vin,
+    year: num(b.year), make: titleCase(b.make), model: titleCase(b.model),
+    trim: titleCase(b.trim), msrp: num(b.base_msrp || b.msrp),
+    transmission: titleCase(b.transmission), drivetrain: b.drivetrain || "",
+    engine: titleCase(b.engine), fuel_type: titleCase(b.fuel_type),
+    body_type: titleCase(b.body_type), doors: num(b.doors), seating: num(b.std_seating),
+    interior_color: "", electric_range: 0,
+    city_mpg: num(b.city_mpg), highway_mpg: num(b.highway_mpg),
+    packages: [], options: [], raw_count: 0,
+  };
+}
+
+// Read the durable build-sheet slice from the shared vin_decode_cache row.
+async function buildSheetDbGet(vin: string): Promise<VinBuildSheet | null> {
+  const cfg = neovinDbCfg();
+  if (!cfg) return null;
+  try {
+    const r = await fetchWithTimeout(
+      `${cfg.url}/rest/v1/vin_decode_cache?vin=eq.${vin}&select=build_sheet,expires_at`,
+      { headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}` }, cache: "no-store" }, 4000);
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (row?.build_sheet && row.expires_at && new Date(row.expires_at).getTime() > Date.now()) {
+      return row.build_sheet as VinBuildSheet;
+    }
+  } catch { /* best-effort cache; fall through to live decode */ }
+  return null;
+}
+
+// Merge-write the build_sheet column onto the per-VIN row (leaves `payload` intact).
+async function buildSheetDbSet(vin: string, buildSheet: VinBuildSheet, provider: string): Promise<void> {
+  const cfg = neovinDbCfg();
+  if (!cfg) return;
+  try {
+    await fetchWithTimeout(`${cfg.url}/rest/v1/vin_decode_cache?on_conflict=vin`, {
+      method: "POST",
+      headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify({ vin, build_sheet: buildSheet, provider, expires_at: new Date(Date.now() + DAY * 30).toISOString() }),
+      cache: "no-store",
+    }, 4000);
+  } catch { /* best-effort */ }
+}
+
+// Prime the search/diagnose slice (payload) + its memory cache from a raw decode
+// the build-sheet path already paid for — so a later option-search reuses it.
+export async function primeVinDecodeCache(vin: string, raw: any): Promise<void> {
+  const v = String(vin || "").toUpperCase().trim();
+  if (v.length !== 17) return;
+  const parsed = parseNeovinParsed(raw);
+  cacheSet(`vinspecs::${v}`, parsed, DAY * 30);
+  await neovinDbSet(v, parsed);
+}
+
+export type VinBuildSheetResult = { data?: VinBuildSheet; provider: string; cached: boolean; error?: string; status?: number };
+
+// memory → DB(build_sheet) → live NeoVIN /specs (with a basic-decode fallback on
+// 404). One charge per VIN, shared with the search decode via primeVinDecodeCache.
+export async function decodeVinBuildSheet(vin: string, fresh = false): Promise<VinBuildSheetResult> {
+  const v = String(vin || "").toUpperCase().trim();
+  if (v.length !== 17) return { provider: "none", cached: false, error: "VIN must be 17 characters", status: 400 };
+  const ck = `vinbuild::${v}`;
+  if (!fresh) {
+    const mem = cacheGet<VinBuildSheet>(ck);
+    if (mem) return { data: mem, provider: "cache", cached: true };
+    const db = await buildSheetDbGet(v);
+    if (db) { cacheSet(ck, db, DAY * 30); return { data: db, provider: "cache", cached: true }; }
+  }
+  const apiKey = mcKey();
+  if (!apiKey) return { provider: "none", cached: false, error: "MARKETCHECK_API_KEY not set", status: 500 };
+  try {
+    const url = new URL(`${MC_HOST}/decode/car/neovin/${v}/specs`);
+    url.searchParams.set("api_key", apiKey);
+    const res = await fetchWithTimeout(url.toString());
+    if (!res.ok) {
+      if (res.status === 404) {
+        const fb = new URL(`${MC_HOST}/decode/car/${v}/specs`);
+        fb.searchParams.set("api_key", apiKey);
+        const fbRes = await fetchWithTimeout(fb.toString());
+        if (fbRes.ok) {
+          const decoded = parseVinBasicDecode(v, await fbRes.json());
+          cacheSet(ck, decoded, DAY * 30);
+          await buildSheetDbSet(v, decoded, "marketcheck-basic");
+          return { data: decoded, provider: "marketcheck-basic", cached: false };
+        }
+      }
+      const b = await res.text().catch(() => "");
+      return { provider: "marketcheck", cached: false, error: `MarketCheck ${res.status}: ${b.slice(0, 150)}`, status: 502 };
+    }
+    const raw = await res.json();
+    const decoded = parseVinBuildSheet(v, raw);
+    cacheSet(ck, decoded, DAY * 30);
+    await buildSheetDbSet(v, decoded, "marketcheck-neovin");
+    await primeVinDecodeCache(v, raw); // dedupe: a later option-search reuses this decode
+    return { data: decoded, provider: "marketcheck-neovin", cached: false };
+  } catch (e) {
+    return { provider: "marketcheck", cached: false, error: (e as Error).message, status: 502 };
+  }
 }
 
 export function mcKey() {
