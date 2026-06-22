@@ -331,6 +331,20 @@ live facet vocabulary.
   - BUG-0022/0021 are fallback/cron paths (not UI-triggerable); verified by code + the earlier live
     Auto.dev drivetrain probe and verifyModel-contract check.
 
+## PASS 12 — CLEAN functional pass on the LIVE deployed app (authed, www.lotcompass.com)
+Post-fix end-to-end flow test through the deployed routes — **zero new findings**:
+- Multi-filter new search (RAV4, 2024+, ≤$45k, AWD/4WD→4WD, SUV): 150 results / total 14,345 — filter
+  interaction + drivetrain mapping correct.
+- Used search (Civic used ≤$30k): 150 / 29,299.
+- Payment-cap narrowing (Camry new ≤$500/mo): 68 results, every one ≤$500 (or est-less) — client narrow ok.
+- Zero-result (Ferrari 296 ≤$20k) → diagnose: poolTotal 0, reason "No in-stock Ferrari 296 matches your
+  year/price.", closest null, no 503 — correct zero handling.
+- Pickers: list-trims RAV4 = 12 trims (all available); list-models Toyota = 22; color round-trip
+  through the app ("Beige" → 24 results, all matching) — the #1 historical break point holds end-to-end.
+This is clean pass #1 of the post-fix streak. The full checklist (search/diagnose/pickers/dealers/crons/
+billing/auth/UI) has been swept via code review + live API contract checks + this live functional pass;
+all four bugs found this run (0021–0024) are fixed, merged, deployed, and live-verified.
+
 ## PASS 11 (branch audit/v2-correctness) — implemented the two deferred fixes (owner sign-off)
 
 **BUG-0023 (NOW FIXED) — decode-vin durable cache.** Added `vin_decode_cache.build_sheet` (migration
