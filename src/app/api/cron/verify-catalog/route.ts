@@ -62,18 +62,24 @@ export async function GET(req: Request) {
     attempted++;
     try {
       const discrepancies = await verifyModel(db, make, model, startedAt + BUDGET_MS);
-      if (discrepancies === null) continue; // transient miss — retry next cycle, don't touch its report
-      // Refresh ONLY this model's findings: clear its prior rows, then write the
-      // current ones (clearing alone means the model is now clean). Other models
-      // are untouched, so a stop-short run never empties their results.
-      await db.from("catalog_discrepancies").delete().eq("make", make).eq("model", model);
-      if (discrepancies.length) {
-        await db.from("catalog_discrepancies").insert(
-          discrepancies.map((d) => ({ ...d, checked_at: now })),
-        );
-        found += discrepancies.length;
+      // A transient miss (null) keeps its existing report untouched — but we still
+      // mark it attempted below. Skipping the stamp (the old `continue`) left the
+      // model pending, so it was re-attempted on EVERY chained link of this cycle,
+      // burning budget and stalling the cycle (same failure as BUG-0016 in
+      // refresh-catalog). A null simply refreshes on the NEXT cycle, not this one.
+      if (discrepancies !== null) {
+        // Refresh ONLY this model's findings: clear its prior rows, then write the
+        // current ones (clearing alone means the model is now clean). Other models
+        // are untouched, so a stop-short run never empties their results.
+        await db.from("catalog_discrepancies").delete().eq("make", make).eq("model", model);
+        if (discrepancies.length) {
+          await db.from("catalog_discrepancies").insert(
+            discrepancies.map((d) => ({ ...d, checked_at: now })),
+          );
+          found += discrepancies.length;
+        }
+        checked++;
       }
-      checked++;
     } catch {
       /* skip this model; still mark attempted below so the cycle can finish */
     }

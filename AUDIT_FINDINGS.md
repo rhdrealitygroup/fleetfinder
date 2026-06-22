@@ -210,6 +210,43 @@ No facet equivalent at all (each →0 live; **removed** from the picker): heated
 
 ---
 
+## PASS 8 (branch audit/v2-correctness) — new finding + areas re-verified
+
+**BUG-0021 (FIXED) — verify-catalog self-chain re-attempts null models every link.**
+`verify-catalog/route.ts:65` did `continue` on a `null` (transient-miss) result, skipping the
+`catalog_verify_state` stamp at the loop's end. Since `pending` is recomputed per link as
+"updated_at < cycleStart", an unstamped model stays pending and is re-attempted on every chained
+link of the cycle (up to MAX_LINKS=450), burning budget and stalling the cycle. Same class as
+BUG-0016. Fix: always stamp attempted; on null, keep the existing report (skip delete/insert) but
+still mark attempted so it refreshes next cycle, not next link. Build-gated clean. LotCompass-only
+(FleetFinder has no catalog cron). Evidence: refresh-catalog already stamps unconditionally with an
+explicit warning comment about this exact stall.
+
+**Areas re-verified clean this pass (live API + code):**
+- **powertrain_type facet** = Combustion/HEV/MHEV/BEV/PHEV/FCEV/EREV (live). v2 search UI emits NO
+  powertrain field, so no mismatch. FleetFinder `FUEL_TYPES`/`EV_FUELS` are dead (never imported).
+- **body_type facet** (live) = SUV/Pickup/Sedan/Hatchback/Minivan/Coupe/Cargo Van/Convertible/Wagon/
+  Passenger Van… UI {SUV,Sedan,Truck,Wagon,Coupe,Van}: Truck→Pickup, Van→Cargo Van,Minivan,Passenger
+  Van; SUV/Sedan/Wagon/Coupe pass through and are all real. OK.
+- **drivetrain facet** (live) = 4WD/FWD/RWD. UI {AWD/4WD→4WD, FWD, RWD} all real. OK.
+- **Sort keys**: applied CLIENT-SIDE over fetched ≤150 results (search/page.tsx:343); only "distance"
+  uses API order. Consistent. OK.
+- **diagnose**: applies mcBodyType/mcDrivetrain, skips null closest-match when dealer-scoped, decode
+  loop bounded. OK.
+- **Feature chips**: v2 sends model-specific AND generic chips as `option_names` → client-side NeoVIN
+  decode phraseMatch (vocabulary-agnostic), NOT the high_value_features facet filter. No P1 mismatch.
+
+**Observations (not fixed — not live defects):**
+- `list-styles/route.ts` sends RAW `body.model` (skips resolveModel), but the route has NO UI caller
+  (dead code) — latent only. Phase-2 cleanup or wire-up.
+- `lease.ts` clamps depreciation but not rentCharge; a negative money-factor input yields a negative
+  monthly. Dealer-controlled internal calculator (GIGO, no money path); card path already clamped
+  (BUG-0011). Left unchanged to avoid scope creep.
+- `sync-dealers` city sub-partition ignores `cr.saturated`; a single city >1500 dealers of one type
+  would drop the tail. No US city approaches that — latent only. Documented.
+
+---
+
 ## TODO (areas not yet swept this pass)
 - Pickers: list-models/trims/colors/interior/features/styles DB-vs-live parity, comma-variant issue (S4).
 - Dealers: catalog picker makes filter (prompt: ~80% empty makes tags), selection, removal-requests, sync-dealers cron.

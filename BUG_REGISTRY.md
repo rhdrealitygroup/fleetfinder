@@ -213,4 +213,14 @@
 - **Evidence:** `to_regclass('public.tracked_dealers')` → null; build clean; no remaining code refs (`grep tracked_dealers src` empty).
 - **Status:** Fixed & verified.
 
-<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0021. Never edit/delete above. -->
+### BUG-0021 — verify-catalog self-chain re-attempts null models every link (cycle stall)
+- **Date:** 2026-06-21  **Severity:** Med  **Found by:** audit/v2-correctness (Pass 1)
+- **Area:** `src/app/api/cron/verify-catalog/route.ts` (self-chaining monthly sweep)
+- **Symptom:** the verification chain burns each chained link's budget re-checking the same transient-miss models, and can keep chaining up to MAX_LINKS=450 without the cycle ever reaching `unattempted===0`.
+- **Root cause:** when `verifyModel(...)` returns `null` (a transient MarketCheck miss), the loop did `continue` (line 65), which SKIPS the `catalog_verify_state` upsert at the end of the loop body. `pending` is recomputed each link as "state.updated_at < cycleStart OR absent", so an unstamped model stays pending and is re-attempted on EVERY subsequent link of the same cycle. The intent (per the line-65 comment) was "retry next CYCLE," but the missing stamp makes it retry next LINK.
+- **Pattern:** identical to BUG-0016 (refresh-catalog) — a self-chaining cron must mark every model attempted-even-on-null, or never-finished/never-seen items re-run forever. refresh-catalog was fixed by stamping unconditionally (with a warning comment); verify-catalog reintroduced the bug via `continue`. Hunt every self-chaining cron for an early `continue`/`break` that skips the attempted-marker.
+- **Fix:** stamp `catalog_verify_state` for every attempted model regardless of outcome; on a `null` result, keep the model's existing discrepancy report (skip the delete/insert) but STILL mark it attempted so it isn't retried until the next cycle. Commit: fleetfinder-v2 (this branch).
+- **Evidence:** code: refresh-catalog/route.ts marks `catalog_sync_state` unconditionally after the try/catch (lines ~104) with an explicit comment about this exact stall; verify-catalog/route.ts:65 `continue` bypasses its line-80 upsert. (FleetFinder has no catalog cron — LotCompass-only.)
+- **Status:** Fixed & verified (build-gated). Re-verify on next monthly run that `catalog_verify_state` advances for null models.
+
+<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0022. Never edit/delete above. -->
