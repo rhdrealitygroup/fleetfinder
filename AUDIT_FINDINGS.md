@@ -315,6 +315,18 @@ live facet vocabulary.
 
 ---
 
+## MERGE + DEPLOY (owner instruction: "fix everything, merge to main, continue")
+- All four fixes merged to `main` and pushed: LotCompass `2857fb7` (origin/main, auto-deploys Vercel),
+  FleetFinder/majestic-motors `004cd38`. Merged main build-gated clean.
+- Migration `0034` (vin_decode_cache.build_sheet) applied via Supabase MCP; `get_advisors(security)`
+  shows no NEW issue (the table's `rls_enabled_no_policy` INFO is pre-existing + by-design service-role).
+- decode-vin rewrite is field-compatible with its only UI consumer (search/page.tsx reads
+  packages[].name, options[].name, interior_color — all present in VinBuildSheet). No regression.
+- POST-DEPLOY LIVE RE-VERIFY: **pending** — the Claude-in-Chrome extension is disconnected, so the
+  authenticated same-origin checks (decode-vin 2nd call → provider:"cache"; a live-fallback color
+  picker shows the unified cleaned names) couldn't be run this session. Site is live (HTTP 200) and
+  /api/decode-vin is correctly auth-gated (401 JSON). To finish: reconnect Chrome.
+
 ## PASS 11 (branch audit/v2-correctness) — implemented the two deferred fixes (owner sign-off)
 
 **BUG-0023 (NOW FIXED) — decode-vin durable cache.** Added `vin_decode_cache.build_sheet` (migration
