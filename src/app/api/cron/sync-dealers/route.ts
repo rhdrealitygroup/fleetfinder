@@ -180,7 +180,12 @@ export async function GET(req: Request) {
         u.searchParams.set("dealer_id", String(d.id));
         u.searchParams.set("car_type", "new");
         u.searchParams.set("rows", "0");
-        u.searchParams.set("facets", "make");
+        // Explicit facet size: a BARE `make` facet defaults to only the top 20
+        // makes, so a mega-dealer selling >20 new makes (large auto groups do) was
+        // tagged with just 20 and then wrongly EXCLUDED by the dealers/catalog make
+        // filter for its 21st+ makes (BUG-0029 — same default-substitution class as
+        // rows>50→default-10). 100 covers any real dealer's make count.
+        u.searchParams.set("facets", "make|0|100|1");
         const r = await fetchWithTimeout(u.toString());
         if (!r.ok) continue;
         const j = await r.json();
