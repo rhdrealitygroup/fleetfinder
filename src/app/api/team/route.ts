@@ -32,10 +32,17 @@ async function syncSeatQuantity(orgId: string) {
     const seatItem = sub.items.data.find((i: any) => i.price?.id === seatPriceId());
     const currentQty = seatItem?.quantity || 0;
     if (desired === currentQty) return;
+    // Idempotency key on the FROM→TO transition (+ sub id): every Stripe sub
+    // mutation must carry a key (CLAUDE.md money-path invariant; BUG-0030, same
+    // class as the webhook seat true-up BUG-0018). Keying on just the target would
+    // let Stripe REPLAY a stale cached response on a repeated value (e.g. 2→0→2
+    // within ~24h), silently leaving the sub at the wrong quantity — so key on
+    // currentQty→desired (mirrors the update-seats route).
+    const idem = { idempotencyKey: `seat-sync-${subId}-${currentQty}to${desired}` };
     if (seatItem) {
-      await stripe.subscriptions.update(subId, { items: [{ id: seatItem.id, quantity: desired }], proration_behavior: "none" });
+      await stripe.subscriptions.update(subId, { items: [{ id: seatItem.id, quantity: desired }], proration_behavior: "none" }, idem);
     } else if (desired > 0) {
-      await stripe.subscriptions.update(subId, { items: [{ price: seatPriceId(), quantity: desired }], proration_behavior: "none" });
+      await stripe.subscriptions.update(subId, { items: [{ price: seatPriceId(), quantity: desired }], proration_behavior: "none" }, idem);
     }
     // agent_limit is reconciled from the resulting subscription.updated webhook.
   } catch { /* best-effort; reconciled by the webhook trial→active true-up */ }
