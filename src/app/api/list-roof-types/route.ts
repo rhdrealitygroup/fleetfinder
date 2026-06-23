@@ -18,12 +18,15 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();
+  const trim = String(body.trim || "").trim();
   if (!make || !model) return NextResponse.json({ roof_types: [] });
 
   const carType = body.car_type || "new";
-  const cacheKey = `roof::${make}::${model}::${carType}`.toLowerCase();
+  const cacheKey = `roof::${make}::${model}::${trim}::${carType}`.toLowerCase();
 
-  if (!body.fresh && carType === "new") {
+  // Model-level is catalog-backed; a trim-specific request goes live (facet
+  // filtered by trim) so e.g. a base trim without a sunroof doesn't show one.
+  if (!body.fresh && carType === "new" && !trim) {
     const cat = await readModelCatalog(make, model);
     if (cat?.roofTypes && cat.roofTypes.length) {
       return NextResponse.json({ roof_types: cat.roofTypes, cached: true, provider: "catalog" });
@@ -43,6 +46,7 @@ export async function POST(req: Request) {
     url.searchParams.set("make", make);
     const mcModel = await resolveModel(make, model);
     if (mcModel) url.searchParams.set("model", mcModel);
+    if (trim) url.searchParams.set("trim", trim); // trim-specific scoping (Phase 3)
     url.searchParams.set("rows", "0");
     url.searchParams.set("facets", "body_type|0|20|1,high_value_features|0|80|1");
     const res = await fetchWithTimeout(url.toString());

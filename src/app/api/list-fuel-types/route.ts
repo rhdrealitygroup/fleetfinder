@@ -18,13 +18,16 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const make = String(body.make || "").trim();
   const model = String(body.model || "").trim();
+  const trim = String(body.trim || "").trim();
   if (!make || !model) return NextResponse.json({ fuel_types: [] }); // need a model to be meaningful
 
   const carType = body.car_type || "new";
-  const cacheKey = `fuel::${make}::${model}::${carType}`.toLowerCase();
+  const cacheKey = `fuel::${make}::${model}::${trim}::${carType}`.toLowerCase();
 
   // DB-FIRST: the nightly snapshot stores the computed labels (new cars only).
-  if (!body.fresh && carType === "new") {
+  // Only model-level is catalog-backed; a trim-specific request goes live (the
+  // facet is filtered by trim) so a trim that omits an option doesn't show it.
+  if (!body.fresh && carType === "new" && !trim) {
     const cat = await readModelCatalog(make, model);
     if (cat?.fuelTypes && cat.fuelTypes.length) {
       return NextResponse.json({ fuel_types: cat.fuelTypes, cached: true, provider: "catalog" });
@@ -44,6 +47,7 @@ export async function POST(req: Request) {
     url.searchParams.set("make", make);
     const mcModel = await resolveModel(make, model);
     if (mcModel) url.searchParams.set("model", mcModel);
+    if (trim) url.searchParams.set("trim", trim); // trim-specific scoping (Phase 3)
     url.searchParams.set("rows", "0");
     url.searchParams.set("facets", "powertrain_type|0|10|1");
     const res = await fetchWithTimeout(url.toString());

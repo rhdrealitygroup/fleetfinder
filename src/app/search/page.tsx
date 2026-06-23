@@ -244,7 +244,9 @@ function SearchPageInner() {
   useEffect(() => {
     if (!make || !model) { setFuelOpts([]); setRoofOpts([]); return; }
     let cancelled = false;
-    const opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ make, model, car_type: carType }) };
+    // trim included → options are trim-specific (e.g. a base trim with no sunroof
+    // won't show one); empty trim → model-level.
+    const opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ make, model, trim, car_type: carType }) };
     fetch("/api/list-fuel-types", opts).then((r) => r.json())
       .then((d) => { if (!cancelled) setFuelOpts(Array.isArray(d.fuel_types) ? d.fuel_types : []); })
       .catch(() => { if (!cancelled) setFuelOpts([]); });
@@ -252,7 +254,7 @@ function SearchPageInner() {
       .then((d) => { if (!cancelled) setRoofOpts(Array.isArray(d.roof_types) ? d.roof_types : []); })
       .catch(() => { if (!cancelled) setRoofOpts([]); });
     return () => { cancelled = true; };
-  }, [make, model, carType]);
+  }, [make, model, carType, trim]);
 
   // Load make/model-specific options/features whenever make is set.
   useEffect(() => {
@@ -521,7 +523,7 @@ function SearchPageInner() {
         <Field label="Trim">
           <select
             value={trim}
-            onChange={(e) => { setTrim(e.target.value); setVariant(""); setColor(""); setIntColor(""); }}
+            onChange={(e) => { setTrim(e.target.value); setVariant(""); setColor(""); setIntColor(""); setFuel(""); setRoof(""); }}
             disabled={trimsLoading && trims.length === 0}
             className={selectCls}
           >
