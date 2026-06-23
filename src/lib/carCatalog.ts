@@ -171,7 +171,7 @@ export const CAR_CATALOG: Record<string, string[]> = {
 export const CATALOG_MAKES = Object.keys(CAR_CATALOG).sort();
 
 // Brands that sell factory-direct, not through franchised dealers — so NEW
-// inventory in a dealer feed (MarketCheck/Auto.dev) is ~0. When a search for
+// inventory in the MarketCheck dealer feed is ~0. When a search for
 // one of these returns nothing in New mode, the UI nudges the user to Used
 // instead of showing a generic "no match" diagnosis.
 export const DIRECT_SALES_BRANDS = new Set(["Tesla", "Rivian", "Lucid"]);

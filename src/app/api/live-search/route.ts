@@ -1,6 +1,7 @@
 // POST /api/live-search — live inventory search.
-// Tries Auto.dev first (free tier), falls back to MarketCheck on rate-limit
-// or error. Returns up to 50 results (one page). Ported from Base44.
+// MarketCheck is the sole inventory provider (the Auto.dev fallback was removed —
+// BUG-0027). Returns up to SEARCH_LIMIT (150) results across paged calls. A
+// rate-limit (429) returns empty + a rate-limited note; a hard error returns 502.
 
 import { NextResponse } from "next/server";
 import {
@@ -17,9 +18,9 @@ import { requireActivePlan } from "@/lib/auth";
 // This route can decode many VINs for option filtering; give it headroom.
 export const maxDuration = 60;
 
-// Results fetched per search. MarketCheck/Auto.dev pages are PAGE_SIZE (50) rows,
-// so 150 = 3 pages — enough breadth for brokers without rendering thousands of
-// cards or making 30 sequential upstream calls.
+// Results fetched per search. MarketCheck active-search pages are PAGE_SIZE (50)
+// rows, so 150 = 3 pages — enough breadth for brokers without rendering thousands
+// of cards or making 30 sequential upstream calls.
 const SEARCH_LIMIT = 150;
 
 function summarize(body: any) {

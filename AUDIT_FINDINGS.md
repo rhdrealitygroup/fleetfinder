@@ -422,3 +422,209 @@ Observations (NOT fixed — documented for owner):
 1. **Auto.dev fallback dataset lacks mainstream makes.** Our Auto.dev entitlement returns 0 for `vehicle.make=Toyota/Honda/Chevrolet` (param works — `=Kia`→101, `=Volvo`→41743 — but the dataset is missing the top-volume makes). So the Auto.dev fallback is ineffective for most real broker searches; when MarketCheck is rate-limited/down it returns "0 results" for a Toyota search rather than a true count. Fallback-only (MarketCheck is primary and healthy), degrades with a note. Recommend: owner decide whether Auto.dev is worth keeping as a fallback, or surface "service unavailable" instead of empty when the fallback can't cover the make. Severity Low-Med (fallback-only).
 2. **Advisors (pre-existing, reviewed):** security — `rls_enabled_no_policy` INFO on service-role-only cache/state tables (by design); WARN `my_org_ids()`/`my_admin_org_ids()` SECURITY DEFINER executable by anon/authenticated — both are `auth.uid()`-scoped (anon→empty, no params, pinned search_path) so the exposure is benign, and `authenticated` EXECUTE is REQUIRED for RLS policy evaluation; a `REVOKE … FROM PUBLIC` hygiene change touches RLS so deferred to owner (fail-closed rule). WARN leaked-password-protection is an Auth dashboard toggle. Performance — `auth_rls_initplan` (use `(select auth.fn())`), `multiple_permissive_policies` (customers/dealers), one unindexed FK — all Phase-2 optimization, no correctness impact.
 3. **list-colors live fallback isn't trim-scoped** (display-only): when a trim is selected AND the model isn't in the nightly snapshot, the live exterior/interior color list shows colors across all trims (filtering still correct via raw `variants`). Rare path; Phase-2 nicety.
+
+---
+
+# RUN 3 — branch `audit/v3` (2026-06-22, Opus 4.8 agent)
+
+Continuation of the audit per `AUDIT_PROMPT_V3.md`. Prior runs fixed BUG-0001..0027 (all merged to main + deployed). Next ID: BUG-0028. Goal: 3 consecutive clean passes (§4). Doctrine: behavior is the only truth — every claim carries a command + output.
+
+## Decisions made (autonomous) — RUN 3
+- **D-R3-1:** Canonical working-log + ledger live in `fleetfinder-v2/` (not workspace root). The root `BUG_REGISTRY.md` is stale (next-ID 0017) and there is no root `AUDIT_FINDINGS.md`. Continuing to use `fleetfinder-v2/AUDIT_FINDINGS.md` + `fleetfinder-v2/BUG_REGISTRY.md` (mirrored to `fleetfinder/BUG_REGISTRY.md`) as the prior runs did. Reverse: ignore this paragraph; no code impact.
+- **D-R3-2:** Branch `audit/v3` cut from `main` (clean) in both repos. Reverse: `git branch -D audit/v3`.
+
+## Deferred — needs owner sign-off (RUN 3)
+(none yet)
+
+## Baseline (RUN 3, probed live 2026-06-22)
+- MarketCheck `car_type=new` num_found = **3,255,687** (key valid, 40 chars).
+- v2 baseline build (main@audit/v3 HEAD) = exit 0.
+- `vin_decode_cache` = 152 rows.
+
+## RUN 3 — PASS A (in progress) — areas swept with live evidence
+
+**Search/live-search — REVIEWED-OK.**
+- Provider-error honesty (§3 NOTE): 429→empty + `rateLimited` note (honest); non-429 error on page 0→throw→**502**; timeout→502. No silent unfiltered/empty fallback. `live-search/route.ts:186-219`.
+- Auto.dev dead code: NO functional refs remain (`grep -niE 'autodev|adlisting|AUTO_DEV' src` → only stale comments at `live-search/route.ts:2,20` + `marketcheck.ts:1` + `carCatalog.ts:174`). FleetFinder keeps "auto.dev" only as ProviderUsage/quota/SearchUsage accounting LABELS (BUG-0027 documented). **Doc-rot noted:** `live-search/route.ts:1-3` header still says "Tries Auto.dev first… Returns up to 50" (now inverted: MC is sole provider, returns 150). Cosmetic; candidate cleanup.
+- Value-flow: client (`search/page.tsx:307-318`) sends `option_names` + standard filters; NEVER `body.features` or `body.powertrain_type` → those route branches (`live-search:163,174`) are dead/latent (matches prior S2/S3), not live P1.
+- Live VP-1/VP-2/VP-6 (probed 2026-06-22, my own): drivetrain facet=`[4WD,FWD,RWD]`; body_type has Pickup/Cargo Van/Minivan/Passenger Van; high_value_features has premium speakers/apple carplay/android auto…; trim=XLE round-trips→11,370; RAV4 rows=3→num_found 31,769 listings 3 (not count-only). Seams intact.
+
+**Diagnose — REVIEWED-OK.** dealerScoped guard skips count-only closest-match (BUG-0010 intact, `diagnose:156`); 429/5xx→honest **503** `unavailable:true` (not "no matches"); body_type/drivetrain mapped (`:50-53`); decode loop bounded by `reqStart+47_000` + ≤10 cands.
+
+**Lease calculator — REVIEWED-OK (VP, ran `computeLease`/`computeFinance` verbatim).** $0→all-zero no NaN; residual%>100→dep clamped 0 (BUG-0011), monthly stays positive (263.15); term=0→defaults 36/72; 0%/negative APR→simple-division fallback (no negative interest); huge cashDown→dep clamped. Only negatives come from physically-impossible negative MSRP/price/money-factor on a dealer-only calculator — no crash/NaN, GIGO. Matches RUN2's documented deferral (no money path; card path uses fixed +MF). Inputs lack `min="0"` (`calculator/page.tsx:164`) — UX nicety, not a correctness bug.
+
+**list-features — REVIEWED-OK.** Emits `option_names` values = build-sheet OEM names (sourced FROM the decode, trivially round-trip) OR raw `high_value_features` facet strings; `phraseMatch` (`marketcheck.ts:46`) regex-escapes + bounds with `[^a-z0-9]` so "/"+spaces in "sun/moonroof"/"premium speakers" match. Post-BUG-0026 the decoded hay contains that vocabulary (proven live RUN2: hvf 0→47). Round-trips.
+
+**Supabase advisors — UNCHANGED, all justified.** Security: `rls_enabled_no_policy` INFO only on service-role tables (catalog_*, *_cache, dealer_sync_state, provider_usage); `my_org_ids`/`my_admin_org_ids` SECURITY DEFINER WARN (required for RLS eval, auth.uid()-scoped); leaked-password Auth toggle. `inventory`/`tracked_dealers`/`leads` GONE (BUG-0019/0020/0025 drops confirmed). Perf: auth_rls_initplan (~10), multiple_permissive_policies (customers/dealers), 1 unindexed FK — all Phase-2, deferred. No NEW advisory.
+
+**FleetFinder parity/build gate — OK.** `deno check` passes on decode_vin/diagnose/list_features/sync_inventory/list_colors/list_interior_colors/list_trims/list_models. live_search fails only on pre-existing missing `@base44/sdk` dep (documented, not a regression). BUG-0026 flatten fix present (`_shared/mc.ts:493`).
+
+**Pickers — REVIEWED-OK.** `list-colors`/`list-interior-colors` share `cleanColorFacet(mode)` (BUG-0024) which drops comma-bearing raw values (BUG-0009, `marketcheck.ts:247`) + preserves raw `variants`. `list-trims` emits the RAW facet string (BUG-0014). Live VP-6: GLE trim `GLE350`→**39** vs `GLE 350`→**0** (facet emits raw `GLE350`; round-trips). Model alias (P11): bare `1500`→**0** vs `Ram 1500 Pickup,Ram 1500 Classic`→**94,174** (resolveModel works). `list-styles` confirmed dead (only self-referenced; prior runs verified it 404s live) — documented cleanup candidate, not a behavioral bug.
+
+**Dealers — REVIEWED-OK.** `dealers/catalog` inclusive make filter + injection guard (BUG-0005); `dealers/selection` org-scoped, service-role-after-auth, no tracked_dealers vestige (BUG-0020); `dealers/removal-requests` org-scoped + role-gated + re-verifies row org_id before service-role write (no IDOR), null-membership→400 (no 500); `sync-dealers` PAGE=50/CAP=1500 city-partition + city_cursor (BUG-0003), makes preserved.
+
+**Catalog crons + decode cache — REVIEWED-OK.** `refresh-catalog` stamps `catalog_sync_state` unconditionally (`:104`, BUG-0016); `verify-catalog` stamps `catalog_verify_state` at loop-end no early-continue (`:86`, BUG-0021); `catalog-health` single-fire daily batch (NOT self-chaining), 50s budget, alerts only on real regression. Decode cache (VP-4): `neovinSpecs` memory→DB→live, durable 30d (BUG-0006/0023); BUG-0026 `flattenNeovinFeatureGroup` robust (array/STANDARD-OPTIONAL-dict/.description). 152 pre-fix cached rows self-heal on 30d TTL (BUG-0026 accepted, not force-re-decoded per cost discipline).
+
+**Billing/auth/multi-tenancy — REVIEWED-OK** (mine + independent sub-review). `requireActivePlan` upholds all invariants (401/super-admin/comped/no-org→503/card-gated-trial→402/transient-fail-open). Stripe webhook: signature→400, payload-derived, out-of-order guard, same-second re-fetch, foreign-sub guard, atomic claim+loser-cancel, idempotent seat true-up (BUG-0018), comp reconcile, duplicate-sub cancel. Referrals: `onRefereePaid` returns early if `referrer_credited` (no monthly double-pay) + idempotency keys. `customers` double-protected (RLS + `.eq(agent_id)`). Independent review of checkout/cancel/portal/update-seats/account-finalize/account-onboard/admin-companies/admin-promos/team/me/saved/referral-resolve: **no new money/IDOR/JSON-redirect defect**. proxy/middleware: `/api/*`→401 JSON, cookie rotation on redirects, fail-open transient, onboarding skips /api+/auth.
+
+**UI — REVIEWED-OK.** Lease calculator (ran math, above). Independent review of `"use client"` prop-seeding/optimistic components: TeamManager/CompanyForm/CompaniesTable have correct re-sync effects + in-flight guards (P9 OK, BUG-0012); `useOrgDealers` has mutSeq race guard.
+
+### Latent / non-bug notes (NOT live defects — do NOT reset clean streak; Phase-2 hardening)
+- **BillingActions.tsx** seeds `canceled`/`seatInput`/`billedSeats` from props with no re-sync effect. Safe today (nothing on `/account/billing` calls `router.refresh()`); would only break if a future refresh is added. Per "don't design for hypothetical future requirements," NOT changed — flagged for Phase-2.
+- **useSavedVehicles.save** reloads-on-failure without the `mutSeq` guard its sibling `useOrgDealers` uses (= prior U2). Low impact; Phase-2.
+- **Doc-rot (fixing this pass):** `live-search/route.ts:1-3,20` + `marketcheck.ts:1` + `carCatalog.ts:174` header comments still describe Auto.dev-first behavior (removed in BUG-0027). Correcting — directly serves the §3 "no dead Auto.dev paths" directive; comments-only, no behavior change.
+
+### PASS A RESULT: CLEAN — zero new behavioral defects (clean pass #1 of the streak).
+Swept all §3 areas with §2 primitives (live MarketCheck probes + code + Supabase advisors + ff deno-gate + live deployed-gate curls + independent sub-review). The Auto.dev comment correction is doc hygiene serving §3, not a defect finding.
+
+## RUN 3 — PASS B (fresh adversarial angles, not a repeat) — CLEAN
+
+Re-verified every area with DIFFERENT primitives than Pass A (anti-rubber-stamp):
+- **phraseMatch ReDoS/injection (VP-8 adversarial, ran the real fn):** free-text `option_query` flows into `phraseMatch` as a regex needle. `RX_ESCAPE=/[.*+?^${}()|[\]\\]/g` escapes all metachars. Fed `.*`, `(`, `a)b`, `[a-z`, `\` → all return `false`, no throw, no match-everything; a 5000-char needle → 2ms (no ReDoS); real phrases match; "towel"≠"tow" (word-boundary). Injection/ReDoS-safe.
+- **VP-4 decode cache (free SQL):** `vin_decode_cache` 152 rows, all `payload` non-null + not-expired; 1 `build_sheet` (BUG-0023); 111 `details`-populated; `payload_hvf` populated = 0/152 → confirms BUG-0026's documented pre-fix population, all expiring 2026-07-21/22 (self-heal on 30d TTL, correctly not force-re-decoded per cost discipline). Durable cache wired (BUG-0006).
+- **SECURITY DEFINER search_path (free SQL):** `my_org_ids`/`my_admin_org_ids` both `prosecdef=true` with `proconfig=[search_path=public]` pinned → DB1's no-injection justification confirmed.
+- **VP-7 live edge inputs:** inverted `year_range=2025-2020`→0, inverted `price_range=50000-10000`→0 (no crash; UI presets prevent inversion), special-char `exterior_color=Black,)`→HTTP 200 (URLSearchParams-encoded, no injection), Ferrari 296 <$20k→0 (diagnose handles), unicode make→200. Graceful.
+- **RLS enabled (free SQL):** organizations/memberships/profiles/customers/dealers/dealer_catalog/saved_vehicles/recent_searches/referrals/vehicle_catalog ALL `relrowsecurity=true` with ≥1 policy. Tenant isolation intact live.
+- **Cron advancement (free SQL):** `catalog_sync_state` 441 models stamped (latest 2026-06-22 02:02), `catalog_verify_state` 441 (monthly), `catalog_health` 447 (ran this morning) → self-chaining crons advancing, NOT stalled (BUG-0016/0021 working in prod). `dealer_catalog` 63,605 total / 16,231 (~25%) makes-tagged / 51,048 stocked → confirms BUG-0005 inclusive filter still warranted.
+
+### PASS B RESULT: CLEAN — zero new defects (clean pass #2).
+
+## RUN 3 — PASS C (P1 gold-standard + build/deploy gates) — CLEAN
+
+- **P1 full vocabulary check (the #1 bug class, gold standard):** read all 25 `FEATURE_GROUPS` values from `inventory.ts`, checked EACH against the live `high_value_features` facet (size 125) → **25/25 present**, zero mismatch (BUG-0013/0026 hold).
+- **Interior comma reality (justifies BUG-0009):** Chevrolet `interior_color` facet has 13 comma-bearing values ("Jet Black, Cloth Seat Trim", …) that `cleanColorFacet` correctly drops (they mis-split in the comma-OR filter).
+- **powertrain_type facet** = Combustion/HEV/MHEV/BEV/PHEV/FCEV/EREV (S3 latent — UI emits none today).
+- **Build gates (§4.3):** v2 `npm run build` on committed HEAD `cce85e0` → **exit 0**. ff `deno check` → 14/20 functions pass; the 6 failures (live_search + auto_admin_access + cleanup_companies_and_memberships + manage_billing + me + merge_duplicate_companies) ALL import `npm:@base44/sdk` which isn't installed locally → pre-existing local-tooling gap (run fine in Base44 cloud), NOT a regression. None import my edited `_shared/mc.ts`; all 8 `_shared/mc.ts` importers pass. My edits confirmed clean.
+- **Advisors (§4.3):** unchanged from Pass A (comment-only commits, no DB change) — security INFO/WARN all justified (DB1/DB2/DB5), perf all Phase-2 (DB3/DB4/DB6). No new advisory.
+
+### PASS C RESULT: CLEAN — zero new defects (clean pass #3).
+
+---
+
+## RUN 3 — FINAL ATTESTATION (branch `audit/v3`)
+
+**Three consecutive clean passes achieved.** No new behavioral defect surfaced in any pass. The audit picked up where RUN 2 left off (BUG-0001..0027 fixed/merged/deployed) and extended it: re-verified every §3 area against the LIVE MarketCheck API, the live Supabase DB (read-only SQL), the live deployed app (unauth gate curls), both build gates, and an independent sub-agent code review of the billing/account/admin/UI cluster.
+
+**Changes made this run (branch only — NOT merged):**
+- Corrected stale Auto.dev header comments in both repos (v2 `cce85e0`, ff `09c4cc5`) — doc hygiene serving the §3 "no dead Auto.dev paths" directive; comments-only, build+deno-gated, zero behavior change.
+
+**No new BUG-NNNN entries** (registry stays at next-ID 0028) — no defect found.
+
+**Deferred — needs owner sign-off (RUN 3):** none requiring sign-off. (All money/destructive ops avoided; no migration needed.)
+
+**Phase-2 / hygiene recommendations (NOT bugs, owner's call):**
+1. Delete the dead `list-styles` route (only self-referenced; endpoint 404s live) — prior runs also recommended; left in place to keep the branch focused.
+2. Harden `BillingActions.tsx` with prop re-sync effects BEFORE anyone adds a `router.refresh()` to `/account/billing` (latent P9; safe today).
+3. Add the `mutSeq` guard to `useSavedVehicles.save` (matches `useOrgDealers`; prior U2).
+4. The 5 ff admin/billing functions can't be locally deno-checked (missing `@base44/sdk`); consider `deno install` or a vendored dep so the build gate covers them.
+5. Existing `vin_decode_cache` rows fully self-heal to populated `hvf` by ~2026-07-22 (BUG-0026 TTL); no action needed.
+
+**Build/advisor status:** v2 build exit 0; ff deno 14/20 (6 pre-existing sdk-dep, documented); Supabase advisors clean-or-justified.
+
+---
+
+# RUN 4 — branch `audit/v3` continuation (2026-06-22, fresh chat, Opus 4.8 agent)
+
+The owner relaunched on the same branch. Per §0.4 continuity + the anti-false-confidence rule, RUN 3's "FINAL ATTESTATION" is NOT taken on faith — I independently re-derive the verdict with fresh code reads (not "REVIEWED-OK" labels) and new live evidence, hunting for any NEW defect. Goal: 3 consecutive clean passes of MY OWN. Doctrine: behavior is the only truth.
+
+## Decisions made (autonomous) — RUN 4
+- **D-R4-1:** Found a STAGED deletion of `src/app/api/list-styles/route.ts` on the branch (uncommitted, left by a prior partial run/owner — it matches RUN 3 Phase-2 rec #1). Investigated: the route is genuinely dead (`grep list-styles src` → 0 refs except a comment in list-trims; the route's MC endpoint `/vehicle/style/...` 404s live per prior runs; build passes WITHOUT it). I will COMPLETE this deletion as a branch-only hygiene commit (not a new bug; does not affect the clean-streak). Reverse: `git revert <commit>` or `git checkout HEAD~1 -- src/app/api/list-styles/route.ts`.
+- **D-R4-2:** Canonical ledger remains `fleetfinder-v2/{AUDIT_FINDINGS,BUG_REGISTRY}.md`; root copies are separate files (different inodes) kept in sync — I mirror root + `fleetfinder/BUG_REGISTRY.md` at finalize. Reverse: n/a (doc only).
+
+## Deferred — needs owner sign-off (RUN 4)
+- **`style_cache` table is an orphan (P7), INFO-level.** Live-verified: `grep style_cache src` → 0 refs (even the now-deleted `list-styles` used the in-MEMORY cache, never this DB table), so it was already dead before the deletion. Same family as the unused `trim_cache`/`color_cache`/`search_cache` (kept for the optimization pass). Dropping it is a destructive DB op on the shared live DB → DEFERRED to owner (do not run). No correctness impact (deny-all RLS, never read/written).
+
+## Baseline (RUN 4, probed live 2026-06-22)
+- MarketCheck `car_type=new` num_found = **3,255,687** (key valid, 40 chars) — identical to RUN 3 baseline.
+- `vin_decode_cache` = **152 rows**; `inventory`/`tracked_dealers`/`leads` = **null** (drops hold); `dealer_catalog` = **63,605**; `catalog_sync_state` = **441**. All match RUN 3's recorded state → prior work is real, not fabricated.
+- v2 `npm run build` (branch HEAD, list-styles already removed from tree) = **exit 0**.
+
+## RUN 4 — PASS D (deep independent code read + live VP) — CLEAN
+
+Read every core path IN FULL this pass (not trusting prior REVIEWED-OK), formed hypotheses, verified live:
+
+- **live-search/route.ts (read 1-327):** pagination `page*rows < SEARCH_LIMIT` → 3×50 (active) or 1×150 (dealer syndication); `start` maxes at 100 (active) — inside the 1500 cap. Dealer-scope routes to `/dealerships/inventory` (comma-OR, ≤200 ids, $1/call); no-valid-id guard returns empty (never unscoped). maxMonthly fallback `estMonthlyCard(price, msrp||price)` (documented L2). Option loop: DECODE_CAP=240, chunks of 8, `reqStart+47_000` deadline, `chunksRun===0 && withVin>0` keeps unfiltered+note (no false "0 matches"). 429→empty+rateLimited; hard error page-0→**502**. No silent unfiltered fallback.
+- **marketcheck.ts (read 1-928):** `estMonthlyCard` clamps depreciation ≥0 (BUG-0011); `mcListing.est_monthly` only when `realMsrp>0 && realMsrp>=price && isNew`. Durable decode cache memory→DB(`payload`)→live; `decodeVinBuildSheet` memory→DB(`build_sheet`)→live + `primeVinDecodeCache` (one charge per VIN, BUG-0023); `flattenNeovinFeatureGroup` handles array/STANDARD-OPTIONAL-dict/.description (BUG-0026). `cleanColorFacet(mode)` drops comma-bearing raw values (BUG-0009), preserves raw `variants`. `resolveModel` alias-first, sibling-exclusion, never poisons cache on fallback.
+- **VP-2 live:** `/search/car/active?make=Toyota&model=RAV4&rows=3` → num_found **31,769**, listings **3** (not count-only). **VP-1 live:** raw `body_type=Van`→**8**, `Truck`→**0** vs mapped `Cargo Van`→47,255 / `Minivan`→63,870 / `Passenger Van`→4,954 / `Pickup`→**758,676** — mcBodyType mapper justified & correct. drivetrain facet=`[4WD,FWD,RWD]`.
+- **diagnose/route.ts (read 1-217):** facet syntax `field|0|size` verified LIVE to populate (RAV4: exterior 60, interior 60, trim 12, hvf 64, count-sorted) — availability checks work. 429/5xx→honest **503** `unavailable:true`; dealerScoped skips count-only closest-match (BUG-0010); decode loop `reqStart+47_000`, ≤10 cands.
+- **catalogSnapshot.ts (read 1-123):** `PAGES=3, ROWS=50` (BUG-0017); samples ≤6 VINs for the paid option decode, 150 listings for the trim→color tally; returns null on transient miss (never wipes catalog); `skipOptions` preserves the options row.
+- **list-trims (read 1-227):** emits RAW facet trim string (BUG-0014, round-trips); `trim|0|100|1`; version sub-variants `version|0|200|1`. **list-features (read 1-127):** build-sheet option names sourced FROM the decode (trivially round-trip) + facet supplement (raw hvf strings matched against post-BUG-0026 hay). SAMPLE_VINS=8.
+- **P3 rows>50 hunt (whole src):** every `rows` on `/search/car/active` is 0, 1, 3, 8, 12, or PAGE_SIZE(50); dealer syndication uses 150 (allowed). `SAMPLE_VINS=8`, `PAGE=50`. sync-dealers loop `start+PAGE<=CAP(1500)` → max start 1450 (BUG-0003). **No P3 anywhere.**
+- **auth.ts requireActivePlan (read 1-133):** 401 signed-out / super-admin allow / no-org→ensure-or-**503** (no free metered) / service-role after getUser / `!org`→ok (transient, FK-cascade-unreachable B1) / comped / card-gated-trial→402 / active+incomplete+trialOk allow / catch→fail-open. Matches CLAUDE.md invariants.
+- **stripe/webhook (read 1-272):** signature→400; event-time out-of-order guard; same-second re-fetch; foreign-sub guard; ATOMIC claim `.or(is.null,eq.sub.id)` + loser-cancel; seat true-up idempotencyKey (BUG-0018) reads PRE-patch plan_status so it fires once on the trial→active edge (no loop); comp coupon reconcile idempotent; referral on `amount_paid>0`. No new defect.
+- **dealers/catalog (read 1-99):** make sanitized to `[a-zA-Z0-9 &-]` then `.or(makes.cs.{"x"},and(listing_count.gt.0,makes.is.null),and(...eq.{}))` (BUG-0005 inclusive); q strips `,()*\"` so no new `.or()` term can be injected. Defense-in-depth session check.
+- **proxy.ts + middleware (read full):** `/api/*` signed-out→**401 JSON**; rotated auth cookies copied onto every redirect; onboarding force-redirect skips `/api`+`/auth`+`/onboarding`; getUser fail-open. `/api/cron` is proxy-public → each cron route's own CRON_SECRET check is the gate.
+- **Cron security (all 4 routes):** catalog-health/refresh-catalog/sync-dealers/verify-catalog each read `?secret=` OR `Authorization: Bearer`, exact-match vs `CRON_SECRET`, **fail closed if unset**. (dump-inventory gone — BUG-0019.)
+- **Lease/finance math (ran the exact arithmetic, edge cases):** $0→all 0; residualPct 130→dep clamped 0, monthly $135 (positive); huge cashDown→dep 0, $15; 0%-APR finance→r=0 fallback $500; trade>price→amountFinanced clamped 0. All FINITE (no NaN/Infinity). BUG-0011 holds.
+- **Supabase advisors (security+perf):** identical to RUN 3 — security: 11 service-role-only `rls_enabled_no_policy` INFO (incl. style_cache/catalog_discrepancies) + 2 SECURITY-DEFINER WARN (my_org_ids/my_admin_org_ids, required for RLS eval, auth.uid()-scoped) + leaked-password Auth toggle; perf: auth_rls_initplan (~10), multiple_permissive (customers/dealers), 1 unindexed FK — all Phase-2. **No NEW advisory.**
+- **Live deployed gate (VP-7):** `GET https://www.lotcompass.com/` → 200; `POST /api/live-search` + `/api/diagnose` (unauth) → **401 JSON**; `GET /api/cron/refresh-catalog` (no secret) → **401 JSON**.
+- **FleetFinder parity:** `deno check` exit 0 on decode_vin/diagnose/list_features/list_colors/list_interior_colors/list_trims/list_models/sync_inventory (all `_shared/mc.ts` importers).
+
+### PASS D RESULT: clean at the time — but the deeper adversarial passes below found 2 real defects, so this did NOT stand as a clean-streak pass.
+
+## RUN 4 — PASS E (adversarial: VP-8 + free-SQL + the bug class) — found BUG-0028
+
+Pushed harder than prior runs' VP-8 (they tested a 5,000-char needle; I tested the boundary):
+- **Free SQL (live state):** cron advancement healthy (catalog_sync 441 @ 2026-06-22 02:02; catalog_verify 441; catalog_health 447); `vin_decode_cache` 152/152 payload, 0 expired, hvf 0/152 (BUG-0026 self-heal by 2026-07-22, not force-re-decoded); `my_org_ids`/`my_admin_org_ids` `prosecdef=true` + `search_path=public` pinned; all 10 tenant tables RLS+policy. Clean.
+- **VP-8 `phraseMatch` (ran the real fn):** regex metachars escaped (`.*`,`(`,`a)b`,`[a-z`,`\`,`|` → no match-everything, no throw); 5k-char needle 1ms (no ReDoS); word boundary holds. **BUT a needle >32,767 chars (2^15) makes `new RegExp` THROW** → **BUG-0028** (unhandled 500 on the option-filter path, which isn't try/caught). Threshold binary-searched to exactly 32,767.
+
+### → BUG-0028 FIXED: needle-length cap (`MAX_NEEDLE=512`) in `phraseMatch`, both repos. VP-8 after: 513/16384/33000/100000 → no throw + false; real phrases still match. v2 build 0, ff deno 9/9. Committed v2 `6a039aa`, ff `d6051f2`. Streak reset.
+### Pattern hunt (BUG-0028 class): every `new RegExp(userValue)` in both repos — only `phraseMatch` took a user value (FIXED); `parseVariant`/sync_dealers build from STATIC arrays (escaped). No `decodeURIComponent`; all `req.json()` are `.catch`-guarded; the lone `JSON.parse` is client localStorage in a try/catch. Class is clean.
+### Hygiene (committed `1f693c7`): removed the dead `list-styles` route (0 refs, endpoint 404s live). `style_cache` DB table is a pre-existing orphan (0 code refs even before the deletion) — owner-deferred drop (destructive DB op), not a bug.
+
+## RUN 4 — PASS (facet-size full audit, VP-1) — found BUG-0029
+
+Both bugs so far were "mechanism verified but SIZE/BOUNDARY not," so I audited EVERY facet size against live max cardinality:
+- model `model|0|80|1` (resolveModel) / `|0|250|1` (list-models): max real = Ford **52** → adequate.
+- trim `trim|0|100|1` (live) / `|0|40` (catalogSnapshot): max real = Ram 1500 **13** → adequate.
+- version `|0|200|1` / `|0|60` (snapshot): max real = F-150 **38** → adequate.
+- **make `facets=make` (sync-dealers backfill) — BARE, no size → defaults to 20** while every other facet call is explicit-sized. **BUG-0029**: a dealer selling >20 new makes is tagged with only 20, then the `dealers/catalog` make filter (tagged-exact) wrongly EXCLUDES it for its 21st+ makes. **LIVE in prod data:** `dealer_catalog` id 1026774 (NY, 9,666 listings) stores 20 makes but truly sells **24** (`make|0|100|1`) — missing **Cadillac, Dodge, INFINITI, Lincoln**, so it's invisible in the NY directory for those 4 makes right now.
+- colors exceed their caps (RAV4 ext 178 / F-150 400+ vs diagnose 60 / list-colors 100 / snapshot 60) — but these are count-sorted noisy free-text values absorbed by `cleanColorFacet` bucketing: the top-N holds every COMMON color family; the truncated tail is redundant rare spellings. Inherent design tradeoff, **NOT a wrong-result bug** (won't inflate the count). Phase-2 nicety: raise diagnose's color facet 60→100 to match list-colors.
+
+### → BUG-0029 FIXED (code): `facets=make` → `facets=make|0|100|1` in the backfill. After: the same probe returns the COMPLETE list (24/22) for both affected dealers. v2 build 0. Committed v2 `6f0d1e4`, ff registry `ceaabf2`. **Data remediation DEFERRED to owner** (re-run `?backfill_makes` for NY/NJ — writes shared prod data + per-dealer quota, §0.4; existing truncated rows don't self-heal since the scheduled cron preserves `makes`). Streak reset.
+
+## RUN 4 — THREE CONSECUTIVE CLEAN PASSES (after the BUG-0029 fix)
+
+**Clean Pass 1** — crons + admin + remaining input class:
+- All 4 crons read in FULL: refresh-catalog stamps `catalog_sync_state` unconditionally outside the try (BUG-0016); verify-catalog stamps `catalog_verify_state` at loop-end, no early `continue` (BUG-0021); catalog-health alerts only on trims→0 (color caps irrelevant); sync-dealers 1500-offset cap + makes-preserve (BUG-0003/0005). All CRON_SECRET fail-closed.
+- admin/companies: comp toggle reconciles Stripe BEFORE persisting (coupon rollback on DB fail); price override idempotent + rollback; DELETE cancels billing before delete (money-safe order, aborts on cancel-fail) and deletes orphaned logins only on a CONFIRMED 0-membership count (fail-closed). account/finalize: claims sub pointer only if null (converges w/ webhook). dealers/removal-requests: org-scoped, PATCH re-verifies row org (no IDOR). list-colors: shared `cleanColorFacet`, try/caught.
+- VP-7 live edges → all HTTP 200 (inverted year/price ranges → 0; `Black,)`/unicode/quote URL-encoded; no injection/crash). **CLEAN.**
+
+**Clean Pass 2** — P1 gold-standard + fix confirmation:
+- P1: all **25** `FEATURE_GROUPS` values present in the live `high_value_features` facet (125 vals) — 0 missing. body_type UI {SUV,Sedan,Wagon,Coupe,Truck→Pickup,Van→Cargo/Mini/Passenger Van} all real (SUV 1.9M … Pickup 759k). drivetrain {AWD/4WD→4WD,FWD,RWD} real.
+- Both fixes confirmed in COMMITTED code (v2 `MAX_NEEDLE` + `make|0|100|1`; ff `MAX_NEEDLE`). Live deployed gate `/api/live-search` unauth → 401 JSON. **CLEAN.**
+
+**Clean Pass 3** — gates + final money-path read:
+- v2 `npm run build` exit 0; ff `deno check` 9/9 (decode_vin/diagnose/list_features/list_colors/list_interior_colors/list_trims/list_models/sync_inventory/sync_dealers). Committed `phraseMatch` carries the guard.
+- Supabase advisors UNCHANGED (no DB schema change this run — the BUG-0029 data fix is deferred): security INFO/WARN all justified (service-role tables, SECURITY DEFINER for RLS, leaked-pw toggle); perf all Phase-2. 
+- stripe/checkout read: seat clamp (≤1000) blocks arbitrary self-billing; memberCount-fail→503 (no underbill); comped→409; double-sub guarded DB-side AND Stripe-side; every Stripe write idempotency-keyed; trial continuation prevents 28-day stacking. **CLEAN.**
+
+---
+
+## RUN 4 — FINAL ATTESTATION (branch `audit/v3`)
+
+**Did NOT take RUN 3's attestation on faith.** Re-derived independently with full code reads + new live evidence and FOUND 2 REAL DEFECTS the prior "3 clean passes" missed (both were size/boundary gaps the prior VP-8/VP-1 stopped short of):
+- **BUG-0028** (Low) — `phraseMatch` throws on a >32,767-char needle → unhandled 500 on the option-filter path. Fixed both repos (needle cap), VP-8-survived, build/deno-gated, committed.
+- **BUG-0029** (Med-Low, **live in prod data**) — `backfill_makes` bare `facets=make` truncates at 20 → mega-dealers hidden in the directory for their 21st+ makes. Code fixed + build-gated + committed; **data remediation deferred to owner**.
+
+**Then achieved 3 consecutive clean passes** (above) on the fixed tree — zero new defects, every §3 area swept with §2 primitives + live evidence.
+
+**Commits (branch only — NOT merged, NOT pushed):**
+- v2: `6a039aa` (BUG-0028), `1f693c7` (remove dead list-styles), `6f0d1e4` (BUG-0029).
+- ff: `d6051f2` (BUG-0028), `ceaabf2` (BUG-0029 registry mirror).
+
+**Registry:** BUG-0028 + BUG-0029 appended (both repos), next ID BUG-0030.
+
+**Deferred — needs owner sign-off (RUN 4):**
+1. **BUG-0029 data remediation (action needed):** re-run `GET /api/cron/sync-dealers?backfill_makes=1&state=NY&limit=…` (and NJ) to overwrite the truncated `makes` tags with the now-complete list. The code fix only affects FUTURE backfills; the scheduled cron preserves `makes`, so existing rows (e.g. 1026774) stay wrong until this manual re-run. Spends ~$0.002/dealer; mutates shared prod data → owner runs it.
+2. `style_cache` orphan table drop (destructive DB op) — owner's call (same family as the BUG-0019/0020/0025 vestiges).
+
+**Phase-2 / hygiene (NOT bugs):**
+- Raise diagnose's exterior/interior color facet 60→100 to match list-colors (consistency on high-cardinality models); consider higher caps for >100-color models. Inherent free-text-color tradeoff, low value.
+- `BillingActions.tsx` prop re-sync (latent P9, safe today); `useSavedVehicles.save` mutSeq guard (prior U2); vendoring `@base44/sdk` so the 6 ff admin/billing functions are deno-checkable.
+
+**Build/advisor status:** v2 build exit 0; ff deno 9/9 on mc.ts importers (the 6 admin/billing fns remain un-checkable locally — pre-existing missing `@base44/sdk`, documented); Supabase advisors clean-or-justified (unchanged — no DB change this run).
+
+**STOP — do not merge.** Two code fixes + one hygiene deletion on `audit/v3` in both repos, plus one owner data-remediation action (re-backfill) and minor Phase-2 items. Awaiting owner review.
+
+

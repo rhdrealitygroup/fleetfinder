@@ -1,6 +1,7 @@
-// MarketCheck + Auto.dev integration core. Shared by every /api/* search route.
-// Ported and consolidated from the Base44 backend functions, with the trim
-// logic rebuilt (see list-trims route) to fix the long-standing bugs.
+// MarketCheck integration core (sole inventory provider — the Auto.dev path was
+// removed, BUG-0027). Shared by every /api/* search route. Ported and consolidated
+// from the Base44 backend functions, with the trim logic rebuilt (see list-trims
+// route) to fix the long-standing bugs.
 
 import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
 import { CAR_CATALOG } from "@/lib/carCatalog";
@@ -38,9 +39,17 @@ export async function fetchWithTimeout(url: string, opts: RequestInit = {}, time
 // the option/feature filters (search + diagnose) instead of raw .includes(),
 // which produced false matches. Multi-word needles match as a contiguous phrase.
 const RX_ESCAPE = /[.*+?^${}()|[\]\\]/g;
+// A real option/feature/color/trim phrase is short. Reject an absurdly long
+// needle: it can't match anything meaningful, AND once the escaped pattern
+// exceeds V8's ~32k regex-source limit `new RegExp` THROWS — which on the
+// option-filter path (not wrapped in try/catch) surfaced as an unhandled 500
+// for a crafted oversized option_query/option_names value (BUG-0028). 512 covers
+// every legitimate value with wide margin; escaping at worst doubles it (~1k),
+// still far below the limit.
+const MAX_NEEDLE = 512;
 export function phraseMatch(hay: string, needle: string): boolean {
   const n = String(needle || "").trim().toLowerCase();
-  if (!n) return false;
+  if (!n || n.length > MAX_NEEDLE) return false;
   const h = String(hay || "").toLowerCase();
   const esc = n.replace(RX_ESCAPE, "\\$&");
   return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(h);
