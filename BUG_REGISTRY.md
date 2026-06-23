@@ -317,4 +317,14 @@
 - **Evidence:** code — `team/route.ts` `syncSeatQuantity` previously called `stripe.subscriptions.update(...)` with no 3rd arg; now passes `idem`. `npm run build` exit 0.
 - **Status:** Fixed & build-gated on `audit/v3` (NOT merged).
 
-<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0031. Never edit/delete above. -->
+### BUG-0031 — Sunroof/Panoramic roof filter silently ignored on dealer-scoped searches
+- **Date:** 2026-06-23  **Severity:** Med  **Found by:** agent (Phase 1/2 feature audit, adversarial VP)
+- **Area:** `live-search` (model-aware Roof filter, Phase 1)
+- **Symptom:** with dealers selected, choosing Roof=Sunroof/Panoramic returned the dealers' ENTIRE inventory unfiltered (cars without a sunroof shown as matches).
+- **Root cause:** Sunroof/Panoramic map to `high_value_features`, but the dealer **Syndication endpoint** (`/dealerships/inventory`) **ignores `high_value_features`** (verified live: dealer 1029091 `high_value_features=sun/moonroof` → 2192 = full inventory, vs 970 on `/search/car/active`). Convertible (`body_type`) and Fuel (`powertrain_type`) ARE honored by Syndication — only `high_value_features` is dropped. Same class as the original dealer count-vs-availability quirk (P2): the endpoint accepts a param and silently no-ops it.
+- **Pattern (P2):** an endpoint silently ignores a filter param. Hunt: ANY param set on `/dealerships/inventory` — confirm each actually filters, not just that the call succeeds.
+- **Fix:** for dealer-scoped searches, apply Sunroof/Panoramic via the existing **option post-filter** (decode-based `option_names`, which works on any endpoint — exactly how the feature chips already work) instead of the ignored `high_value_features` param. Non-dealer searches keep the cheap param. Commit: fleetfinder-v2 (Phase-1 audit fix).
+- **Evidence:** live `/dealerships/inventory?dealer_id=1029091&high_value_features=sun/moonroof` → 2192 (ignored) vs `body_type=Convertible` → 4 (honored) + `powertrain_type=HEV,MHEV` → 262 (honored). Post-fix: roof now enforced via decode post-filter for dealer-scoped (to re-verify live post-deploy).
+- **Status:** Fixed (LotCompass) — FleetFinder's dealer-scope path is inert (single-user, no org dealers) so dormant there; fix when its UI mirror lands.
+
+<!-- APPEND NEW ENTRIES BELOW. Next ID: BUG-0032. Never edit/delete above. -->

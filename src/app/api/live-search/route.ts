@@ -100,6 +100,14 @@ export async function POST(req: Request) {
   const dealerIds: string[] = dealerScoped
     ? [...new Set(body.dealer_ids.map((d: unknown) => String(d ?? "").trim()).filter(Boolean) as string[])].sort()
     : [];
+  // Roof maps to two MarketCheck fields: Convertible→body_type (honored by BOTH
+  // endpoints), Sunroof/Panoramic→high_value_features. The dealer Syndication
+  // endpoint IGNORES high_value_features (verified live), so for a dealer-scoped
+  // search we apply the sunroof/pano requirement via the option post-filter
+  // (decode) instead — exactly how the feature chips already work everywhere.
+  const roofOpt = ROOF_OPTIONS.find((r) => r.label.toLowerCase() === String(body.roof || "").trim().toLowerCase());
+  const roofBodyType = roofOpt?.field === "body_type" ? roofOpt.value : "";
+  const roofFeature = roofOpt?.field === "high_value_features" ? roofOpt.value : "";
   // Guard: a dealer-scoped search with NO usable dealer IDs must return nothing —
   // never silently fall back to an unscoped (all-inventory) search.
   if (dealerScoped && !dealerIds.length) {
@@ -168,11 +176,9 @@ export async function POST(req: Request) {
       if (pt) url.searchParams.set("powertrain_type", pt);
       // Map UI labels → MarketCheck facet values ("Truck"→Pickup, "Van"→Cargo
       // Van/Minivan/Passenger Van, "AWD"→4WD); an unmapped label matches nothing.
-      // Roof spans two fields: Convertible augments body_type; Sunroof/Panoramic
-      // augment high_value_features. Combine with the Body/feature controls.
-      const roof = ROOF_OPTIONS.find((r) => r.label.toLowerCase() === String(body.roof || "").trim().toLowerCase());
+      // Convertible roof augments body_type (works on both endpoints).
       let btVal = mcBodyType(body.body_type);
-      if (roof?.field === "body_type") btVal = [btVal, roof.value].filter(Boolean).join(",");
+      if (roofBodyType) btVal = [btVal, roofBodyType].filter(Boolean).join(",");
       if (btVal) url.searchParams.set("body_type", btVal);
       const dt = mcDrivetrain(body.drivetrain);
       if (dt) url.searchParams.set("drivetrain", dt);
@@ -180,8 +186,10 @@ export async function POST(req: Request) {
       // list (e.g. "Agate Black,Agate Black Metallic") from the color picker.
       if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);
       if (body.interior_color) url.searchParams.set("interior_color", body.interior_color);
+      // Sunroof/Panoramic via high_value_features — only for the standard endpoint
+      // (the dealer Syndication endpoint ignores it; it's post-filtered below instead).
       const feats = Array.isArray(body.features) ? [...body.features] : [];
-      if (roof?.field === "high_value_features") feats.push(roof.value);
+      if (roofFeature && !dealerScoped) feats.push(roofFeature);
       if (feats.length) url.searchParams.set("high_value_features", feats.join(","));
       // Scope to the company's selected dealers via the syndication endpoint's
       // comma-OR dealer_id list (capped at 200). dealerIds is already de-duped and
@@ -265,6 +273,10 @@ export async function POST(req: Request) {
   const optionNames: string[] = Array.isArray(body.option_names)
     ? body.option_names.map((s: unknown) => String(s || "").trim().toLowerCase()).filter(Boolean)
     : [];
+  // Dealer-scoped Sunroof/Panoramic: the Syndication endpoint ignored the
+  // high_value_features param, so enforce the roof here via the decode post-filter
+  // (the decoded names include high_value_features like "sun/moonroof").
+  if (dealerScoped && roofFeature) optionNames.push(roofFeature.toLowerCase());
   let optionScanLimited = false;
   let decodeTimedOut = false; // loop broke on the wall-clock deadline (partial scan)
   if (optionQuery || optionNames.length) {
