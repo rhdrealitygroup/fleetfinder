@@ -1,6 +1,7 @@
-// MarketCheck + Auto.dev integration core. Shared by every /api/* search route.
-// Ported and consolidated from the Base44 backend functions, with the trim
-// logic rebuilt (see list-trims route) to fix the long-standing bugs.
+// MarketCheck integration core (sole inventory provider — the Auto.dev path was
+// removed, BUG-0027). Shared by every /api/* search route. Ported and consolidated
+// from the Base44 backend functions, with the trim logic rebuilt (see list-trims
+// route) to fix the long-standing bugs.
 
 import { cacheGet, cacheSet, DAY } from "@/lib/memoryCache";
 import { CAR_CATALOG } from "@/lib/carCatalog";

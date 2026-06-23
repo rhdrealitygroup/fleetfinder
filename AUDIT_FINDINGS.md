@@ -422,3 +422,58 @@ Observations (NOT fixed — documented for owner):
 1. **Auto.dev fallback dataset lacks mainstream makes.** Our Auto.dev entitlement returns 0 for `vehicle.make=Toyota/Honda/Chevrolet` (param works — `=Kia`→101, `=Volvo`→41743 — but the dataset is missing the top-volume makes). So the Auto.dev fallback is ineffective for most real broker searches; when MarketCheck is rate-limited/down it returns "0 results" for a Toyota search rather than a true count. Fallback-only (MarketCheck is primary and healthy), degrades with a note. Recommend: owner decide whether Auto.dev is worth keeping as a fallback, or surface "service unavailable" instead of empty when the fallback can't cover the make. Severity Low-Med (fallback-only).
 2. **Advisors (pre-existing, reviewed):** security — `rls_enabled_no_policy` INFO on service-role-only cache/state tables (by design); WARN `my_org_ids()`/`my_admin_org_ids()` SECURITY DEFINER executable by anon/authenticated — both are `auth.uid()`-scoped (anon→empty, no params, pinned search_path) so the exposure is benign, and `authenticated` EXECUTE is REQUIRED for RLS policy evaluation; a `REVOKE … FROM PUBLIC` hygiene change touches RLS so deferred to owner (fail-closed rule). WARN leaked-password-protection is an Auth dashboard toggle. Performance — `auth_rls_initplan` (use `(select auth.fn())`), `multiple_permissive_policies` (customers/dealers), one unindexed FK — all Phase-2 optimization, no correctness impact.
 3. **list-colors live fallback isn't trim-scoped** (display-only): when a trim is selected AND the model isn't in the nightly snapshot, the live exterior/interior color list shows colors across all trims (filtering still correct via raw `variants`). Rare path; Phase-2 nicety.
+
+---
+
+# RUN 3 — branch `audit/v3` (2026-06-22, Opus 4.8 agent)
+
+Continuation of the audit per `AUDIT_PROMPT_V3.md`. Prior runs fixed BUG-0001..0027 (all merged to main + deployed). Next ID: BUG-0028. Goal: 3 consecutive clean passes (§4). Doctrine: behavior is the only truth — every claim carries a command + output.
+
+## Decisions made (autonomous) — RUN 3
+- **D-R3-1:** Canonical working-log + ledger live in `fleetfinder-v2/` (not workspace root). The root `BUG_REGISTRY.md` is stale (next-ID 0017) and there is no root `AUDIT_FINDINGS.md`. Continuing to use `fleetfinder-v2/AUDIT_FINDINGS.md` + `fleetfinder-v2/BUG_REGISTRY.md` (mirrored to `fleetfinder/BUG_REGISTRY.md`) as the prior runs did. Reverse: ignore this paragraph; no code impact.
+- **D-R3-2:** Branch `audit/v3` cut from `main` (clean) in both repos. Reverse: `git branch -D audit/v3`.
+
+## Deferred — needs owner sign-off (RUN 3)
+(none yet)
+
+## Baseline (RUN 3, probed live 2026-06-22)
+- MarketCheck `car_type=new` num_found = **3,255,687** (key valid, 40 chars).
+- v2 baseline build (main@audit/v3 HEAD) = exit 0.
+- `vin_decode_cache` = 152 rows.
+
+## RUN 3 — PASS A (in progress) — areas swept with live evidence
+
+**Search/live-search — REVIEWED-OK.**
+- Provider-error honesty (§3 NOTE): 429→empty + `rateLimited` note (honest); non-429 error on page 0→throw→**502**; timeout→502. No silent unfiltered/empty fallback. `live-search/route.ts:186-219`.
+- Auto.dev dead code: NO functional refs remain (`grep -niE 'autodev|adlisting|AUTO_DEV' src` → only stale comments at `live-search/route.ts:2,20` + `marketcheck.ts:1` + `carCatalog.ts:174`). FleetFinder keeps "auto.dev" only as ProviderUsage/quota/SearchUsage accounting LABELS (BUG-0027 documented). **Doc-rot noted:** `live-search/route.ts:1-3` header still says "Tries Auto.dev first… Returns up to 50" (now inverted: MC is sole provider, returns 150). Cosmetic; candidate cleanup.
+- Value-flow: client (`search/page.tsx:307-318`) sends `option_names` + standard filters; NEVER `body.features` or `body.powertrain_type` → those route branches (`live-search:163,174`) are dead/latent (matches prior S2/S3), not live P1.
+- Live VP-1/VP-2/VP-6 (probed 2026-06-22, my own): drivetrain facet=`[4WD,FWD,RWD]`; body_type has Pickup/Cargo Van/Minivan/Passenger Van; high_value_features has premium speakers/apple carplay/android auto…; trim=XLE round-trips→11,370; RAV4 rows=3→num_found 31,769 listings 3 (not count-only). Seams intact.
+
+**Diagnose — REVIEWED-OK.** dealerScoped guard skips count-only closest-match (BUG-0010 intact, `diagnose:156`); 429/5xx→honest **503** `unavailable:true` (not "no matches"); body_type/drivetrain mapped (`:50-53`); decode loop bounded by `reqStart+47_000` + ≤10 cands.
+
+**Lease calculator — REVIEWED-OK (VP, ran `computeLease`/`computeFinance` verbatim).** $0→all-zero no NaN; residual%>100→dep clamped 0 (BUG-0011), monthly stays positive (263.15); term=0→defaults 36/72; 0%/negative APR→simple-division fallback (no negative interest); huge cashDown→dep clamped. Only negatives come from physically-impossible negative MSRP/price/money-factor on a dealer-only calculator — no crash/NaN, GIGO. Matches RUN2's documented deferral (no money path; card path uses fixed +MF). Inputs lack `min="0"` (`calculator/page.tsx:164`) — UX nicety, not a correctness bug.
+
+**list-features — REVIEWED-OK.** Emits `option_names` values = build-sheet OEM names (sourced FROM the decode, trivially round-trip) OR raw `high_value_features` facet strings; `phraseMatch` (`marketcheck.ts:46`) regex-escapes + bounds with `[^a-z0-9]` so "/"+spaces in "sun/moonroof"/"premium speakers" match. Post-BUG-0026 the decoded hay contains that vocabulary (proven live RUN2: hvf 0→47). Round-trips.
+
+**Supabase advisors — UNCHANGED, all justified.** Security: `rls_enabled_no_policy` INFO only on service-role tables (catalog_*, *_cache, dealer_sync_state, provider_usage); `my_org_ids`/`my_admin_org_ids` SECURITY DEFINER WARN (required for RLS eval, auth.uid()-scoped); leaked-password Auth toggle. `inventory`/`tracked_dealers`/`leads` GONE (BUG-0019/0020/0025 drops confirmed). Perf: auth_rls_initplan (~10), multiple_permissive_policies (customers/dealers), 1 unindexed FK — all Phase-2, deferred. No NEW advisory.
+
+**FleetFinder parity/build gate — OK.** `deno check` passes on decode_vin/diagnose/list_features/sync_inventory/list_colors/list_interior_colors/list_trims/list_models. live_search fails only on pre-existing missing `@base44/sdk` dep (documented, not a regression). BUG-0026 flatten fix present (`_shared/mc.ts:493`).
+
+**Pickers — REVIEWED-OK.** `list-colors`/`list-interior-colors` share `cleanColorFacet(mode)` (BUG-0024) which drops comma-bearing raw values (BUG-0009, `marketcheck.ts:247`) + preserves raw `variants`. `list-trims` emits the RAW facet string (BUG-0014). Live VP-6: GLE trim `GLE350`→**39** vs `GLE 350`→**0** (facet emits raw `GLE350`; round-trips). Model alias (P11): bare `1500`→**0** vs `Ram 1500 Pickup,Ram 1500 Classic`→**94,174** (resolveModel works). `list-styles` confirmed dead (only self-referenced; prior runs verified it 404s live) — documented cleanup candidate, not a behavioral bug.
+
+**Dealers — REVIEWED-OK.** `dealers/catalog` inclusive make filter + injection guard (BUG-0005); `dealers/selection` org-scoped, service-role-after-auth, no tracked_dealers vestige (BUG-0020); `dealers/removal-requests` org-scoped + role-gated + re-verifies row org_id before service-role write (no IDOR), null-membership→400 (no 500); `sync-dealers` PAGE=50/CAP=1500 city-partition + city_cursor (BUG-0003), makes preserved.
+
+**Catalog crons + decode cache — REVIEWED-OK.** `refresh-catalog` stamps `catalog_sync_state` unconditionally (`:104`, BUG-0016); `verify-catalog` stamps `catalog_verify_state` at loop-end no early-continue (`:86`, BUG-0021); `catalog-health` single-fire daily batch (NOT self-chaining), 50s budget, alerts only on real regression. Decode cache (VP-4): `neovinSpecs` memory→DB→live, durable 30d (BUG-0006/0023); BUG-0026 `flattenNeovinFeatureGroup` robust (array/STANDARD-OPTIONAL-dict/.description). 152 pre-fix cached rows self-heal on 30d TTL (BUG-0026 accepted, not force-re-decoded per cost discipline).
+
+**Billing/auth/multi-tenancy — REVIEWED-OK** (mine + independent sub-review). `requireActivePlan` upholds all invariants (401/super-admin/comped/no-org→503/card-gated-trial→402/transient-fail-open). Stripe webhook: signature→400, payload-derived, out-of-order guard, same-second re-fetch, foreign-sub guard, atomic claim+loser-cancel, idempotent seat true-up (BUG-0018), comp reconcile, duplicate-sub cancel. Referrals: `onRefereePaid` returns early if `referrer_credited` (no monthly double-pay) + idempotency keys. `customers` double-protected (RLS + `.eq(agent_id)`). Independent review of checkout/cancel/portal/update-seats/account-finalize/account-onboard/admin-companies/admin-promos/team/me/saved/referral-resolve: **no new money/IDOR/JSON-redirect defect**. proxy/middleware: `/api/*`→401 JSON, cookie rotation on redirects, fail-open transient, onboarding skips /api+/auth.
+
+**UI — REVIEWED-OK.** Lease calculator (ran math, above). Independent review of `"use client"` prop-seeding/optimistic components: TeamManager/CompanyForm/CompaniesTable have correct re-sync effects + in-flight guards (P9 OK, BUG-0012); `useOrgDealers` has mutSeq race guard.
+
+### Latent / non-bug notes (NOT live defects — do NOT reset clean streak; Phase-2 hardening)
+- **BillingActions.tsx** seeds `canceled`/`seatInput`/`billedSeats` from props with no re-sync effect. Safe today (nothing on `/account/billing` calls `router.refresh()`); would only break if a future refresh is added. Per "don't design for hypothetical future requirements," NOT changed — flagged for Phase-2.
+- **useSavedVehicles.save** reloads-on-failure without the `mutSeq` guard its sibling `useOrgDealers` uses (= prior U2). Low impact; Phase-2.
+- **Doc-rot (fixing this pass):** `live-search/route.ts:1-3,20` + `marketcheck.ts:1` + `carCatalog.ts:174` header comments still describe Auto.dev-first behavior (removed in BUG-0027). Correcting — directly serves the §3 "no dead Auto.dev paths" directive; comments-only, no behavior change.
+
+### PASS A RESULT: CLEAN — zero new behavioral defects (clean pass #1 of the streak).
+Swept all §3 areas with §2 primitives (live MarketCheck probes + code + Supabase advisors + ff deno-gate + live deployed-gate curls + independent sub-review). The Auto.dev comment correction is doc hygiene serving §3, not a defect finding.
+
