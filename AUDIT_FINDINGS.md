@@ -665,7 +665,9 @@ Found + fixed **BUG-0030** (team seat-sync idempotency key) via a money-path rea
 
 **Commits this run (branch only — NOT merged):** v2 `58e791f` (BUG-0030 fix + registry), ff `cbd2b7a` (registry mirror).
 
-**Still pending owner (unchanged from RUN 4):** BUG-0029 data re-backfill (`?backfill_makes` for NY/NJ); `style_cache` orphan-table drop. Phase-2: ff `shortTtl` parity, catalogVerify interior-mode, diagnose color facet 60→100.
+**Still pending owner (unchanged from RUN 4):** BUG-0029 data re-backfill; `style_cache` orphan-table drop. Phase-2: ff `shortTtl` parity, catalogVerify interior-mode, diagnose color facet 60→100.
+
+> **POST-RUN-5 UPDATE (2026-06-23, owner authorized "merge + re-backfill"):** RUN 5 MERGED + pushed (v2 `c43cd4f`, ff `ee078d4`, deployed). BUG-0029 data remediation DONE — discovered the `?backfill_makes` endpoint skips already-tagged dealers (filters `makes IS NULL OR ='{}'`), so it couldn't fix truncated rows; scoped the blast radius to exactly ONE dealer (`1026774` West Herr Auto Group, NY, the only row with ≥20 stored makes), re-probed live (24 makes) and applied a targeted UPDATE (20→24; added Dodge/Lincoln/INFINITI/Cadillac), verified `makes @> {make}` true for all four. `style_cache` drop still deferred (owner's call).
 
 **Build/advisor:** v2 build exit 0; ff deno 9/9 on mc.ts importers; advisors clean-or-justified. **STOP — do not merge.** Awaiting owner review (RUN 4's fixes are already live on main; RUN 5's BUG-0030 fix awaits the next merge).
 
