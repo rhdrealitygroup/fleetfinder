@@ -477,3 +477,47 @@ Continuation of the audit per `AUDIT_PROMPT_V3.md`. Prior runs fixed BUG-0001..0
 ### PASS A RESULT: CLEAN — zero new behavioral defects (clean pass #1 of the streak).
 Swept all §3 areas with §2 primitives (live MarketCheck probes + code + Supabase advisors + ff deno-gate + live deployed-gate curls + independent sub-review). The Auto.dev comment correction is doc hygiene serving §3, not a defect finding.
 
+## RUN 3 — PASS B (fresh adversarial angles, not a repeat) — CLEAN
+
+Re-verified every area with DIFFERENT primitives than Pass A (anti-rubber-stamp):
+- **phraseMatch ReDoS/injection (VP-8 adversarial, ran the real fn):** free-text `option_query` flows into `phraseMatch` as a regex needle. `RX_ESCAPE=/[.*+?^${}()|[\]\\]/g` escapes all metachars. Fed `.*`, `(`, `a)b`, `[a-z`, `\` → all return `false`, no throw, no match-everything; a 5000-char needle → 2ms (no ReDoS); real phrases match; "towel"≠"tow" (word-boundary). Injection/ReDoS-safe.
+- **VP-4 decode cache (free SQL):** `vin_decode_cache` 152 rows, all `payload` non-null + not-expired; 1 `build_sheet` (BUG-0023); 111 `details`-populated; `payload_hvf` populated = 0/152 → confirms BUG-0026's documented pre-fix population, all expiring 2026-07-21/22 (self-heal on 30d TTL, correctly not force-re-decoded per cost discipline). Durable cache wired (BUG-0006).
+- **SECURITY DEFINER search_path (free SQL):** `my_org_ids`/`my_admin_org_ids` both `prosecdef=true` with `proconfig=[search_path=public]` pinned → DB1's no-injection justification confirmed.
+- **VP-7 live edge inputs:** inverted `year_range=2025-2020`→0, inverted `price_range=50000-10000`→0 (no crash; UI presets prevent inversion), special-char `exterior_color=Black,)`→HTTP 200 (URLSearchParams-encoded, no injection), Ferrari 296 <$20k→0 (diagnose handles), unicode make→200. Graceful.
+- **RLS enabled (free SQL):** organizations/memberships/profiles/customers/dealers/dealer_catalog/saved_vehicles/recent_searches/referrals/vehicle_catalog ALL `relrowsecurity=true` with ≥1 policy. Tenant isolation intact live.
+- **Cron advancement (free SQL):** `catalog_sync_state` 441 models stamped (latest 2026-06-22 02:02), `catalog_verify_state` 441 (monthly), `catalog_health` 447 (ran this morning) → self-chaining crons advancing, NOT stalled (BUG-0016/0021 working in prod). `dealer_catalog` 63,605 total / 16,231 (~25%) makes-tagged / 51,048 stocked → confirms BUG-0005 inclusive filter still warranted.
+
+### PASS B RESULT: CLEAN — zero new defects (clean pass #2).
+
+## RUN 3 — PASS C (P1 gold-standard + build/deploy gates) — CLEAN
+
+- **P1 full vocabulary check (the #1 bug class, gold standard):** read all 25 `FEATURE_GROUPS` values from `inventory.ts`, checked EACH against the live `high_value_features` facet (size 125) → **25/25 present**, zero mismatch (BUG-0013/0026 hold).
+- **Interior comma reality (justifies BUG-0009):** Chevrolet `interior_color` facet has 13 comma-bearing values ("Jet Black, Cloth Seat Trim", …) that `cleanColorFacet` correctly drops (they mis-split in the comma-OR filter).
+- **powertrain_type facet** = Combustion/HEV/MHEV/BEV/PHEV/FCEV/EREV (S3 latent — UI emits none today).
+- **Build gates (§4.3):** v2 `npm run build` on committed HEAD `cce85e0` → **exit 0**. ff `deno check` → 14/20 functions pass; the 6 failures (live_search + auto_admin_access + cleanup_companies_and_memberships + manage_billing + me + merge_duplicate_companies) ALL import `npm:@base44/sdk` which isn't installed locally → pre-existing local-tooling gap (run fine in Base44 cloud), NOT a regression. None import my edited `_shared/mc.ts`; all 8 `_shared/mc.ts` importers pass. My edits confirmed clean.
+- **Advisors (§4.3):** unchanged from Pass A (comment-only commits, no DB change) — security INFO/WARN all justified (DB1/DB2/DB5), perf all Phase-2 (DB3/DB4/DB6). No new advisory.
+
+### PASS C RESULT: CLEAN — zero new defects (clean pass #3).
+
+---
+
+## RUN 3 — FINAL ATTESTATION (branch `audit/v3`)
+
+**Three consecutive clean passes achieved.** No new behavioral defect surfaced in any pass. The audit picked up where RUN 2 left off (BUG-0001..0027 fixed/merged/deployed) and extended it: re-verified every §3 area against the LIVE MarketCheck API, the live Supabase DB (read-only SQL), the live deployed app (unauth gate curls), both build gates, and an independent sub-agent code review of the billing/account/admin/UI cluster.
+
+**Changes made this run (branch only — NOT merged):**
+- Corrected stale Auto.dev header comments in both repos (v2 `cce85e0`, ff `09c4cc5`) — doc hygiene serving the §3 "no dead Auto.dev paths" directive; comments-only, build+deno-gated, zero behavior change.
+
+**No new BUG-NNNN entries** (registry stays at next-ID 0028) — no defect found.
+
+**Deferred — needs owner sign-off (RUN 3):** none requiring sign-off. (All money/destructive ops avoided; no migration needed.)
+
+**Phase-2 / hygiene recommendations (NOT bugs, owner's call):**
+1. Delete the dead `list-styles` route (only self-referenced; endpoint 404s live) — prior runs also recommended; left in place to keep the branch focused.
+2. Harden `BillingActions.tsx` with prop re-sync effects BEFORE anyone adds a `router.refresh()` to `/account/billing` (latent P9; safe today).
+3. Add the `mutSeq` guard to `useSavedVehicles.save` (matches `useOrgDealers`; prior U2).
+4. The 5 ff admin/billing functions can't be locally deno-checked (missing `@base44/sdk`); consider `deno install` or a vendored dep so the build gate covers them.
+5. Existing `vin_decode_cache` rows fully self-heal to populated `hvf` by ~2026-07-22 (BUG-0026 TTL); no action needed.
+
+**Build/advisor status:** v2 build exit 0; ff deno 14/20 (6 pre-existing sdk-dep, documented); Supabase advisors clean-or-justified.
+
