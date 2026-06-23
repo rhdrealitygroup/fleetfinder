@@ -627,4 +627,46 @@ Both bugs so far were "mechanism verified but SIZE/BOUNDARY not," so I audited E
 
 **STOP — do not merge.** Two code fixes + one hygiene deletion on `audit/v3` in both repos, plus one owner data-remediation action (re-backfill) and minor Phase-2 items. Awaiting owner review.
 
+> **POST-RUN-4 UPDATE:** owner authorized the merge. `audit/v3` → `main` merged + pushed in both repos (v2 `dfb8f5a`, ff `e23926c`); Vercel auto-deploy of LotCompass triggered. BUG-0029 data re-backfill still pending the owner.
+
+---
+
+# RUN 5 — branch `audit/v3` continuation (2026-06-22, fresh chat, Opus 4.8 agent)
+
+Owner relaunched the kick-off after RUN 4 merged. Per §0.4 continuity, I synced `audit/v3` up to `main` (RUN 4 fixes) and pushed FRESH angles RUN 4 hadn't exhausted — found a 3rd defect.
+
+## Decisions made (autonomous) — RUN 5
+- **D-R5-1:** Fast-forwarded `audit/v3` to `main` in both repos (audit/v3 was an ancestor of the RUN-4 merge) so the new run continues from the deployed state. Reverse: n/a (FF only).
+
+## RUN 5 fresh angles (NOT re-runs of RUN 4)
+
+**A. Live RLS policy DEFINITIONS (`pg_policies`) — the gap prior runs flagged ("verified from migration files, not live pg_policies"). CLEAN.**
+Pulled every tenant policy's `using`/`with_check` from the live DB and verified the LOGIC, not just existence: `organizations`/`dealers`/`referrals`/`memberships` gate on `my_org_ids()`; `profiles`/`saved_vehicles`/`recent_searches` on `auth.uid()`; `customers` correctly limits an agent to `agent_id=auth.uid()` while owner/admin see the org; all writes restricted to owner/admin. Verified the two SECURITY DEFINER helpers' BODIES: `my_org_ids()` = `select org_id from memberships where user_id=auth.uid()`, `my_admin_org_ids()` adds `role in ('owner','admin')` — both `search_path=public` pinned, so anon→empty set, signed-in→only their own orgs. **No cross-tenant leak path.** (Closes the long-standing caveat.)
+
+**B. FleetFinder app code (`live_search`/`diagnose` entry.ts) read for ff-specific logic. CLEAN (parity).**
+Both are faithful 1:1 ports — login-gated, same pagination/dealer-scoping/`mcBodyType`/`mcDrivetrain`, dealerScoped closest-match skip (BUG-0010), honest 503, bounded decode, option filter inherits the BUG-0028 `phraseMatch` cap. Minor parity nits (NOT defects): ff `live_search` `shortTtl` omits `optionScanLimited` (LotCompass includes it) → a noted-partial 240-scan caches 1h vs 2min — deterministic + noted in both, so no wrong result; `@base44/sdk` version drift (live_search 0.8.31 vs diagnose 0.8.30). Phase-2.
+
+**C. VP-6 round-trips (picker→search exact-match, the #1 historical break point). CLEAN.**
+Exterior color round-trips EXACTLY: Civic 'Platinum White Pearl' 3427→3427, RAV4 'Storm Cloud' 5542→5542, F-150 'Oxford White' 17952→17952 (picker stores MarketCheck's own facet strings). Interior comma mis-split re-confirmed (Chevy 'Jet Black, Cloth Seat Trim' facet 41,860 vs filtered 3,232) → justifies the BUG-0009 drop (those compound values were never correctly filterable).
+
+## BUG-0030 (FIXED) — team-route seat sync had no idempotency key
+
+Reading the money paths (not grepping), `team/route.ts#syncSeatQuantity` makes two `stripe.subscriptions.update` calls (reconciling paid seat qty to team size) with **NO `idempotencyKey`** — violating "every Stripe sub mutation uses an idempotency key" (CLAUDE.md). Same class as BUG-0018 (which keyed the IDENTICAL seat true-up in the webhook); the team sibling was missed. No double-billing was possible (absolute qty + proration none + `desired===currentQty` guard), so it's an invariant-consistency defect, severity Low.
+- **Fix:** `idempotencyKey: seat-sync-${subId}-${currentQty}to${desired}` on both calls (FROM→TO transition so a repeated value can't replay a stale cached response). Commit v2 `58e791f`, ff registry `cbd2b7a`. Build exit 0.
+- **Repo-wide Stripe-mutation class hunt:** every other un-keyed Stripe call is idempotent-by-nature (`subscriptions.cancel`; fixed-id `coupons.create` via retrieve-first; absolute-value discount/price `update`; `cancel_at_period_end` boolean; ephemeral `billingPortal.sessions.create`; intentional fresh-mint `prices.create` fallback) — accepted by prior audits. Already-keyed: webhook true-up (BUG-0018), `update-seats`, checkout customer/price/session, referral credits (`ref-referee/referrer-${id}` + permanent DB flags). `syncSeatQuantity` was the ONLY quantity-class mutation missing a key.
+
+## RUN 5 — three consecutive clean passes (after BUG-0030)
+- **Pass 1:** read the remaining unread routes — `referrals.ts` (idempotent credits), `customers` (agent-scoped, double-protected by RLS), `dealers/selection` (org-scoped, no IDOR), `referral/resolve` (PUBLIC: code stripped to `[a-zA-Z0-9]`≤16, parameterized `.eq`, leaks only a set company name), `decode-vin` (gated wrapper over the durable cache), `stripe/portal` (owner-only, own customer), `account/onboard` (idempotent, refuses onboarded-flag on any failed write, self-referral blocked), `catalogVerify` (non-destructive, transient-safe). **CLEAN** (one Phase-2 nit: catalogVerify cleans interior colors with default "exterior" mode → internal QA-report noise only).
+- **Pass 2:** fresh VP-2 (Mustang 12,788/3 — listings, not count-only), P1 spot (blind spot 2.79M, navigation 2.14M), live RLS re-confirm, BUG-0030 fix confirmed in committed HEAD `58e791f`, ff `deno check` 9/9. **CLEAN.**
+- **Pass 3:** v2 `npm run build` exit 0; Supabase security advisors byte-identical to RUN 4 (no DB change — all INFO/WARN justified, SECURITY DEFINER WARNs now proven benign by the verified bodies); both repos clean tree on `audit/v3`. **CLEAN.**
+
+## RUN 5 — FINAL ATTESTATION (branch `audit/v3`)
+Found + fixed **BUG-0030** (team seat-sync idempotency key) via a money-path read RUN 4 didn't reach, then 3 consecutive clean passes on fresh angles (live RLS definitions, ff app parity, VP-6, all remaining routes, Stripe-mutation class hunt). Net new: **1 defect** (Low). Registry → next ID BUG-0031.
+
+**Commits this run (branch only — NOT merged):** v2 `58e791f` (BUG-0030 fix + registry), ff `cbd2b7a` (registry mirror).
+
+**Still pending owner (unchanged from RUN 4):** BUG-0029 data re-backfill (`?backfill_makes` for NY/NJ); `style_cache` orphan-table drop. Phase-2: ff `shortTtl` parity, catalogVerify interior-mode, diagnose color facet 60→100.
+
+**Build/advisor:** v2 build exit 0; ff deno 9/9 on mc.ts importers; advisors clean-or-justified. **STOP — do not merge.** Awaiting owner review (RUN 4's fixes are already live on main; RUN 5's BUG-0030 fix awaits the next merge).
+
 
