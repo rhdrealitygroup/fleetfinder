@@ -9,7 +9,7 @@ import {
 import Image from "next/image";
 import { AppNav } from "@/components/AppNav";
 import { CAR_CATALOG, CATALOG_MAKES, DIRECT_SALES_BRANDS, DEFUNCT_MAKES, LIMITED_NEW_BRANDS, PRE_LAUNCH_MODELS } from "@/lib/carCatalog";
-import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue } from "@/lib/inventory";
+import { FEATURE_GROUPS, PRICE_RANGES, YEAR_RANGES, SORTS, BODY_TYPES, DRIVETRAINS, makeHue, extractWheelOptions } from "@/lib/inventory";
 import { moneyShort } from "@/lib/format";
 import { useSavedVehicles } from "@/lib/useSavedVehicles";
 import { useOrgDealers } from "@/lib/useOrgDealers";
@@ -1024,6 +1024,7 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
 
   const packages: any[] = Array.isArray(decode?.packages) ? decode.packages : [];
   const options: any[] = Array.isArray(decode?.options) ? decode.options : [];
+  const wheels = extractWheelOptions(options); // display-only (no wheel filter — see build plan)
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -1051,6 +1052,10 @@ function DetailPanel({ v, onClose, saved, onSave, lists }: { v: Vehicle; onClose
           {v.features.length > 0 && (
             <div><div className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-2">Highlights</div>
               <div className="flex flex-wrap gap-1.5">{v.features.map((f) => <span key={f} className="px-2 py-1 rounded-md bg-primary/10 border border-primary/25 text-[12px] text-primary">{f}</span>)}</div></div>
+          )}
+          {wheels.length > 0 && (
+            <div><div className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-2">Wheels</div>
+              <div className="flex flex-wrap gap-1.5">{wheels.map((w, i) => <span key={i} className="px-2 py-1 rounded-md bg-secondary border border-border text-[12px] text-muted-foreground">{w}</span>)}</div></div>
           )}
           <div>
             <div className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-2">Equipment (VIN decode){decoding && <Loader2 className="w-3 h-3 animate-spin" />}</div>

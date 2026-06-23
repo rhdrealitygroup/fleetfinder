@@ -91,6 +91,27 @@ export const FEATURE_GROUPS = [
   ]},
 ];
 
+// Wheels are display-only (no reliable per-model facet — see the build plan), so
+// we just surface a car's actual wheel options from its decoded build sheet.
+// MarketCheck option names are noisy ("Heated Steering Wheel", "Wheel Locks",
+// "Spare Tire and Wheel", "5th Wheel/Gooseneck"), so keep only genuine wheel/rim
+// options and drop the noise. Returns de-duped display names (e.g. `22" Polished
+// Aluminum Wheels`).
+const WHEEL_NOISE = /steering|lock|\bbolt|lug nut|spare|gooseneck|5th wheel|fifth wheel|wheel well|flares?/i;
+export function extractWheelOptions(options: { name?: string }[] = []): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const o of options || []) {
+    const name = String(o?.name || "").trim();
+    if (!name || !/\b(wheels?|rims?)\b/i.test(name) || WHEEL_NOISE.test(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
 // Deterministic accent hue per make so each brand's wordmark block is distinct.
 export function makeHue(make = "") {
   let h = 0;
