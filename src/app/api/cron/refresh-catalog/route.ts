@@ -83,6 +83,8 @@ export async function GET(req: Request) {
           { key: k("interior_colors"), make, model, kind: "interior_colors", payload: snap.interiorColors, updated_at: now },
           { key: k("colors_by_trim"), make, model, kind: "colors_by_trim", payload: snap.colorsByTrim ?? {}, updated_at: now },
           { key: k("interior_colors_by_trim"), make, model, kind: "interior_colors_by_trim", payload: snap.interiorColorsByTrim ?? {}, updated_at: now },
+          { key: k("fuel_types"), make, model, kind: "fuel_types", payload: snap.fuelTypes ?? [], updated_at: now },
+          { key: k("roof_types"), make, model, kind: "roof_types", payload: snap.roofTypes ?? [], updated_at: now },
         ], { onConflict: "key" });
         // snap.options is null when the decode was skipped (fresh) or budget-cut —
         // leave the existing options row untouched rather than wiping it to empty.

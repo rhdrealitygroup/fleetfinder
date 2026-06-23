@@ -1,5 +1,5 @@
 import "server-only";
-import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTimeout, cleanColorFacet, fixVersionName, prettyTrim, titleCase } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, resolveModel, decodeVinOptionDetails, fetchWithTimeout, cleanColorFacet, fixVersionName, prettyTrim, titleCase, fuelLabelsFromFacet, roofLabelsFromFacets } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -33,11 +33,14 @@ export async function snapshotModel(make: string, model: string, deadline = 0, s
   // (429/5xx), return null so the cron does NOT persist an empty snapshot or
   // advance the staleness cursor — otherwise a rate-limited night would wipe a
   // model's catalog to empty and skip retrying it for a full rotation.
-  const fRes = await fetchWithTimeout(base({ rows: 0, facets: "trim|0|40,version|0|60,exterior_color|0|60,interior_color|0|60" }).toString()).catch(() => null);
+  const fRes = await fetchWithTimeout(base({ rows: 0, facets: "trim|0|40,version|0|60,exterior_color|0|60,interior_color|0|60,powertrain_type|0|10,body_type|0|20,high_value_features|0|80" }).toString()).catch(() => null);
   if (!fRes || !fRes.ok) return null;
   const fd: any = await fRes.json().catch(() => null);
   if (!fd) return null;
   const trims = (fd.facets?.trim || []).map((t: any) => ({ name: t.item, count: num(t.count) }));
+  // Model-aware fuel + roof options (free facets folded into the call above).
+  const fuelTypes = fuelLabelsFromFacet(fd.facets?.powertrain_type);
+  const roofTypes = roofLabelsFromFacets(fd.facets?.body_type, fd.facets?.high_value_features);
   // Fix known raw-data typos on versions (e.g. "Stamdard" → "Standard").
   const versions = (fd.facets?.version || []).map((t: any) => ({ name: fixVersionName(t.item), count: num(t.count) }));
   // Scrub factory paint-code cruft + dedupe so the stored catalog matches the
@@ -52,7 +55,7 @@ export async function snapshotModel(make: string, model: string, deadline = 0, s
   if (deadline && Date.now() > deadline) {
     // options:null → preserve the existing options row (don't wipe it to empty on
     // a budget cut, and don't pay to re-decode).
-    return { trims, versions, colors, interiorColors, colorsByTrim: {}, interiorColorsByTrim: {}, options: null as { name: string; msrp: number; count: number }[] | null, found: num(fd.num_found) };
+    return { trims, versions, colors, interiorColors, colorsByTrim: {}, interiorColorsByTrim: {}, fuelTypes, roofTypes, options: null as { name: string; msrp: number; count: number }[] | null, found: num(fd.num_found) };
   }
 
   // Sample real listings to learn the TRIM → COLOR associations (so each trim
@@ -119,5 +122,5 @@ export async function snapshotModel(make: string, model: string, deadline = 0, s
     options = [...map.values()].sort((a, b) => b.count - a.count || b.msrp - a.msrp);
   }
 
-  return { trims, versions, colors, interiorColors, colorsByTrim, interiorColorsByTrim, options, found: num(fd.num_found) };
+  return { trims, versions, colors, interiorColors, colorsByTrim, interiorColorsByTrim, fuelTypes, roofTypes, options, found: num(fd.num_found) };
 }

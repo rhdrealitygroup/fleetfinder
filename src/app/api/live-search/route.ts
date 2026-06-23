@@ -8,7 +8,7 @@ import {
   MC_HOST, RADIUS_MILES,
   PAGE_SIZE, num, mcListing, mcKey,
   resolveModel, decodeVinOptionNames, phraseMatch, fetchWithTimeout, estMonthlyCard,
-  mcBodyType, mcDrivetrain, type UnifiedVehicle,
+  mcBodyType, mcDrivetrain, mcFuel, ROOF_OPTIONS, type UnifiedVehicle,
 } from "@/lib/marketcheck";
 import { cacheGet, cacheSet, HOUR } from "@/lib/memoryCache";
 import { requireActivePlan } from "@/lib/auth";
@@ -26,7 +26,7 @@ const SEARCH_LIMIT = 150;
 function summarize(body: any) {
   const base = [
     body.year_min && `${body.year_min}+`, body.make, body.model, body.trim, body.body_type,
-    body.drivetrain, body.powertrain_type, body.exterior_color,
+    body.fuel, body.roof, body.drivetrain, body.powertrain_type, body.exterior_color,
     body.price_max && `≤$${body.price_max}`, body.miles_max && `<${body.miles_max}mi`,
   ].filter(Boolean).join(" ") || "all new cars";
   const loc = body.zip ? ` · within ${Math.min(500, Number(body.radius) || 100)}mi of ${body.zip}` : "";
@@ -45,6 +45,7 @@ function cacheKeyFor(body: any) {
     miles_max: body.miles_max || null,
     variant: (body.variant || "").toLowerCase(),
     powertrain_type: body.powertrain_type || "", body_type: body.body_type || "",
+    fuel: (body.fuel || "").toString().toLowerCase(), roof: (body.roof || "").toString().toLowerCase(),
     drivetrain: body.drivetrain || "", exterior_color: body.exterior_color || "", interior_color: body.interior_color || "",
     features: Array.isArray(body.features) ? [...body.features].sort() : [],
     max_monthly: Number(body.max_monthly) || 0,
@@ -161,18 +162,27 @@ export async function POST(req: Request) {
       if (body.year_min || body.year_max) url.searchParams.set("year_range", `${body.year_min || 1900}-${body.year_max || new Date().getFullYear() + 1}`);
       if (body.price_min || body.price_max) url.searchParams.set("price_range", `${body.price_min || 0}-${body.price_max || 999999}`);
       if (body.miles_max) url.searchParams.set("miles_range", `0-${body.miles_max}`);
-      if (body.powertrain_type) url.searchParams.set("powertrain_type", body.powertrain_type);
+      // Fuel: friendly label → powertrain_type value(s) (Hybrid→HEV,MHEV; etc.).
+      // Falls back to a raw powertrain_type if a caller still sends one.
+      const pt = mcFuel(body.fuel) || (body.powertrain_type ? String(body.powertrain_type) : "");
+      if (pt) url.searchParams.set("powertrain_type", pt);
       // Map UI labels → MarketCheck facet values ("Truck"→Pickup, "Van"→Cargo
       // Van/Minivan/Passenger Van, "AWD"→4WD); an unmapped label matches nothing.
-      const bt = mcBodyType(body.body_type);
-      if (bt) url.searchParams.set("body_type", bt);
+      // Roof spans two fields: Convertible augments body_type; Sunroof/Panoramic
+      // augment high_value_features. Combine with the Body/feature controls.
+      const roof = ROOF_OPTIONS.find((r) => r.label.toLowerCase() === String(body.roof || "").trim().toLowerCase());
+      let btVal = mcBodyType(body.body_type);
+      if (roof?.field === "body_type") btVal = [btVal, roof.value].filter(Boolean).join(",");
+      if (btVal) url.searchParams.set("body_type", btVal);
       const dt = mcDrivetrain(body.drivetrain);
       if (dt) url.searchParams.set("drivetrain", dt);
       // exterior_color matches the full color string and accepts a comma-OR
       // list (e.g. "Agate Black,Agate Black Metallic") from the color picker.
       if (body.exterior_color) url.searchParams.set("exterior_color", body.exterior_color);
       if (body.interior_color) url.searchParams.set("interior_color", body.interior_color);
-      if (Array.isArray(body.features) && body.features.length) url.searchParams.set("high_value_features", body.features.join(","));
+      const feats = Array.isArray(body.features) ? [...body.features] : [];
+      if (roof?.field === "high_value_features") feats.push(roof.value);
+      if (feats.length) url.searchParams.set("high_value_features", feats.join(","));
       // Scope to the company's selected dealers via the syndication endpoint's
       // comma-OR dealer_id list (capped at 200). dealerIds is already de-duped and
       // sorted, so the searched first-200 subset matches the (sorted) cache key —
