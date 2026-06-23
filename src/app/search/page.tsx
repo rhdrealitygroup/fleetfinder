@@ -71,6 +71,12 @@ function SearchPageInner() {
   const [maxMonthly, setMaxMonthly] = useState("");
   const [bodyType, setBodyType] = useState("");
   const [drivetrain, setDrivetrain] = useState("");
+  // Model-aware Fuel + Roof: options are fetched per make/model and only show what
+  // that model actually offers (empty list → control hidden).
+  const [fuel, setFuel] = useState("");
+  const [fuelOpts, setFuelOpts] = useState<{ label: string; count: number }[]>([]);
+  const [roof, setRoof] = useState("");
+  const [roofOpts, setRoofOpts] = useState<{ label: string; count: number }[]>([]);
 
   const [results, setResults] = useState<Vehicle[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -233,6 +239,21 @@ function SearchPageInner() {
     return () => { cancelled = true; };
   }, [make, model, carType, trim]);
 
+  // Load model-aware Fuel + Roof options whenever make+model is set. Only options
+  // the model actually offers come back; an empty list hides the control.
+  useEffect(() => {
+    if (!make || !model) { setFuelOpts([]); setRoofOpts([]); return; }
+    let cancelled = false;
+    const opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ make, model, car_type: carType }) };
+    fetch("/api/list-fuel-types", opts).then((r) => r.json())
+      .then((d) => { if (!cancelled) setFuelOpts(Array.isArray(d.fuel_types) ? d.fuel_types : []); })
+      .catch(() => { if (!cancelled) setFuelOpts([]); });
+    fetch("/api/list-roof-types", opts).then((r) => r.json())
+      .then((d) => { if (!cancelled) setRoofOpts(Array.isArray(d.roof_types) ? d.roof_types : []); })
+      .catch(() => { if (!cancelled) setRoofOpts([]); });
+    return () => { cancelled = true; };
+  }, [make, model, carType]);
+
   // Load make/model-specific options/features whenever make is set.
   useEffect(() => {
     if (!make) {
@@ -311,6 +332,7 @@ function SearchPageInner() {
           zip: zip.trim() || undefined, radius: effRadius,
           max_monthly: Number(effMaxMonthly) || undefined,
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
+          fuel: fuel || undefined, roof: roof || undefined,
           year_min: yr.min || undefined, year_max: yr.max || undefined,
           price_min: pr.min || undefined, price_max: pr.max || undefined,
           option_names: effFeatures.length ? effFeatures : undefined,
@@ -335,7 +357,7 @@ function SearchPageInner() {
     } finally {
       setSearching(false);
     }
-  }, [make, model, trim, variant, color, colors, intColor, intColors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain, scopeDealers, myDealers]);
+  }, [make, model, trim, variant, color, colors, intColor, intColors, yearIdx, priceIdx, features, carType, zip, radius, maxMonthly, bodyType, drivetrain, fuel, roof, scopeDealers, myDealers]);
 
   // The variant (range/config) chips for the currently-selected trim.
   const activeVariants = trim ? trims.find((t) => t.name === trim)?.variants || [] : [];
@@ -370,6 +392,7 @@ function SearchPageInner() {
         body: JSON.stringify({
           car_type: carType, make, model, trim, variant: variant || undefined,
           body_type: bodyType || undefined, drivetrain: drivetrain || undefined,
+          fuel: fuel || undefined, roof: roof || undefined,
           exterior_color: (colors.find((c) => c.name === color)?.variants || []).join(",") || undefined,
           interior_color: (intColors.find((c) => c.name === intColor)?.variants || []).join(",") || undefined,
           option_names: features.size ? [...features] : undefined,
@@ -387,7 +410,7 @@ function SearchPageInner() {
     } finally {
       if (seq === diagSeq.current) setDiagnosing(false);
     }
-  }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, bodyType, drivetrain, scopeDealers, myDealers, searchedAll]);
+  }, [make, model, trim, variant, color, colors, intColor, intColors, features, yearIdx, priceIdx, maxMonthly, zip, radius, carType, bodyType, drivetrain, fuel, roof, scopeDealers, myDealers, searchedAll]);
 
   // When a search returns nothing, diagnose why — but NOT when the emptiness is a
   // rate-limit (diagnose would fire a second MarketCheck call and likely 429 again).
@@ -433,7 +456,7 @@ function SearchPageInner() {
     <div className="space-y-5">
       <div className="flex rounded-lg border border-border overflow-hidden text-sm">
         {(["new", "used"] as const).map((t) => (
-          <button key={t} onClick={() => { setCarType(t); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }}
+          <button key={t} onClick={() => { setCarType(t); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); setFuel(""); setRoof(""); }}
             className={`flex-1 py-1.5 capitalize transition ${carType === t ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`}>
             {t}
           </button>
@@ -467,7 +490,7 @@ function SearchPageInner() {
       </div>
 
       <Field label="Make">
-        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} className={selectCls}>
+        <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); setFuel(""); setRoof(""); }} className={selectCls}>
           <option value="">Any make</option>
           {/* Defunct makes (no new cars built) are hidden in New, shown in Used. */}
           {[...CATALOG_MAKES].filter((m) => carType === "used" || !DEFUNCT_MAKES.has(m)).sort((a, b) => a.localeCompare(b)).map((m) => <option key={m} value={m}>{m}</option>)}
@@ -475,7 +498,7 @@ function SearchPageInner() {
       </Field>
 
       <Field label="Model">
-        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); }} disabled={!make} className={selectCls}>
+        <select value={model} onChange={(e) => { setModel(e.target.value); setTrim(""); setVariant(""); setColor(""); setIntColor(""); setFeatures(new Set()); setFuel(""); setRoof(""); }} disabled={!make} className={selectCls}>
           <option value="">{!make ? "Pick a make first" : usedModelsLoading ? "Loading used models…" : "Any model"}</option>
           {[...models].sort((a, b) => a.localeCompare(b)).map((m) => {
             const preLaunch = PRE_LAUNCH_MODELS.has(`${make}::${m}`.toLowerCase());
@@ -562,6 +585,19 @@ function SearchPageInner() {
         <Field label="Body"><select value={bodyType} onChange={(e) => setBodyType(e.target.value)} className={selectCls}><option value="">Any</option>{BODY_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}</select></Field>
         <Field label="Drivetrain"><select value={drivetrain} onChange={(e) => setDrivetrain(e.target.value)} className={selectCls}><option value="">Any</option>{DRIVETRAINS.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
       </div>
+
+      {/* Model-aware Fuel + Roof — only render a control when the selected model
+          actually offers options for it (fetched per make/model). */}
+      {(fuelOpts.length > 0 || roofOpts.length > 0) && (
+        <div className="grid grid-cols-2 gap-3">
+          {fuelOpts.length > 0 && (
+            <Field label="Fuel"><select value={fuel} onChange={(e) => setFuel(e.target.value)} className={selectCls}><option value="">Any</option>{fuelOpts.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}</select></Field>
+          )}
+          {roofOpts.length > 0 && (
+            <Field label="Roof"><select value={roof} onChange={(e) => setRoof(e.target.value)} className={selectCls}><option value="">Any</option>{roofOpts.map((r) => <option key={r.label} value={r.label}>{r.label}</option>)}</select></Field>
+          )}
+        </div>
+      )}
 
       <Field label="Max monthly payment">
         <div className="flex items-center rounded-lg border border-border bg-card focus-within:ring-2 focus-within:ring-ring/50">

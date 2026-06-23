@@ -16,6 +16,8 @@ export type ModelCatalog = {
   interiorColors?: { name: string; count: number; variants?: string[] }[];
   colorsByTrim?: Record<string, { name: string; count: number; variants?: string[] }[]>;
   interiorColorsByTrim?: Record<string, { name: string; count: number; variants?: string[] }[]>;
+  fuelTypes?: { label: string; count: number }[];
+  roofTypes?: { label: string; count: number }[];
 };
 
 export async function readModelCatalog(make: string, model: string): Promise<ModelCatalog | null> {
@@ -35,6 +37,8 @@ export async function readModelCatalog(make: string, model: string): Promise<Mod
       interiorColors: of("interior_colors"),
       colorsByTrim: of("colors_by_trim"),
       interiorColorsByTrim: of("interior_colors_by_trim"),
+      fuelTypes: of("fuel_types"),
+      roofTypes: of("roof_types"),
     };
   } catch {
     return null;

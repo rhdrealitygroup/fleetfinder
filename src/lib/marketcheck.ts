@@ -92,6 +92,55 @@ export function mcBodyType(v: unknown): string {
   return map[s.toLowerCase()] || s; // SUV, Sedan, Wagon, Coupe, ... pass through
 }
 
+// ── Model-aware Fuel + Roof filter options ───────────────────────────────────
+// Fuel: friendly label → MarketCheck `powertrain_type` value(s) (comma-OR).
+// Owner spec: Hybrid folds in mild-hybrid (HEV+MHEV); Plug-in Hybrid is separate;
+// no Diesel. `powertrain_type` (NOT `fuel_type`) is the field — verified live:
+// RAV4 → HEV/Combustion/PHEV, Civic → Combustion/HEV.
+export const FUEL_OPTIONS: { label: string; powertrain: string[] }[] = [
+  { label: "Gas", powertrain: ["Combustion"] },
+  { label: "Hybrid", powertrain: ["HEV", "MHEV"] },
+  { label: "Plug-in Hybrid", powertrain: ["PHEV"] },
+  { label: "Electric", powertrain: ["BEV"] },
+];
+export function mcFuel(label: unknown): string {
+  const s = String(label ?? "").trim().toLowerCase();
+  const o = FUEL_OPTIONS.find((f) => f.label.toLowerCase() === s);
+  return o ? o.powertrain.join(",") : "";
+}
+// Which fuel labels apply, given a model's live `powertrain_type` facet items.
+export function fuelLabelsFromFacet(items: { item?: string; count?: number }[] | undefined): { label: string; count: number }[] {
+  const present = new Map((items || []).map((t) => [String(t.item || "").toUpperCase(), num(t.count)]));
+  const out: { label: string; count: number }[] = [];
+  for (const f of FUEL_OPTIONS) {
+    const count = f.powertrain.reduce((a, pt) => a + (present.get(pt.toUpperCase()) || 0), 0);
+    if (count > 0) out.push({ label: f.label, count });
+  }
+  return out;
+}
+
+// Roof spans TWO MarketCheck fields: Convertible = `body_type`; sunroof/pano =
+// `high_value_features` (verified: facet values `sun/moonroof`, `panoramic
+// sun/moonroof`). A label only appears for a model whose facet actually lists it.
+export const ROOF_OPTIONS: { label: string; field: "body_type" | "high_value_features"; value: string }[] = [
+  { label: "Sunroof", field: "high_value_features", value: "sun/moonroof" },
+  { label: "Panoramic Roof", field: "high_value_features", value: "panoramic sun/moonroof" },
+  { label: "Convertible", field: "body_type", value: "Convertible" },
+];
+export function roofLabelsFromFacets(
+  bodyTypes: { item?: string; count?: number }[] | undefined,
+  features: { item?: string; count?: number }[] | undefined,
+): { label: string; count: number }[] {
+  const bt = new Map((bodyTypes || []).map((t) => [String(t.item || "").toLowerCase(), num(t.count)]));
+  const hv = new Map((features || []).map((t) => [String(t.item || "").toLowerCase(), num(t.count)]));
+  const out: { label: string; count: number }[] = [];
+  for (const r of ROOF_OPTIONS) {
+    const count = (r.field === "body_type" ? bt : hv).get(r.value.toLowerCase()) || 0;
+    if (count > 0) out.push({ label: r.label, count });
+  }
+  return out;
+}
+
 // Ensure a URL is clickable. Providers sometimes return bare domains or
 // protocol-relative paths.
 export function normalizeUrl(raw: unknown): string {

@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { requireActivePlan } from "@/lib/auth";
-import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither, fetchWithTimeout, mcBodyType, mcDrivetrain } from "@/lib/marketcheck";
+import { MC_HOST, mcKey, num, normalizeFeature, resolveModel, decodeVinOptionNames, mcListing, phraseMatch, phraseMatchEither, fetchWithTimeout, mcBodyType, mcDrivetrain, mcFuel, ROOF_OPTIONS } from "@/lib/marketcheck";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -47,12 +47,18 @@ export async function POST(req: Request) {
     // diagnosed against a pool that ignores them and wrongly report "specs are fine".
     // Map UI labels → MarketCheck facet values (same as live-search) so the
     // diagnosis pool isn't itself zeroed by an unmapped "Truck"/"Van"/"AWD".
-    const bt = mcBodyType(b.body_type);
+    // Roof (Convertible→body_type; Sunroof/Pano→high_value_features) + fuel
+    // (label→powertrain_type) applied as hard filters, same as live-search.
+    const roof = ROOF_OPTIONS.find((r) => r.label.toLowerCase() === String(b.roof || "").trim().toLowerCase());
+    let bt = mcBodyType(b.body_type);
+    if (roof?.field === "body_type") bt = [bt, roof.value].filter(Boolean).join(",");
     if (bt) url.searchParams.set("body_type", bt);
+    if (roof?.field === "high_value_features") url.searchParams.set("high_value_features", roof.value);
     const dt = mcDrivetrain(b.drivetrain);
     if (dt) url.searchParams.set("drivetrain", dt);
     if (b.miles_max) url.searchParams.set("miles_range", `0-${b.miles_max}`);
-    if (b.powertrain_type) url.searchParams.set("powertrain_type", String(b.powertrain_type));
+    const pt = mcFuel(b.fuel) || (b.powertrain_type ? String(b.powertrain_type) : "");
+    if (pt) url.searchParams.set("powertrain_type", pt);
     if (b.year_min || b.year_max) url.searchParams.set("year_range", `${b.year_min || 1900}-${b.year_max || new Date().getFullYear() + 1}`);
     if (b.price_min || b.price_max) url.searchParams.set("price_range", `${b.price_min || 0}-${b.price_max || 999999}`);
     const zip = String(b.zip || "").trim();
